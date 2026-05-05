@@ -56,7 +56,7 @@ struct HermesSettingsView: View {
                     } label: {
                         Label("Restart API Server", systemImage: "arrow.clockwise.circle")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                     .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isBusy)
 
                     Text(companionEnrollment.identityState.isEnrolled ? "Uses the enrolled Host Companion to restart the host-side Hermes API server service." : "Enroll Host Companion before restarting the API server from iOS.")
@@ -130,7 +130,7 @@ struct HermesSettingsView: View {
                     Button(companionEnrollment.identityState.isEnrolled ? "Re-enroll" : "Enroll Device") {
                         companionEnrollment.enroll(settings: companionSettings)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                     .disabled(
                         companionEnrollment.isEnrolling ||
                         companionSettings.enrollmentURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
@@ -143,7 +143,7 @@ struct HermesSettingsView: View {
                         Button("Clear Identity", role: .destructive) {
                             companionEnrollment.clearIdentity()
                         }
-                        .buttonStyle(.bordered)
+                        .hermesGlassButton()
                     }
                 }
             }

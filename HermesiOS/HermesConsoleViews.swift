@@ -14,7 +14,8 @@ struct HermesResponsesConsoleView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            HermesGlassEffectContainer(spacing: 26) {
+                VStack(alignment: .leading, spacing: 20) {
                 HermesHeroCard(
                     title: "Hermes Gateway API",
                     detail: "This first implementation targets `/v1/responses` and uses SSE so the app can render incremental output and tool events as Hermes works.",
@@ -66,20 +67,20 @@ struct HermesResponsesConsoleView: View {
                                 Button("New Thread") {
                                     responseSession.resetConversation()
                                 }
-                                .buttonStyle(.bordered)
+                                .hermesGlassButton()
                             }
 
                             if responseSession.isSending {
                                 Button("Cancel") {
                                     responseSession.cancel()
                                 }
-                                .buttonStyle(.bordered)
+                                .hermesGlassButton()
                             }
 
                             Button("Send Request") {
                                 responseSession.submit(apiSettings: apiSettings, draft: requestDraft, historyStore: historyStore)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .hermesGlassProminentButton()
                             .disabled(requestDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
@@ -138,8 +139,9 @@ struct HermesResponsesConsoleView: View {
                         }
                     }
                 }
+                }
+                .padding()
             }
-            .padding()
         }
         .navigationTitle("Responses API")
         .background(Color.hermesCanvas)
@@ -154,7 +156,8 @@ struct HermesChatConsoleView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            HermesGlassEffectContainer(spacing: 26) {
+                VStack(alignment: .leading, spacing: 20) {
                 HermesHeroCard(
                     title: "Hermes Chat Completions",
                     detail: "This surface uses `/v1/chat/completions` independently from the Responses API, with its own transcript and streaming lifecycle.",
@@ -194,20 +197,20 @@ struct HermesChatConsoleView: View {
                                 Button("New Chat") {
                                     chatSession.resetConversation()
                                 }
-                                .buttonStyle(.bordered)
+                                .hermesGlassButton()
                             }
 
                             if chatSession.isSending {
                                 Button("Cancel") {
                                     chatSession.cancel()
                                 }
-                                .buttonStyle(.bordered)
+                                .hermesGlassButton()
                             }
 
                             Button("Send Message") {
                                 chatSession.submit(apiSettings: apiSettings, draft: chatDraft, historyStore: historyStore)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .hermesGlassProminentButton()
                             .disabled(chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
@@ -254,8 +257,9 @@ struct HermesChatConsoleView: View {
                         }
                     }
                 }
+                }
+                .padding()
             }
-            .padding()
         }
         .navigationTitle("Chat Completions")
         .background(Color.hermesCanvas)

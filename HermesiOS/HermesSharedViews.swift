@@ -12,29 +12,32 @@ struct HermesHeroCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
+            // A faint colored wash refracted by the glass, plus a soft
+            // highlight blob to sell the liquid feel.
             LinearGradient(
                 colors: [
-                    Color.hermesElevated.opacity(0.72),
-                    Color.hermesSurfaceInput.opacity(0.42),
-                    Color.igActionBlue.opacity(0.10)
+                    Color.igGradPurple.opacity(0.18),
+                    Color.igActionBlue.opacity(0.10),
+                    Color.igGradOrangeYellow.opacity(0.10)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+            .blendMode(.plusLighter)
 
-            RoundedRectangle(cornerRadius: 54, style: .continuous)
-                .fill(.white.opacity(0.10))
-                .frame(width: 140, height: 44)
-                .blur(radius: 18)
-                .offset(x: 205, y: -22)
+            Circle()
+                .fill(.white.opacity(0.18))
+                .frame(width: 180, height: 180)
+                .blur(radius: 36)
+                .offset(x: 140, y: -90)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 10) {
                     Image(systemName: systemImage)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.igActionBlue)
-                        .frame(width: 30, height: 30)
-                        .hermesLiquidGlass(cornerRadius: 10, tint: .igActionBlue.opacity(0.18), interactive: true)
+                        .frame(width: 32, height: 32)
+                        .hermesLiquidGlass(cornerRadius: 10, tint: .igActionBlue.opacity(0.22), interactive: true)
 
                     Text(title)
                         .font(.igUsername)
@@ -48,14 +51,10 @@ struct HermesHeroCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
         }
-        .frame(maxWidth: .infinity, minHeight: 92, alignment: .bottomLeading)
-        .hermesLiquidGlass(cornerRadius: 20, tint: .igActionBlue.opacity(0.08), interactive: true)
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
-        )
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .bottomLeading)
+        .hermesLiquidGlass(cornerRadius: 22, tint: .igActionBlue.opacity(0.08), interactive: true)
         .shadow(color: Color.black.opacity(0.08), radius: 18, y: 10)
     }
 }
@@ -78,23 +77,18 @@ struct HermesSectionCard<Content: View>: View {
                     .foregroundStyle(.hermesSecondaryText)
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
-
-            IGHairline()
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 16) {
                 content
             }
-            .padding(16)
+            .padding(.horizontal, 18)
+            .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .hermesLiquidGlass(cornerRadius: 18, tint: .white.opacity(0.06), interactive: false)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7)
-        )
+        .hermesLiquidGlass(cornerRadius: 22, tint: .white.opacity(0.04))
     }
 }
 
@@ -155,10 +149,10 @@ struct HermesResponseCard: View {
                 Spacer()
                 Text(response.status)
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(statusColor)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(statusColor.opacity(0.12))
-                    .clipShape(Capsule())
+                    .hermesLiquidGlass(cornerRadius: 999, tint: statusColor.opacity(0.18))
             }
 
             Text(response.summary)
@@ -173,8 +167,7 @@ struct HermesResponseCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.hermesSurfaceInput)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .hermesLiquidGlass(cornerRadius: 20, tint: statusColor.opacity(0.06))
     }
 
     private var statusColor: Color {
@@ -202,10 +195,10 @@ struct HermesChatMessageCard: View {
                 Spacer()
                 Text(message.role == "user" ? "Prompt" : "Reply")
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(roleColor)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(roleColor.opacity(0.12))
-                    .clipShape(Capsule())
+                    .hermesLiquidGlass(cornerRadius: 999, tint: roleColor.opacity(0.18))
             }
 
             Text(message.content)
@@ -215,8 +208,7 @@ struct HermesChatMessageCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.hermesSurfaceInput)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .hermesLiquidGlass(cornerRadius: 20, tint: roleColor.opacity(0.06))
     }
 
     private var roleColor: Color {

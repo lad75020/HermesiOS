@@ -123,27 +123,34 @@ struct HermesStatusBand: View {
     @Bindable var statusMonitor: HermesStatusMonitor
     var apiChannelActive = false
     var companionChannelActive = false
+    @Namespace private var ledNamespace
 
     var body: some View {
-        HStack(spacing: 10) {
-            HermesStatusLED(
-                label: "API",
-                status: statusMonitor.apiServerStatus,
-                isActive: apiChannelActive || statusMonitor.isAPIProbeActive
-            )
-            HermesStatusLED(
-                label: "Mac",
-                status: statusMonitor.companionStatus,
-                isActive: companionChannelActive || statusMonitor.isCompanionProbeActive
-            )
+        HermesGlassEffectContainer(spacing: 14) {
+            HStack(spacing: 10) {
+                HermesStatusLED(
+                    label: "API",
+                    status: statusMonitor.apiServerStatus,
+                    isActive: apiChannelActive || statusMonitor.isAPIProbeActive
+                )
+                .hermesGlassEffectID("led.api", in: ledNamespace)
+
+                HermesStatusLED(
+                    label: "Mac",
+                    status: statusMonitor.companionStatus,
+                    isActive: companionChannelActive || statusMonitor.isCompanionProbeActive
+                )
+                .hermesGlassEffectID("led.mac", in: ledNamespace)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.hermesDivider.opacity(0.32))
+                .fill(Color.hermesDivider.opacity(0.22))
                 .frame(height: 0.5)
         }
     }

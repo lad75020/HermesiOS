@@ -110,6 +110,9 @@ extension AngularGradient {
 // MARK: - Liquid Glass helpers
 
 extension View {
+    /// Apply a Liquid Glass surface. On iOS 26 this maps to the system
+    /// `glassEffect(_:in:)` modifier; on older OSes it falls back to a
+    /// translucent material so the app still renders without crashing.
     @ViewBuilder
     func hermesLiquidGlass(cornerRadius: CGFloat = 18, tint: Color? = nil, interactive: Bool = false) -> some View {
         if #available(iOS 26.0, *) {
@@ -131,10 +134,39 @@ extension View {
             let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             self
                 .background(.ultraThinMaterial, in: shape)
-                .overlay {
-                    shape
-                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
-                }
+        }
+    }
+
+    /// Tag a glass surface with a stable identity so transitions inside a
+    /// `HermesGlassEffectContainer` can morph between it and its siblings.
+    @ViewBuilder
+    func hermesGlassEffectID<ID: Hashable & Sendable>(_ id: ID, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffectID(id, in: namespace)
+        } else {
+            self
+        }
+    }
+
+    /// Primary call-to-action that uses Apple's `.glassProminent` button style
+    /// on iOS 26 and falls back to `.borderedProminent` elsewhere.
+    @ViewBuilder
+    func hermesGlassProminentButton() -> some View {
+        if #available(iOS 26.0, *) {
+            self.buttonStyle(.glassProminent)
+        } else {
+            self.buttonStyle(.borderedProminent)
+        }
+    }
+
+    /// Secondary affordance that uses `.glass` on iOS 26 and `.bordered`
+    /// elsewhere.
+    @ViewBuilder
+    func hermesGlassButton() -> some View {
+        if #available(iOS 26.0, *) {
+            self.buttonStyle(.glass)
+        } else {
+            self.buttonStyle(.bordered)
         }
     }
 }
@@ -147,6 +179,23 @@ struct HermesLiquidGlassBackground: View {
     var body: some View {
         Color.white.opacity(0.001)
             .hermesLiquidGlass(cornerRadius: cornerRadius, tint: tint, interactive: interactive)
+    }
+}
+
+/// Wraps a stack of glass surfaces so they blend and morph into each other.
+/// On iOS 26 this is `GlassEffectContainer`; on earlier OSes it is a passthrough.
+struct HermesGlassEffectContainer<Content: View>: View {
+    var spacing: CGFloat = 24
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content
+            }
+        } else {
+            content
+        }
     }
 }
 
@@ -330,7 +379,7 @@ struct IGSectionHeader: View {
     }
 }
 
-// MARK: - Card surface (subtle, IG-flat)
+// MARK: - Card surface (Liquid Glass)
 
 struct IGCard<Content: View>: View {
     @ViewBuilder var content: Content
@@ -341,9 +390,7 @@ struct IGCard<Content: View>: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.hermesElevated)
-        .overlay(alignment: .top) { IGHairline() }
-        .overlay(alignment: .bottom) { IGHairline() }
+        .hermesLiquidGlass(cornerRadius: 18, tint: .white.opacity(0.04))
     }
 }
 
@@ -410,7 +457,7 @@ struct IGChatBubble: View {
     }
 }
 
-// MARK: - Brand hero (uses Instagram gradient)
+// MARK: - Brand hero (Liquid Glass tinted by the Instagram gradient)
 
 struct IGBrandHero: View {
     let title: String
@@ -419,14 +466,19 @@ struct IGBrandHero: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
+            // Soft gradient wash sits *behind* the glass so the material
+            // refracts the brand color rather than overpainting it.
             LinearGradient.instagramBrand
+                .opacity(0.55)
+                .blendMode(.plusLighter)
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 12) {
                     Image(systemName: systemImage)
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 38, height: 38)
-                        .hermesLiquidGlass(cornerRadius: 12, tint: .white.opacity(0.16), interactive: true)
+                        .hermesLiquidGlass(cornerRadius: 12, tint: .white.opacity(0.18), interactive: true)
                     Text(title)
                         .font(.igUsernameLarge)
                         .foregroundStyle(.white)
@@ -438,7 +490,7 @@ struct IGBrandHero: View {
             .padding(20)
         }
         .frame(maxWidth: .infinity, minHeight: 150, alignment: .bottomLeading)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .hermesLiquidGlass(cornerRadius: 22, tint: .igGradPurple.opacity(0.12), interactive: true)
         .padding(.horizontal, 16)
         .padding(.top, 12)
     }
@@ -468,21 +520,22 @@ struct IGIconButton: View {
 
 enum HermesAppearance {
     static func configureGlobalAppearance() {
-        // Tab bar — liquid-glass inspired translucency with a soft separator.
+        // Tab bar — let the system Liquid Glass material show through.
         let tab = UITabBarAppearance()
         tab.configureWithTransparentBackground()
         tab.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
-        tab.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.34)
-        tab.shadowColor = UIColor.separator.withAlphaComponent(0.28)
+        tab.backgroundColor = .clear
+        tab.shadowColor = UIColor.separator.withAlphaComponent(0.22)
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
 
-        // Nav bar — translucent, modern, and visually aligned with the tab bar.
+        // Nav bar — transparent so content can stretch under it and the
+        // system glass effect can pick up surrounding color.
         let nav = UINavigationBarAppearance()
         nav.configureWithTransparentBackground()
         nav.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
-        nav.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.28)
-        nav.shadowColor = UIColor.separator.withAlphaComponent(0.22)
+        nav.backgroundColor = .clear
+        nav.shadowColor = UIColor.separator.withAlphaComponent(0.16)
         nav.titleTextAttributes = [
             .font: UIFont.systemFont(ofSize: 16, weight: .semibold)
         ]

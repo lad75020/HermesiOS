@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var companionEnrollment = HermesCompanionEnrollmentSession()
     @State private var companionRuntime = HermesCompanionRuntimeSession()
     @State private var statusMonitor = HermesStatusMonitor()
+    @State private var isShowingSplash = true
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -39,11 +40,19 @@ struct ContentView: View {
     }
 
     var body: some View {
-        Group {
-            if horizontalSizeClass == .compact {
-                iPhoneLayout
-            } else {
-                iPadLayout
+        ZStack {
+            Group {
+                if horizontalSizeClass == .compact {
+                    iPhoneLayout
+                } else {
+                    iPadLayout
+                }
+            }
+
+            if isShowingSplash {
+                HermesSplashView()
+                    .transition(.opacity)
+                    .zIndex(1)
             }
         }
         .background(Color.hermesCanvas)
@@ -60,6 +69,13 @@ struct ContentView: View {
         }
         .onChange(of: chatDraft) { _, newValue in
             HermesSettingsPersistence.saveChatDraft(newValue)
+        }
+        .task {
+            guard isShowingSplash else { return }
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeOut(duration: 0.25)) {
+                isShowingSplash = false
+            }
         }
         .task(id: statusRefreshKey) {
             await statusMonitor.runStatusLoop(

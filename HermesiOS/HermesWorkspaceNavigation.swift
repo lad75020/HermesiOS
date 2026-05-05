@@ -83,8 +83,15 @@ struct WorkspaceSidebar: View {
                             .font(.caption)
                             .foregroundStyle(.hermesSecondaryText)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 4)
                 }
+                .listRowBackground(
+                    selection == section
+                        ? AnyView(HermesLiquidGlassBackground(cornerRadius: 14, tint: .igActionBlue.opacity(0.18), interactive: true))
+                        : AnyView(Color.clear)
+                )
+                .listRowSeparatorTint(.hermesDivider.opacity(0.4))
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)

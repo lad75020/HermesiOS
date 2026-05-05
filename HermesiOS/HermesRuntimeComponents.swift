@@ -13,17 +13,21 @@ struct HermesRuntimeAccordionPanel<Content: View>: View {
     let systemImage: String
     @Binding var isExpanded: Bool
     @ViewBuilder let content: Content
+    @Namespace private var glassNamespace
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                isExpanded.toggle()
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                    isExpanded.toggle()
+                }
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: systemImage)
                         .font(.title3)
                         .foregroundStyle(.igActionBlue)
-                        .frame(width: 28)
+                        .frame(width: 32, height: 32)
+                        .hermesLiquidGlass(cornerRadius: 10, tint: .igActionBlue.opacity(0.16), interactive: true)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title)
                             .font(.headline)
@@ -33,30 +37,31 @@ struct HermesRuntimeAccordionPanel<Content: View>: View {
                             .foregroundStyle(.hermesSecondaryText)
                     }
                     Spacer()
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.hermesSecondaryText)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.hermesElevated)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 16) {
-                        content
-                    }
-                    .padding(20)
+                VStack(alignment: .leading, spacing: 16) {
+                    content
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .hermesGlassEffectID("accordion.body.\(title)", in: glassNamespace)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(Color.hermesElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .hermesLiquidGlass(cornerRadius: 24, tint: isExpanded ? .igActionBlue.opacity(0.10) : .white.opacity(0.04), interactive: true)
+        .hermesGlassEffectID("accordion.shell.\(title)", in: glassNamespace)
+        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: isExpanded)
     }
 }
 
@@ -91,8 +96,7 @@ struct HermesSkillToggleRow: View {
                             .foregroundStyle(.hermesSecondaryText)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color.igActionBlue.opacity(0.08))
-                            .clipShape(Capsule())
+                            .hermesLiquidGlass(cornerRadius: 999, tint: .igActionBlue.opacity(0.16))
                     }
 
                     Text(skill.path)
@@ -107,8 +111,7 @@ struct HermesSkillToggleRow: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.hermesSurfaceInput)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .hermesLiquidGlass(cornerRadius: 18, tint: isEnabled ? .igOnlineGreen.opacity(0.06) : .white.opacity(0.03))
     }
 }
 
@@ -148,8 +151,7 @@ struct HermesToolsetToggleRow: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.hermesSurfaceInput)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .hermesLiquidGlass(cornerRadius: 18, tint: isEnabled ? .igOnlineGreen.opacity(0.06) : .white.opacity(0.03))
     }
 }
 enum HermesRuntimePanelKind: String, Identifiable {
@@ -180,20 +182,12 @@ struct HermesAgentConfiguration {
 extension View {
     func hermesRuntimeInput(
         background: Color = Color.igActionBlue.opacity(0.08),
-        border: Color = Color.igActionBlue.opacity(0.28)
+        border _: Color = Color.igActionBlue.opacity(0.28)
     ) -> some View {
         self
             .textFieldStyle(.plain)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(background)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(border, lineWidth: 1)
-            )
-            .shadow(color: border.opacity(0.18), radius: 8, y: 3)
+            .hermesLiquidGlass(cornerRadius: 14, tint: background)
     }
 }

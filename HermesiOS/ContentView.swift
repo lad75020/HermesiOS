@@ -2,7 +2,7 @@
 //  ContentView.swift
 //  HermesiOS
 //
-//  Created by Laurent Dubertrand on 04/05/2026.
+//  Instagram-inspired UI. Visual layer follows DESIGN.md.
 //
 
 import Observation
@@ -34,7 +34,7 @@ struct ContentView: View {
                 iPadLayout
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.hermesCanvas.ignoresSafeArea())
         .onChange(of: apiSettings) { _, newValue in
             HermesSettingsPersistence.saveAPISettings(newValue)
         }
@@ -55,6 +55,7 @@ struct ContentView: View {
             workspaceDetail(for: selectedWorkspace ?? .responses)
         }
         .navigationSplitViewStyle(.balanced)
+        .tint(.igActionBlue)
     }
 
     private var iPhoneLayout: some View {
@@ -67,9 +68,7 @@ struct ContentView: View {
                     historyStore: historyStore
                 )
             }
-            .tabItem {
-                Label("Responses", systemImage: "dot.radiowaves.left.and.right")
-            }
+            .tabItem { Image(systemName: "bolt.horizontal.circle") }
 
             NavigationStack {
                 HermesChatConsoleView(
@@ -79,16 +78,17 @@ struct ContentView: View {
                     historyStore: historyStore
                 )
             }
-            .tabItem {
-                Label("Chat", systemImage: "text.bubble")
-            }
+            .tabItem { Image(systemName: "paperplane") }
 
             NavigationStack {
                 HermesHistoryView(historyStore: historyStore)
             }
-            .tabItem {
-                Label("History", systemImage: "clock.arrow.circlepath")
+            .tabItem { Image(systemName: "clock.arrow.circlepath") }
+
+            NavigationStack {
+                HermesAgentConfigView(agentConfiguration: $agentConfiguration)
             }
+            .tabItem { Image(systemName: "square.stack.3d.up") }
 
             NavigationStack {
                 HermesSettingsView(
@@ -97,17 +97,9 @@ struct ContentView: View {
                     chatDraft: $chatDraft
                 )
             }
-            .tabItem {
-                Label("Settings", systemImage: "slider.horizontal.3")
-            }
-
-            NavigationStack {
-                HermesAgentConfigView(agentConfiguration: $agentConfiguration)
-            }
-            .tabItem {
-                Label("Runtime", systemImage: "server.rack")
-            }
+            .tabItem { Image(systemName: "person.circle") }
         }
+        .tint(.primary)
     }
 
     @ViewBuilder
@@ -141,57 +133,40 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Workspace section enum
+
 private enum WorkspaceSection: String, CaseIterable, Identifiable {
-    case responses
-    case chat
-    case history
-    case settings
-    case runtime
+    case responses, chat, history, settings, runtime
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .responses:
-            "Responses API"
-        case .chat:
-            "Chat Completions"
-        case .history:
-            "History"
-        case .settings:
-            "Settings"
-        case .runtime:
-            "Agent Runtime"
+        case .responses: "Responses"
+        case .chat:      "Direct Messages"
+        case .history:   "Activity"
+        case .settings:  "Profile"
+        case .runtime:   "Runtime"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .responses:
-            "Use `/v1/responses` with SSE and response chaining."
-        case .chat:
-            "Use `/v1/chat/completions` with an independent transcript."
-        case .history:
-            "Review saved requests and final responses grouped by session."
-        case .settings:
-            "Configure gateway, prompts, models, and streaming behavior."
-        case .runtime:
-            "Model local and SSH-backed agent environments."
+        case .responses: "Streaming `/v1/responses` with SSE and chained replies."
+        case .chat:      "`/v1/chat/completions` with an independent transcript."
+        case .history:   "Saved sessions and final exchanges."
+        case .settings:  "Gateway, prompts, models, streaming."
+        case .runtime:   "Skills, backends, and agent runtime."
         }
     }
 
     var systemImage: String {
         switch self {
-        case .responses:
-            "dot.radiowaves.left.and.right"
-        case .chat:
-            "text.bubble"
-        case .history:
-            "clock.arrow.circlepath"
-        case .settings:
-            "slider.horizontal.3"
-        case .runtime:
-            "server.rack"
+        case .responses: "bolt.horizontal.circle"
+        case .chat:      "paperplane"
+        case .history:   "clock.arrow.circlepath"
+        case .settings:  "person.circle"
+        case .runtime:   "square.stack.3d.up"
         }
     }
 }
@@ -202,12 +177,14 @@ private struct WorkspaceSidebar: View {
     var body: some View {
         List(WorkspaceSection.allCases, selection: $selection) { section in
             NavigationLink(value: section) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label(section.title, systemImage: section.systemImage)
-                        .font(.headline)
-                    Text(section.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    StoryRing(systemImage: section.systemImage, isActive: true, size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(section.title).font(.igUsername)
+                        Text(section.subtitle)
+                            .font(.igTimestamp)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
                 }
                 .padding(.vertical, 4)
             }
@@ -216,6 +193,8 @@ private struct WorkspaceSidebar: View {
     }
 }
 
+// MARK: - Responses console (Instagram "feed"-style scroller)
+
 private struct HermesResponsesConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
     @Binding var requestDraft: HermesRequestDraft
@@ -223,135 +202,205 @@ private struct HermesResponsesConsoleView: View {
     @Bindable var historyStore: HermesHistoryStore
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HermesHeroCard(
-                    title: "Hermes Gateway API",
-                    detail: "This first implementation targets `/v1/responses` and uses SSE so the app can render incremental output and tool events as Hermes works.",
-                    systemImage: "bolt.horizontal.circle.fill"
-                )
+        VStack(spacing: 0) {
+            HermesBrandBar(title: "Hermes", trailing: AnyView(
+                HStack(spacing: 4) {
+                    IGIconButton(systemImage: "heart") {}
+                    IGIconButton(systemImage: "paperplane") {}
+                }
+            ))
 
-                HermesStatusRow(
-                    items: [
-                        .init(title: "Thread", value: responseSession.previousResponseID.isEmpty ? "New response" : "Continuing thread", accent: .purple),
-                        .init(title: "Status", value: responseSession.connectionStatus, accent: .orange)
-                    ]
-                )
+            ScrollView {
+                LazyVStack(spacing: 0, pinnedViews: []) {
+                    storyStrip
 
-                HermesSectionCard("Request Draft") {
-                    VStack(alignment: .leading, spacing: 14) {
-                        if !responseSession.previousResponseID.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Label("Next request resumes a stored Hermes thread.", systemImage: "arrow.triangle.branch")
-                                    .font(.caption.weight(.semibold))
-                                Text(responseSession.previousResponseID)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                    IGBrandHero(
+                        title: "Hermes Gateway",
+                        subtitle: "Stream `/v1/responses` with SSE, chain follow-ups, and inspect every tool event Hermes produces.",
+                        systemImage: "bolt.horizontal.circle.fill"
+                    )
 
-                        TextEditor(text: $requestDraft.userPrompt)
-                            .frame(minHeight: 160)
-                            .overlay(alignment: .topLeading) {
-                                if requestDraft.userPrompt.isEmpty {
-                                    Text("Ask Hermes to inspect files, run tools, or explain context...")
-                                        .foregroundStyle(.secondary)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 8)
-                                        .allowsHitTesting(false)
-                                }
-                            }
+                    statusStrip
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
 
-                        HStack {
-                            Label("Send a prompt and inspect Hermes events", systemImage: "waveform.path.ecg")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            Spacer()
+                    IGSectionHeader(title: "Compose")
+                    composer
 
-                            if !responseSession.previousResponseID.isEmpty && !responseSession.isSending {
-                                Button("New Thread") {
-                                    responseSession.resetConversation()
-                                }
-                                .buttonStyle(.bordered)
-                            }
+                    IGSectionHeader(title: "Assistant", trailing: responseSession.latestResponseID.isEmpty ? nil : "id \(responseSession.latestResponseID.prefix(8))")
+                    assistantOutput
 
-                            if responseSession.isSending {
-                                Button("Cancel") {
-                                    responseSession.cancel()
-                                }
-                                .buttonStyle(.bordered)
-                            }
+                    IGSectionHeader(title: "Event Timeline", trailing: "\(responseSession.eventCount) events")
+                    eventTimeline
+                        .padding(.bottom, 24)
+                }
+            }
+            .background(Color.hermesCanvas)
+        }
+        .navigationBarHidden(true)
+        .background(Color.hermesCanvas)
+    }
 
-                            Button("Send Request") {
-                                responseSession.submit(apiSettings: apiSettings, draft: requestDraft, historyStore: historyStore)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(requestDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
+    private var storyStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                storyTile(symbol: "bolt.horizontal.circle.fill", label: "Thread", subtitle: responseSession.previousResponseID.isEmpty ? "new" : "chained", active: !responseSession.previousResponseID.isEmpty)
+                storyTile(symbol: "waveform.path.ecg", label: "Status", subtitle: responseSession.connectionStatus, active: responseSession.isSending)
+                storyTile(symbol: "timeline.selection", label: "Events", subtitle: "\(responseSession.eventCount)", active: responseSession.eventCount > 0)
+                storyTile(symbol: "link", label: "Resume", subtitle: responseSession.previousResponseID.isEmpty ? "—" : String(responseSession.previousResponseID.prefix(6)), active: !responseSession.previousResponseID.isEmpty)
+                storyTile(symbol: "trash", label: "New", subtitle: "reset", active: false)
+                    .onTapGesture { responseSession.resetConversation() }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+    }
+
+    private func storyTile(symbol: String, label: String, subtitle: String, active: Bool) -> some View {
+        VStack(spacing: 6) {
+            StoryRing(systemImage: symbol, isActive: active, size: 64)
+            Text(label).font(.igUsername)
+            Text(subtitle)
+                .font(.igTimestamp)
+                .foregroundStyle(.hermesSecondaryText)
+                .lineLimit(1)
+        }
+        .frame(width: 78)
+    }
+
+    private var statusStrip: some View {
+        HStack(spacing: 10) {
+            IGStatusPill(
+                label: "Thread",
+                value: responseSession.previousResponseID.isEmpty ? "New" : "Chained",
+                tint: responseSession.previousResponseID.isEmpty ? .igActionBlue : .igGradPurple
+            )
+            IGStatusPill(
+                label: "Status",
+                value: responseSession.connectionStatus.isEmpty ? "Idle" : responseSession.connectionStatus,
+                tint: responseSession.isSending ? .igGradOrange : .igOnlineGreen
+            )
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var composer: some View {
+        IGCard {
+            VStack(alignment: .leading, spacing: 14) {
+                if !responseSession.previousResponseID.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .foregroundStyle(.igGradPurple)
+                        Text(responseSession.previousResponseID)
+                            .font(.igTimestamp.monospaced())
+                            .foregroundStyle(.hermesSecondaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
                 }
 
-                HermesSectionCard("Assistant Output") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if !responseSession.previousResponseID.isEmpty {
-                            Label("Continuing from: \(responseSession.previousResponseID)", systemImage: "link")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                ZStack(alignment: .topLeading) {
+                    if requestDraft.userPrompt.isEmpty {
+                        Text("Ask Hermes to inspect files, run tools, or explain context…")
+                            .font(.igDMBubble)
+                            .foregroundStyle(.hermesSecondaryText)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: $requestDraft.userPrompt)
+                        .font(.igDMBubble)
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .frame(minHeight: 140)
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color.hermesSurfaceInput)
+                )
 
-                        if !responseSession.latestResponseID.isEmpty {
-                            Label("Response ID: \(responseSession.latestResponseID)", systemImage: "number")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    if !responseSession.previousResponseID.isEmpty && !responseSession.isSending {
+                        IGPrimaryButton(title: "New Thread", icon: "plus.circle", variant: .outlined) {
+                            responseSession.resetConversation()
                         }
+                    }
+                    if responseSession.isSending {
+                        IGPrimaryButton(title: "Cancel", icon: "xmark", variant: .destructive) {
+                            responseSession.cancel()
+                        }
+                    }
+                    IGPrimaryButton(
+                        title: responseSession.isSending ? "Sending…" : "Send",
+                        icon: "paperplane.fill",
+                        variant: .primary,
+                        isLoading: responseSession.isSending
+                    ) {
+                        responseSession.submit(apiSettings: apiSettings, draft: requestDraft, historyStore: historyStore)
+                    }
+                }
+                .disabled(requestDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !responseSession.isSending)
+            }
+        }
+    }
 
-                        if !responseSession.lastErrorMessage.isEmpty {
-                            Text(responseSession.lastErrorMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(.red)
-                        }
-
-                        Group {
-                            if responseSession.streamedText.isEmpty {
-                                Text("Send a `/v1/responses` request to populate streamed assistant output here.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text(responseSession.streamedText)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        .font(.body)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+    private var assistantOutput: some View {
+        IGCard {
+            VStack(alignment: .leading, spacing: 12) {
+                if !responseSession.lastErrorMessage.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.igDestructive)
+                        Text(responseSession.lastErrorMessage)
+                            .font(.igCaption)
+                            .foregroundStyle(.igDestructive)
                     }
                 }
 
-                HermesSectionCard("Event Timeline") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("\(responseSession.eventCount) events received", systemImage: "timeline.selection")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if responseSession.entries.isEmpty {
-                            Text("The SSE event stream will appear here, including `response.created`, text deltas, tool events, and completion.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            LazyVStack(spacing: 12) {
-                                ForEach(responseSession.entries) { response in
-                                    HermesResponseCard(response: response)
-                                }
-                            }
+                if responseSession.streamedText.isEmpty {
+                    HStack(spacing: 10) {
+                        StoryRing(systemImage: "bolt.horizontal", isActive: false, size: 36)
+                        Text("Send a `/v1/responses` request to populate streamed output here.")
+                            .font(.igCaption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 10) {
+                        StoryRing(systemImage: "sparkles", isActive: responseSession.isSending, size: 36, tint: .igGradPurple)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("hermes")
+                                .font(.igUsername)
+                            Text(responseSession.streamedText)
+                                .font(.igDMBubble)
+                                .textSelection(.enabled)
                         }
                     }
                 }
             }
-            .padding()
         }
-        .navigationTitle("Responses API")
+    }
+
+    private var eventTimeline: some View {
+        Group {
+            if responseSession.entries.isEmpty {
+                IGCard {
+                    Text("The SSE event stream will appear here — `response.created`, text deltas, tool events, and completion.")
+                        .font(.igCaption)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(responseSession.entries) { response in
+                        HermesResponseCard(response: response)
+                    }
+                }
+            }
+        }
     }
 }
+
+// MARK: - Chat console (DM-style)
 
 private struct HermesChatConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
@@ -360,111 +409,144 @@ private struct HermesChatConsoleView: View {
     @Bindable var historyStore: HermesHistoryStore
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HermesHeroCard(
-                    title: "Hermes Chat Completions",
-                    detail: "This surface uses `/v1/chat/completions` independently from the Responses API, with its own transcript and streaming lifecycle.",
-                    systemImage: "text.bubble.fill"
-                )
-
-                HermesStatusRow(
-                    items: [
-                        .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .purple),
-                        .init(title: "Status", value: chatSession.connectionStatus, accent: .orange)
-                    ]
-                )
-
-                HermesSectionCard("Message Draft") {
-                    VStack(alignment: .leading, spacing: 14) {
-                        TextEditor(text: $chatDraft.userPrompt)
-                            .frame(minHeight: 160)
-                            .overlay(alignment: .topLeading) {
-                                if chatDraft.userPrompt.isEmpty {
-                                    Text("Send a message to Hermes using the chat completions format...")
-                                        .foregroundStyle(.secondary)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 8)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-
-                        HStack {
-                            Label("Chat transcript stays separate from `/v1/responses`", systemImage: "rectangle.split.3x1")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-
-                            if !chatSession.entries.isEmpty && !chatSession.isSending {
-                                Button("New Chat") {
-                                    chatSession.resetConversation()
-                                }
-                                .buttonStyle(.bordered)
-                            }
-
-                            if chatSession.isSending {
-                                Button("Cancel") {
-                                    chatSession.cancel()
-                                }
-                                .buttonStyle(.bordered)
-                            }
-
-                            Button("Send Message") {
-                                chatSession.submit(apiSettings: apiSettings, draft: chatDraft, historyStore: historyStore)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        VStack(spacing: 0) {
+            HermesBrandBar(title: "Direct", trailing: AnyView(
+                HStack(spacing: 4) {
+                    if !chatSession.entries.isEmpty {
+                        IGIconButton(systemImage: "square.and.pencil") {
+                            chatSession.resetConversation()
                         }
                     }
                 }
+            ))
 
-                HermesSectionCard("Assistant Output") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if !chatSession.lastErrorMessage.isEmpty {
-                            Text(chatSession.lastErrorMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(.red)
-                        }
-
-                        Group {
-                            if chatSession.streamedText.isEmpty {
-                                Text("Send a `/v1/chat/completions` message to populate assistant output here.")
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text(chatSession.streamedText)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        .font(.body)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+            // Header pinned partner
+            HStack(spacing: 12) {
+                StoryRing(systemImage: "sparkles", isActive: chatSession.isSending, size: 44, tint: .igGradPurple)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("hermes")
+                        .font(.igUsername)
+                    Text(chatSession.connectionStatus.isEmpty ? "chat.completions" : chatSession.connectionStatus)
+                        .font(.igTimestamp)
+                        .foregroundStyle(.hermesSecondaryText)
                 }
+                Spacer()
+                Text("\(chatSession.entries.count) msgs")
+                    .font(.igTimestamp)
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .overlay(alignment: .bottom) { IGHairline() }
 
-                HermesSectionCard("Transcript") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("\(chatSession.eventCount) stream events received", systemImage: "timeline.selection")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
                         if chatSession.entries.isEmpty {
-                            Text("User and assistant messages from the chat completions session will accumulate here.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                            VStack(spacing: 10) {
+                                StoryRing(systemImage: "sparkles", isActive: false, size: 80, tint: .igGradPurple)
+                                Text("hermes").font(.igUsername)
+                                Text("Start a chat — transcripts stay separate from `/v1/responses`.")
+                                    .font(.igCaption)
+                                    .foregroundStyle(.hermesSecondaryText)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 60)
                         } else {
-                            LazyVStack(spacing: 12) {
-                                ForEach(chatSession.entries) { message in
-                                    HermesChatMessageCard(message: message)
-                                }
+                            ForEach(chatSession.entries) { message in
+                                IGChatBubble(
+                                    text: message.content,
+                                    isFromUser: message.role == "user"
+                                )
+                                .id(message.id)
                             }
                         }
+
+                        if !chatSession.streamedText.isEmpty {
+                            IGChatBubble(text: chatSession.streamedText, isFromUser: false, timestamp: "streaming")
+                        }
+
+                        if !chatSession.lastErrorMessage.isEmpty {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                Text(chatSession.lastErrorMessage)
+                                    .font(.igCaption)
+                            }
+                            .foregroundStyle(.igDestructive)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                }
+                .onChange(of: chatSession.entries.count) { _, _ in
+                    if let last = chatSession.entries.last {
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
             }
-            .padding()
+
+            // Composer
+            chatComposer
         }
-        .navigationTitle("Chat Completions")
+        .navigationBarHidden(true)
+        .background(Color.hermesCanvas)
+    }
+
+    private var chatComposer: some View {
+        VStack(spacing: 0) {
+            IGHairline()
+            HStack(alignment: .bottom, spacing: 10) {
+                Image(systemName: "camera")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.igActionBlue)
+                    .padding(8)
+                    .background(Circle().fill(Color.igActionBlue.opacity(0.12)))
+
+                ZStack(alignment: .topLeading) {
+                    if chatDraft.userPrompt.isEmpty {
+                        Text("Message…")
+                            .font(.igDMBubble)
+                            .foregroundStyle(.hermesSecondaryText)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: $chatDraft.userPrompt)
+                        .font(.igDMBubble)
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .frame(minHeight: 36, maxHeight: 120)
+                }
+                .background(
+                    Capsule().stroke(Color.hermesDivider, lineWidth: 1)
+                )
+
+                Button {
+                    if chatSession.isSending {
+                        chatSession.cancel()
+                    } else {
+                        chatSession.submit(apiSettings: apiSettings, draft: chatDraft, historyStore: historyStore)
+                    }
+                } label: {
+                    Text(chatSession.isSending ? "Stop" : "Send")
+                        .font(.igButtonPrimary)
+                        .foregroundStyle(.igActionBlue)
+                }
+                .disabled(!chatSession.isSending && chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(!chatSession.isSending && chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+        }
+        .background(Color.hermesCanvas)
     }
 }
+
+// MARK: - Settings ("Profile" pane)
 
 private struct HermesSettingsView: View {
     @Binding var apiSettings: HermesAPISettings
@@ -472,155 +554,248 @@ private struct HermesSettingsView: View {
     @Binding var chatDraft: HermesChatDraft
 
     var body: some View {
-        Form {
-            Section("Gateway") {
-                TextField("Base URL", text: $apiSettings.baseURL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+        ScrollView {
+            VStack(spacing: 0) {
+                profileHeader
 
-                SecureField("Bearer token", text: $apiSettings.apiKey)
+                IGSectionHeader(title: "Gateway")
+                IGCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        labeledField("Base URL") {
+                            TextField("https://hermes.example/v1", text: $apiSettings.baseURL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .igFieldBackground()
+                        }
+                        labeledField("Bearer token") {
+                            SecureField("sk-…", text: $apiSettings.apiKey)
+                                .igFieldBackground()
+                        }
+                        Toggle("Allow self-signed HTTPS certificates", isOn: $apiSettings.allowSelfSignedCertificates)
+                            .font(.igCaption)
+                            .tint(.igActionBlue)
+                        IGHairline()
+                        readonlyRow("Responses URL", value: HermesAPISettings.responseURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
+                        readonlyRow("Chat URL", value: HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
+                    }
+                }
 
-                Toggle("Allow self-signed HTTPS certificates", isOn: $apiSettings.allowSelfSignedCertificates)
+                IGSectionHeader(title: "/v1/responses")
+                IGCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        labeledField("Model") {
+                            TextField("gpt-…", text: $responsesDraft.model)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .igFieldBackground()
+                        }
+                        Toggle("Streaming enabled", isOn: $responsesDraft.stream)
+                            .font(.igCaption)
+                            .tint(.igActionBlue)
+                        labeledField("Instructions") {
+                            TextField("System instructions…", text: $responsesDraft.instructions, axis: .vertical)
+                                .lineLimit(4, reservesSpace: true)
+                                .igFieldBackground()
+                        }
+                    }
+                }
 
-                settingsRow(label: "Responses URL", value: HermesAPISettings.responseURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
-                settingsRow(label: "Chat URL", value: HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
+                IGSectionHeader(title: "/v1/chat/completions")
+                IGCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        labeledField("Model") {
+                            TextField("gpt-…", text: $chatDraft.model)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .igFieldBackground()
+                        }
+                        Toggle("Streaming enabled", isOn: $chatDraft.stream)
+                            .font(.igCaption)
+                            .tint(.igActionBlue)
+                        labeledField("System prompt") {
+                            TextField("You are Hermes…", text: $chatDraft.systemPrompt, axis: .vertical)
+                                .lineLimit(4, reservesSpace: true)
+                                .igFieldBackground()
+                        }
+                    }
+                }
+
+                IGSectionHeader(title: "Notes")
+                IGCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Responses and Chat screens are limited to message exchange and output.")
+                        Text("Use this screen for endpoint, auth, model, streaming, and prompt configuration.")
+                        Text("Keep self-signed certificates off unless you trust the Hermes API server.")
+                    }
+                    .font(.igCaption)
+                    .foregroundStyle(.hermesSecondaryText)
+                }
+                .padding(.bottom, 24)
             }
-
-            Section("/v1/responses") {
-                TextField("Model", text: $responsesDraft.model)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                Toggle("Streaming enabled", isOn: $responsesDraft.stream)
-
-                TextField("Instructions", text: $responsesDraft.instructions, axis: .vertical)
-                    .lineLimit(4, reservesSpace: true)
-            }
-
-            Section("/v1/chat/completions") {
-                TextField("Model", text: $chatDraft.model)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                Toggle("Streaming enabled", isOn: $chatDraft.stream)
-
-                TextField("System prompt", text: $chatDraft.systemPrompt, axis: .vertical)
-                    .lineLimit(4, reservesSpace: true)
-            }
-
-            Section("Notes") {
-                Text("Responses and Chat screens are now limited to message exchange and output.")
-                Text("Use this screen for endpoint, auth, model, streaming, and prompt configuration.")
-                Text("Keep self-signed certificate support off unless you trust the Hermes API server.")
-            }
-            .foregroundStyle(.secondary)
         }
-        .navigationTitle("Settings")
+        .background(Color.hermesCanvas)
+        .navigationTitle("Profile")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func settingsRow(label: String, value: String) -> some View {
+    private var profileHeader: some View {
+        HStack(spacing: 16) {
+            StoryRing(systemImage: "person.fill", isActive: true, size: 86, tint: .igGradPurple)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("hermes_gateway").font(.igUsernameLarge)
+                Text(apiSettings.baseURL.isEmpty ? "Not configured" : apiSettings.baseURL)
+                    .font(.igTimestamp)
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(apiSettings.apiKey.isEmpty ? "No bearer token" : "•••• •••• token saved")
+                    .font(.igTimestamp)
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+            Spacer()
+        }
+        .padding(16)
+    }
+
+    private func labeledField<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label.uppercased())
+                .font(.igBadge)
+                .tracking(0.6)
+                .foregroundStyle(.hermesSecondaryText)
+            content()
+        }
+    }
+
+    private func readonlyRow(_ label: String, value: String) -> some View {
         HStack(alignment: .top) {
-            Text(label)
-                .fontWeight(.semibold)
+            Text(label).font(.igUsername)
             Spacer()
             Text(value)
+                .font(.igTimestamp.monospaced())
                 .multilineTextAlignment(.trailing)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
         }
-        .font(.subheadline)
     }
 }
+
+// MARK: - History ("Activity")
 
 private struct HermesHistoryView: View {
     @Bindable var historyStore: HermesHistoryStore
 
     var body: some View {
-        List {
-            if historyStore.sessions.isEmpty {
-                ContentUnavailableView(
-                    "No History Yet",
-                    systemImage: "clock.arrow.circlepath",
-                    description: Text("Completed Responses and Chat exchanges will be stored here by session ID.")
-                )
-            } else {
-                ForEach(historyStore.sessions) { session in
-                    Section {
+        ScrollView {
+            VStack(spacing: 0) {
+                if historyStore.sessions.isEmpty {
+                    VStack(spacing: 10) {
+                        StoryRing(systemImage: "clock.arrow.circlepath", isActive: false, size: 86)
+                        Text("No Activity Yet").font(.igUsernameLarge)
+                        Text("Completed Responses and Chat exchanges will appear here.")
+                            .font(.igCaption)
+                            .foregroundStyle(.hermesSecondaryText)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 80)
+                } else {
+                    ForEach(historyStore.sessions) { session in
+                        sessionHeader(session)
                         ForEach(session.exchanges) { exchange in
-                            HermesHistoryExchangeCard(exchange: exchange)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        historyStore.deleteExchange(
-                                            sessionID: session.id,
-                                            kind: session.kind,
-                                            exchangeID: exchange.id
-                                        )
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                        }
-                    } header: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Label(session.kind.title, systemImage: session.kind == .responses ? "dot.radiowaves.left.and.right" : "text.bubble")
-                                Spacer()
+                            HermesHistoryExchangeCard(
+                                exchange: exchange,
+                                role: session.kind
+                            )
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
-                                    historyStore.deleteSession(session.id, kind: session.kind)
+                                    historyStore.deleteExchange(
+                                        sessionID: session.id,
+                                        kind: session.kind,
+                                        exchangeID: exchange.id
+                                    )
                                 } label: {
-                                    Image(systemName: "trash")
+                                    Label("Delete", systemImage: "trash")
                                 }
-                                .buttonStyle(.plain)
                             }
-                            Text("Session ID: \(session.id)")
-                                .font(.caption.monospaced())
-                                .textSelection(.enabled)
-                            Text(session.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
             }
         }
-        .navigationTitle("History")
+        .background(Color.hermesCanvas)
+        .navigationTitle("Activity")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func sessionHeader(_ session: HermesHistorySessionRecord) -> some View {
+        HStack(spacing: 12) {
+            StoryRing(
+                systemImage: session.kind == .responses ? "bolt.horizontal.circle.fill" : "paperplane.fill",
+                isActive: true,
+                size: 44,
+                tint: session.kind == .responses ? .igGradPurple : .igActionBlue
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.kind.title).font(.igUsername)
+                Text(session.id).font(.igTimestamp.monospaced())
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Text(session.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.igTimestamp)
+                .foregroundStyle(.hermesSecondaryText)
+            Button {
+                historyStore.deleteSession(session.id, kind: session.kind)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.igDestructive)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .overlay(alignment: .top) { IGHairline() }
     }
 }
+
+// MARK: - Agent runtime
 
 private struct HermesAgentConfigView: View {
     @Binding var agentConfiguration: HermesAgentConfiguration
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HermesHeroCard(
+            VStack(spacing: 0) {
+                IGBrandHero(
                     title: "Agent Runtime",
-                    detail: "This area is structured as an accordion so one operational panel can stay expanded while the others collapse into quick section headers.",
-                    systemImage: "server.rack"
+                    subtitle: "Skills, backends, and guardrails. Expand one panel at a time — the others collapse to keep things tidy.",
+                    systemImage: "square.stack.3d.up.fill"
                 )
 
+                IGSectionHeader(title: "Skills", trailing: "\(agentConfiguration.installedSkills.count) installed")
                 HermesRuntimeAccordionPanel(
                     title: "Skills",
-                    subtitle: "\(agentConfiguration.installedSkills.count) installed, \(agentConfiguration.filteredCatalogSkills.count) visible in catalog",
+                    subtitle: "\(agentConfiguration.installedSkills.count) installed • \(agentConfiguration.filteredCatalogSkills.count) in catalog",
                     systemImage: "square.stack.3d.up.fill",
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .skills },
-                        set: { isExpanded in
-                            agentConfiguration.activeRuntimePanel = isExpanded ? .skills : nil
-                        }
+                        set: { agentConfiguration.activeRuntimePanel = $0 ? .skills : nil }
                     )
                 ) {
                     HermesSkillsPanel(agentConfiguration: $agentConfiguration)
                 }
 
+                IGSectionHeader(title: "Backend")
                 HermesRuntimeAccordionPanel(
                     title: "Backend",
                     subtitle: agentConfiguration.backend.displayName,
                     systemImage: agentConfiguration.backend.systemImage,
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .backend },
-                        set: { isExpanded in
-                            agentConfiguration.activeRuntimePanel = isExpanded ? .backend : nil
-                        }
+                        set: { agentConfiguration.activeRuntimePanel = $0 ? .backend : nil }
                     )
                 ) {
                     VStack(alignment: .leading, spacing: 14) {
@@ -629,38 +804,44 @@ private struct HermesAgentConfigView: View {
                                 Text(backend.displayName).tag(backend)
                             }
                         }
+                        .pickerStyle(.segmented)
 
                         Toggle("Persistent shell", isOn: $agentConfiguration.persistentShell)
+                            .font(.igCaption)
+                            .tint(.igActionBlue)
 
                         TextField("Working directory", text: $agentConfiguration.workingDirectory)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .igFieldBackground()
                     }
                 }
 
                 HermesRuntimeAccordionPanel(
                     title: "SSH",
-                    subtitle: agentConfiguration.backend == .ssh ? "Remote host configuration" : "Hidden while local backend is active",
+                    subtitle: agentConfiguration.backend == .ssh ? "Remote host" : "Hidden while local backend is active",
                     systemImage: "network.badge.shield.half.filled",
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .ssh },
-                        set: { isExpanded in
-                            agentConfiguration.activeRuntimePanel = isExpanded ? .ssh : nil
-                        }
+                        set: { agentConfiguration.activeRuntimePanel = $0 ? .ssh : nil }
                     )
                 ) {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 12) {
                         TextField("Host", text: $agentConfiguration.sshHost)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .igFieldBackground()
                         TextField("User", text: $agentConfiguration.sshUser)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .igFieldBackground()
                         TextField("Port", text: $agentConfiguration.sshPort)
                             .keyboardType(.numberPad)
+                            .igFieldBackground()
                         TextField("Private key path", text: $agentConfiguration.sshKeyPath)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .igFieldBackground()
                     }
                     .opacity(agentConfiguration.backend == .ssh ? 1 : 0.45)
                 }
@@ -672,21 +853,21 @@ private struct HermesAgentConfigView: View {
                         systemImage: panel.systemImage,
                         isExpanded: Binding(
                             get: { agentConfiguration.activeRuntimePanel == panel.kind },
-                            set: { isExpanded in
-                                agentConfiguration.activeRuntimePanel = isExpanded ? panel.kind : nil
-                            }
+                            set: { agentConfiguration.activeRuntimePanel = $0 ? panel.kind : nil }
                         )
                     ) {
                         Text(panel.placeholder)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.igCaption)
+                            .foregroundStyle(.hermesSecondaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
-            .padding()
+            .padding(.bottom, 24)
         }
-        .navigationTitle("Agent Runtime")
+        .background(Color.hermesCanvas)
+        .navigationTitle("Runtime")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -694,7 +875,7 @@ private struct HermesSkillsPanel: View {
     @Binding var agentConfiguration: HermesAgentConfiguration
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             Picker("Source", selection: $agentConfiguration.skillsLibraryMode) {
                 ForEach(HermesSkillsLibraryMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
@@ -703,20 +884,34 @@ private struct HermesSkillsPanel: View {
             .pickerStyle(.segmented)
 
             if agentConfiguration.skillsLibraryMode == .browse {
-                TextField("Search skills", text: $agentConfiguration.skillSearchQuery)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.hermesSecondaryText)
+                    TextField("Search skills", text: $agentConfiguration.skillSearchQuery)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                .igFieldBackground()
             }
 
             let visibleSkills = agentConfiguration.visibleSkills
             if visibleSkills.isEmpty {
-                ContentUnavailableView(
-                    "No Skills Found",
-                    systemImage: "magnifyingglass",
-                    description: Text(agentConfiguration.skillsLibraryMode == .installed ? "Install a bundled skill to populate this panel." : "Adjust the search query to find another skill.")
-                )
+                VStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.hermesSecondaryText)
+                    Text("No Skills Found").font(.igUsername)
+                    Text(agentConfiguration.skillsLibraryMode == .installed
+                         ? "Install a bundled skill to populate this panel."
+                         : "Adjust the search query to find another skill.")
+                        .font(.igTimestamp)
+                        .foregroundStyle(.hermesSecondaryText)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
             } else {
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     ForEach(visibleSkills) { skill in
                         Button {
                             agentConfiguration.selectedSkillID = skill.id
@@ -729,65 +924,72 @@ private struct HermesSkillsPanel: View {
             }
 
             if let selectedSkill = agentConfiguration.selectedSkill {
-                HermesSectionCard("Skill Details") {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(selectedSkill.name)
-                                    .font(.headline)
-                                Text(selectedSkill.category)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text(selectedSkill.isInstalled ? "Installed" : selectedSkill.source.capitalized)
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background((selectedSkill.isInstalled ? Color.green : Color.orange).opacity(0.12))
-                                .clipShape(Capsule())
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(selectedSkill.name).font(.igUsername)
+                            Text(selectedSkill.category)
+                                .font(.igBadge)
+                                .tracking(0.6)
+                                .foregroundStyle(.hermesSecondaryText)
                         }
+                        Spacer()
+                        statusBadge(installed: selectedSkill.isInstalled, source: selectedSkill.source)
+                    }
 
-                        Text(selectedSkill.description)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    Text(selectedSkill.description)
+                        .font(.igCaption)
+                        .foregroundStyle(.hermesSecondaryText)
 
-                        if let path = selectedSkill.path {
-                            Text(path)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
+                    if let path = selectedSkill.path {
+                        Text(path)
+                            .font(.igTimestamp.monospaced())
+                            .foregroundStyle(.hermesSecondaryText)
+                            .textSelection(.enabled)
+                    }
+
+                    ScrollView {
+                        Text(selectedSkill.detail)
+                            .font(.igTimestamp.monospaced())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(minHeight: 160, maxHeight: 240)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.hermesSurfaceInput)
+                    )
+
+                    if selectedSkill.isInstalled {
+                        IGPrimaryButton(title: "Uninstall Skill", icon: "trash", variant: .destructive) {
+                            agentConfiguration.uninstallSkill(selectedSkill.id)
                         }
-
-                        ScrollView {
-                            Text(selectedSkill.detail)
-                                .font(.caption.monospaced())
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }
-                        .frame(minHeight: 180, maxHeight: 240)
-                        .padding(12)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-                        HStack {
-                            Spacer()
-                            if selectedSkill.isInstalled {
-                                Button("Uninstall Skill") {
-                                    agentConfiguration.uninstallSkill(selectedSkill.id)
-                                }
-                                .buttonStyle(.bordered)
-                            } else {
-                                Button("Install Skill") {
-                                    agentConfiguration.installSelectedSkill()
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
+                    } else {
+                        IGPrimaryButton(title: "Install Skill", icon: "arrow.down.circle.fill", variant: .primary) {
+                            agentConfiguration.installSelectedSkill()
                         }
                     }
                 }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.hermesSurfaceInput.opacity(0.6))
+                )
             }
         }
+    }
+
+    private func statusBadge(installed: Bool, source: String) -> some View {
+        Text(installed ? "Installed" : source.capitalized)
+            .font(.igBadge)
+            .tracking(0.6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule().fill((installed ? Color.igOnlineGreen : Color.igGradOrange).opacity(0.16))
+            )
+            .foregroundStyle(installed ? Color.igCloseFriends : Color.igGradOrange)
     }
 }
 
@@ -801,46 +1003,43 @@ private struct HermesRuntimeAccordionPanel<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                isExpanded.toggle()
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                    isExpanded.toggle()
+                }
             } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: systemImage)
-                        .font(.title3)
-                        .foregroundStyle(.blue)
-                        .frame(width: 28)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
+                HStack(spacing: 12) {
+                    StoryRing(systemImage: systemImage, isActive: isExpanded, size: 44, tint: .igGradPurple)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.igUsername)
                         Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.igTimestamp)
+                            .foregroundStyle(.hermesSecondaryText)
+                            .lineLimit(1)
                     }
                     Spacer()
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.hermesSecondaryText)
                 }
-                .padding(20)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background)
+                .background(Color.hermesCanvas)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IGPressableStyle())
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 16) {
-                        content
-                    }
-                    .padding(20)
+                VStack(alignment: .leading, spacing: 14) {
+                    content
                 }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.hermesElevated)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(alignment: .top) { IGHairline() }
+        .overlay(alignment: .bottom) { IGHairline() }
     }
 }
 
@@ -849,239 +1048,129 @@ private struct HermesSkillRow: View {
     let isSelected: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(skill.name)
-                    .font(.headline)
-                Spacer()
-                Text(skill.isInstalled ? "Installed" : skill.source.capitalized)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background((skill.isInstalled ? Color.green : Color.orange).opacity(0.12))
-                    .clipShape(Capsule())
-            }
-
-            Text(skill.description)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(skill.category)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? Color.blue.opacity(0.08) : Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-}
-
-private struct HermesHeroCard: View {
-    let title: String
-    let detail: String
-    let systemImage: String
-
-    var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            LinearGradient(
-                colors: [Color.blue.opacity(0.9), Color.cyan.opacity(0.65)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+        HStack(spacing: 12) {
+            StoryRing(
+                systemImage: skill.isInstalled ? "checkmark.circle.fill" : "square.stack.3d.up",
+                isActive: skill.isInstalled,
+                size: 44,
+                tint: skill.isInstalled ? .igCloseFriends : .igActionBlue
             )
-
-            VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.largeTitle)
-                Text(title)
-                    .font(.title2.bold())
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.9))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(skill.name).font(.igUsername)
+                Text(skill.description)
+                    .font(.igTimestamp)
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(2)
             }
-            .foregroundStyle(.white)
-            .padding(24)
+            Spacer()
+            Text(skill.category)
+                .font(.igBadge)
+                .tracking(0.6)
+                .foregroundStyle(.hermesSecondaryText)
         }
-        .frame(maxWidth: .infinity, minHeight: 180)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .blue.opacity(0.18), radius: 16, y: 10)
-    }
-}
-
-private struct HermesSectionCard<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.headline)
-            content
-        }
-        .padding(20)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isSelected ? Color.igActionBlue.opacity(0.10) : Color.hermesSurfaceInput.opacity(0.4))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(isSelected ? Color.igActionBlue : Color.clear, lineWidth: 1.5)
+        )
     }
 }
 
-private struct HermesStatusRow: View {
-    let items: [HermesStatusItem]
-
-    var body: some View {
-        ViewThatFits {
-            HStack(spacing: 12) {
-                ForEach(items) { item in
-                    HermesStatusPill(item: item)
-                }
-            }
-
-            VStack(spacing: 12) {
-                ForEach(items) { item in
-                    HermesStatusPill(item: item)
-                }
-            }
-        }
-    }
-}
-
-private struct HermesStatusPill: View {
-    let item: HermesStatusItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(item.title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(item.accent)
-            Text(item.value)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(item.accent.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-    }
-}
+// MARK: - Response card (feed-post style)
 
 private struct HermesResponseCard: View {
     let response: HermesResponseEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(response.title)
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                StoryRing(
+                    systemImage: "bolt.horizontal",
+                    isActive: statusColor == .igActionBlue,
+                    size: 36,
+                    tint: statusColor
+                )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(response.title).font(.igUsername)
+                    Text(response.status)
+                        .font(.igTimestamp)
+                        .foregroundStyle(statusColor)
+                }
                 Spacer()
-                Text(response.status)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(statusColor.opacity(0.12))
-                    .clipShape(Capsule())
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            if !response.summary.isEmpty {
+                Text(response.summary)
+                    .font(.igCaption)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
             }
 
-            Text(response.summary)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            ForEach(response.metadata, id: \.self) { line in
-                Label(line, systemImage: "circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if !response.metadata.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(response.metadata, id: \.self) { line in
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle()
+                                .fill(statusColor)
+                                .frame(width: 5, height: 5)
+                                .padding(.top, 6)
+                            Text(line)
+                                .font(.igTimestamp)
+                                .foregroundStyle(.hermesSecondaryText)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
             }
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color.hermesElevated)
+        .overlay(alignment: .bottom) { IGHairline() }
     }
 
     private var statusColor: Color {
         switch response.status.lowercased() {
-        case "failed":
-            .red
-        case "streaming", "update":
-            .blue
-        case "done", "completed":
-            .green
-        default:
-            .orange
+        case "failed": .igDestructive
+        case "streaming", "update": .igActionBlue
+        case "done", "completed": .igCloseFriends
+        default: .igGradOrange
         }
     }
 }
 
-private struct HermesChatMessageCard: View {
-    let message: HermesChatMessage
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(message.role.capitalized)
-                    .font(.headline)
-                Spacer()
-                Text(message.role == "user" ? "Prompt" : "Reply")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(roleColor.opacity(0.12))
-                    .clipShape(Capsule())
-            }
-
-            Text(message.content)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-    }
-
-    private var roleColor: Color {
-        message.role == "user" ? .blue : .green
-    }
-}
+// MARK: - History exchange card
 
 private struct HermesHistoryExchangeCard: View {
     let exchange: HermesHistoryExchange
+    let role: HermesHistoryKind
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(exchange.completedAt.formatted(date: .abbreviated, time: .shortened))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Request")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(exchange.requestText)
-                    .font(.subheadline)
-                    .textSelection(.enabled)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Final Response")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(exchange.responseText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(exchange.completedAt.formatted(date: .abbreviated, time: .shortened).uppercased())
+                .font(.igTimestamp)
+                .tracking(0.6)
+                .foregroundStyle(.hermesSecondaryText)
+            IGChatBubble(text: exchange.requestText, isFromUser: true)
+            IGChatBubble(text: exchange.responseText, isFromUser: false)
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 }
+
+// MARK: - Helper types (unchanged from original)
 
 private struct HermesStatusItem: Identifiable {
     let id = UUID()
@@ -1091,42 +1180,24 @@ private struct HermesStatusItem: Identifiable {
 }
 
 private enum HermesTerminalBackend: String, CaseIterable, Identifiable {
-    case local
-    case ssh
-
+    case local, ssh
     var id: String { rawValue }
-
     var displayName: String {
         switch self {
-        case .local:
-            "Local"
-        case .ssh:
-            "SSH"
+        case .local: "Local"
+        case .ssh:   "SSH"
         }
     }
-
     var systemImage: String {
         switch self {
-        case .local:
-            "laptopcomputer"
-        case .ssh:
-            "network.badge.shield.half.filled"
+        case .local: "laptopcomputer"
+        case .ssh:   "network.badge.shield.half.filled"
         }
     }
 }
 
 private enum HermesRuntimePanelKind: String, Identifiable {
-    case skills
-    case backend
-    case ssh
-    case profiles
-    case permissions
-    case tools
-    case models
-    case sandbox
-    case memory
-    case observability
-
+    case skills, backend, ssh, profiles, permissions, tools, models, sandbox, memory, observability
     var id: String { rawValue }
 }
 
@@ -1136,32 +1207,26 @@ private struct HermesRuntimePanel: Identifiable {
     let subtitle: String
     let systemImage: String
     let placeholder: String
-
     var id: HermesRuntimePanelKind { kind }
 
     static let placeholderPanels: [HermesRuntimePanel] = [
-        .init(kind: .profiles, title: "Profiles", subtitle: "Switch between runtime profiles and targets", systemImage: "person.crop.rectangle.stack", placeholder: "Profile routing, per-target overrides, and environment inheritance will live here."),
-        .init(kind: .permissions, title: "Permissions", subtitle: "Approval policy and privileged operations", systemImage: "checkmark.shield", placeholder: "Approval policy, escalations, and audit-friendly permission controls can expand here."),
-        .init(kind: .tools, title: "Tools", subtitle: "Enable and scope MCP servers and terminal tools", systemImage: "wrench.and.screwdriver", placeholder: "MCP server selection, shell tool policies, and tool-scoped access rules can be configured in this panel."),
-        .init(kind: .models, title: "Models", subtitle: "Default model and routing behavior", systemImage: "cpu", placeholder: "Model defaults, failover routing, and provider-specific options can be surfaced in this panel."),
-        .init(kind: .sandbox, title: "Sandbox", subtitle: "Filesystem and network boundaries", systemImage: "lock.square.stack", placeholder: "Workspace-write, read-only, and network isolation controls can be configured here."),
-        .init(kind: .memory, title: "Memory", subtitle: "Persistent context and workspace notes", systemImage: "brain.head.profile", placeholder: "Persistent notes, workspace memory, and user-level memory toggles fit naturally in this section."),
+        .init(kind: .profiles,      title: "Profiles",      subtitle: "Switch between runtime profiles and targets", systemImage: "person.crop.rectangle.stack", placeholder: "Profile routing, per-target overrides, and environment inheritance will live here."),
+        .init(kind: .permissions,   title: "Permissions",   subtitle: "Approval policy and privileged operations", systemImage: "checkmark.shield", placeholder: "Approval policy, escalations, and audit-friendly permission controls can expand here."),
+        .init(kind: .tools,         title: "Tools",         subtitle: "Enable and scope MCP servers and terminal tools", systemImage: "wrench.and.screwdriver", placeholder: "MCP server selection, shell tool policies, and tool-scoped access rules can be configured in this panel."),
+        .init(kind: .models,        title: "Models",        subtitle: "Default model and routing behavior", systemImage: "cpu", placeholder: "Model defaults, failover routing, and provider-specific options can be surfaced in this panel."),
+        .init(kind: .sandbox,       title: "Sandbox",       subtitle: "Filesystem and network boundaries", systemImage: "lock.square.stack", placeholder: "Workspace-write, read-only, and network isolation controls can be configured here."),
+        .init(kind: .memory,        title: "Memory",        subtitle: "Persistent context and workspace notes", systemImage: "brain.head.profile", placeholder: "Persistent notes, workspace memory, and user-level memory toggles fit naturally in this section."),
         .init(kind: .observability, title: "Observability", subtitle: "Logs, traces, and runtime diagnostics", systemImage: "waveform.and.magnifyingglass", placeholder: "Runtime logs, traces, and environment diagnostics can be collected and displayed here.")
     ]
 }
 
 private enum HermesSkillsLibraryMode: String, CaseIterable, Identifiable {
-    case installed
-    case browse
-
+    case installed, browse
     var id: String { rawValue }
-
     var displayName: String {
         switch self {
-        case .installed:
-            "Installed"
-        case .browse:
-            "Browse"
+        case .installed: "Installed"
+        case .browse:    "Browse"
         }
     }
 }
@@ -1193,10 +1258,8 @@ private struct HermesAgentConfiguration {
 
     var backendSummary: String {
         switch backend {
-        case .local:
-            "Commands execute directly on the device host running Hermes. This is the fastest path for initial gateway integration."
-        case .ssh:
-            "Commands execute on a remote server over SSH with a persistent shell, which is the right fit once the app starts managing remote agents."
+        case .local: "Commands execute directly on the device host running Hermes."
+        case .ssh:   "Commands execute on a remote server over SSH with a persistent shell."
         }
     }
 
@@ -1208,26 +1271,22 @@ private struct HermesAgentConfiguration {
         }
     }
 
-    var installedSkills: [HermesSkillDescriptor] {
-        skillCatalog.filter(\.isInstalled)
-    }
+    var installedSkills: [HermesSkillDescriptor] { skillCatalog.filter(\.isInstalled) }
 
     var filteredCatalogSkills: [HermesSkillDescriptor] {
         let query = skillSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return skillCatalog }
-        return skillCatalog.filter { skill in
-            skill.name.localizedCaseInsensitiveContains(query) ||
-            skill.category.localizedCaseInsensitiveContains(query) ||
-            skill.description.localizedCaseInsensitiveContains(query)
+        return skillCatalog.filter {
+            $0.name.localizedCaseInsensitiveContains(query) ||
+            $0.category.localizedCaseInsensitiveContains(query) ||
+            $0.description.localizedCaseInsensitiveContains(query)
         }
     }
 
     var visibleSkills: [HermesSkillDescriptor] {
         switch skillsLibraryMode {
-        case .installed:
-            installedSkills
-        case .browse:
-            filteredCatalogSkills
+        case .installed: installedSkills
+        case .browse:    filteredCatalogSkills
         }
     }
 
@@ -1259,18 +1318,18 @@ private enum HermesSkillCatalog {
             id: "aidesigner-frontend",
             name: "aidesigner-frontend",
             category: "design",
-            description: "Use AIDesigner to generate or refine frontend directions, capture artifacts, and port them into the repo UI.",
+            description: "Generate or refine frontend directions with AIDesigner, then port them into the repo UI.",
             detail: """
             ---
-            name: "aidesigner-frontend"
-            description: "Create or redesign frontend surfaces with AIDesigner, then adopt them into the repo."
+            name: \"aidesigner-frontend\"
+            description: \"Create or redesign frontend surfaces with AIDesigner.\"
             ---
 
             Workflow:
             1. Inspect the repo and infer the existing visual system.
             2. Generate or refine an AIDesigner artifact.
             3. Capture the artifact locally for preview and adoption.
-            4. Port the visual system into the real app code instead of shipping raw HTML.
+            4. Port the visual system into real app code instead of shipping raw HTML.
             """,
             source: "bundled",
             path: "~/.agents/skills/aidesigner-frontend",
@@ -1280,12 +1339,8 @@ private enum HermesSkillCatalog {
             id: "openai-playwright",
             name: "openai-playwright",
             category: "automation",
-            description: "Automate a real browser from the terminal for navigation, form fill, screenshots, and UI-flow debugging.",
-            detail: """
-            # openai-playwright
-
-            Use this skill when a task requires browser automation from the terminal, including snapshots, screenshots, data extraction, or reproducing interactive UI bugs.
-            """,
+            description: "Automate a real browser from the terminal for navigation, screenshots, and UI-flow debugging.",
+            detail: "# openai-playwright\n\nUse this skill for browser automation: snapshots, screenshots, data extraction, or reproducing interactive UI bugs.",
             source: "bundled",
             path: "~/.agents/skills/openai-playwright",
             isInstalled: false
@@ -1295,14 +1350,7 @@ private enum HermesSkillCatalog {
             name: "skill-installer",
             category: "system",
             description: "Install Codex skills from a curated list or a GitHub repo path into the active profile.",
-            detail: """
-            # skill-installer
-
-            Mirrors the desktop skills install flow:
-            - list curated skills
-            - install a skill into $CODEX_HOME/skills
-            - install from a repo path, including private repos
-            """,
+            detail: "# skill-installer\n\n- list curated skills\n- install a skill into $CODEX_HOME/skills\n- install from a repo path, including private repos",
             source: "bundled",
             path: "~/Library/Developer/Xcode/CodingAssistant/codex/skills/.system/skill-installer",
             isInstalled: false
@@ -1312,11 +1360,7 @@ private enum HermesSkillCatalog {
             name: "skill-creator",
             category: "system",
             description: "Guide for creating or updating specialized skills that extend the coding agent.",
-            detail: """
-            # skill-creator
-
-            Use this when the user wants to create a new skill or update an existing skill with specialized knowledge, workflow, or tool integration.
-            """,
+            detail: "# skill-creator\n\nUse when the user wants to create or update a specialized skill with workflow or tool integration.",
             source: "bundled",
             path: "~/Library/Developer/Xcode/CodingAssistant/codex/skills/.system/skill-creator",
             isInstalled: false
@@ -1325,12 +1369,8 @@ private enum HermesSkillCatalog {
             id: "deploy-model",
             name: "deploy-model",
             category: "microsoft-foundry",
-            description: "Unified Azure OpenAI model deployment flow with routing between preset, customize, and capacity discovery.",
-            detail: """
-            # deploy-model
-
-            Handles quick preset deployments, customized deployments, and capacity discovery across regions and projects.
-            """,
+            description: "Unified Azure OpenAI model deployment: preset, customize, and capacity discovery.",
+            detail: "# deploy-model\n\nQuick preset deployments, customized deployments, and capacity discovery across regions.",
             source: "bundled",
             path: "~/.agents/skills/microsoft-foundry/models/deploy-model",
             isInstalled: false

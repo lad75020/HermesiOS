@@ -293,24 +293,6 @@ struct HermesAgentConfigView: View {
                     )
                 }
 
-                ForEach(HermesRuntimePanel.placeholderPanels.filter { $0.kind != .observability }) { panel in
-                    HermesRuntimeAccordionPanel(
-                        title: panel.title,
-                        subtitle: panel.subtitle,
-                        systemImage: panel.systemImage,
-                        isExpanded: Binding(
-                            get: { agentConfiguration.activeRuntimePanel == panel.kind },
-                            set: { isExpanded in
-                                agentConfiguration.activeRuntimePanel = isExpanded ? panel.kind : nil
-                            }
-                        )
-                    ) {
-                        Text(panel.placeholder)
-                            .font(.subheadline)
-                            .foregroundStyle(.hermesSecondaryText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
             }
             .padding()
         }

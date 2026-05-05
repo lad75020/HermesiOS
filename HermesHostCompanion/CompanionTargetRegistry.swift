@@ -181,7 +181,7 @@ final class CompanionTargetRegistry {
         }
 
         let diagnostics = target.validators.flatMap { validator in
-            validate(validator: validator, format: target.format, content: content)
+            validate(validator: validator, format: target.format, content: content, targetPath: target.path)
         }
 
         return ValidateTargetResult(
@@ -603,7 +603,8 @@ final class CompanionTargetRegistry {
     private func validate(
         validator: CompanionValidatorSpec,
         format: CompanionTargetFormat,
-        content: String
+        content: String,
+        targetPath: String
     ) -> [CompanionValidationDiagnostic] {
         switch validator {
         case .tomlParse:
@@ -620,7 +621,7 @@ final class CompanionTargetRegistry {
             if format != .yaml {
                 return []
             }
-            return validateYAML(content)
+            return validateYAML(content, targetPath: targetPath)
         case .command(let command):
             return [
                 CompanionValidationDiagnostic(
@@ -633,11 +634,18 @@ final class CompanionTargetRegistry {
         }
     }
 
-    private func validateYAML(_ content: String) -> [CompanionValidationDiagnostic] {
-        validateYAMLWithPython(content)
+    private func validateYAML(_ content: String, targetPath: String) -> [CompanionValidationDiagnostic] {
+        let pythonDiagnostics = validateYAMLWithPython(content, targetPath: targetPath)
+        if pythonDiagnostics.count == 1,
+           let diagnostic = pythonDiagnostics.first,
+           diagnostic.severity == .warning,
+           diagnostic.message.hasPrefix("YAML parser unavailable:") {
+            return []
+        }
+        return pythonDiagnostics
     }
 
-    private func validateYAMLWithPython(_ content: String) -> [CompanionValidationDiagnostic] {
+    private func validateYAMLWithPython(_ content: String, targetPath: String) -> [CompanionValidationDiagnostic] {
         let script = """
         import json
         import sys
@@ -662,98 +670,131 @@ final class CompanionTargetRegistry {
             print(json.dumps(payload))
         """
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["python3", "-c", script]
+        var parserUnavailableMessages: [String] = []
 
-        let inputPipe = Pipe()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardInput = inputPipe
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+        for executable in yamlPythonExecutableCandidates(targetPath: targetPath) {
+            let process = Process()
+            if executable == "python3" {
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = ["python3", "-c", script]
+            } else {
+                process.executableURL = URL(fileURLWithPath: executable)
+                process.arguments = ["-c", script]
+            }
 
-        do {
-            try process.run()
-            inputPipe.fileHandleForWriting.write(Data(content.utf8))
-            try? inputPipe.fileHandleForWriting.close()
-            process.waitUntilExit()
-        } catch {
-            return [
-                CompanionValidationDiagnostic(
-                    id: UUID(),
-                    severity: .warning,
-                    message: "YAML parser unavailable: \(error.localizedDescription)",
-                    validator: "yamlParse"
-                )
-            ]
-        }
+            let inputPipe = Pipe()
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            process.standardInput = inputPipe
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
+            process.environment = sanitizedSubprocessEnvironment()
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            do {
+                try process.run()
+                inputPipe.fileHandleForWriting.write(Data(content.utf8))
+                try? inputPipe.fileHandleForWriting.close()
+                process.waitUntilExit()
+            } catch {
+                parserUnavailableMessages.append("\(executable): \(error.localizedDescription)")
+                continue
+            }
 
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+            guard process.terminationStatus == 0 else {
+                let stderr = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return [
+                    CompanionValidationDiagnostic(
+                        id: UUID(),
+                        severity: .error,
+                        message: stderr?.isEmpty == false ? stderr! : "YAML parser failed with exit code \(process.terminationStatus).",
+                        validator: "yamlParse"
+                    )
+                ]
+            }
+
+            guard
+                let object = try? JSONSerialization.jsonObject(with: outputData) as? [String: Any],
+                let ok = object["ok"] as? Bool
+            else {
+                return [
+                    CompanionValidationDiagnostic(
+                        id: UUID(),
+                        severity: .warning,
+                        message: "YAML parser returned an unreadable response; skipping strict YAML validation.",
+                        validator: "yamlParse"
+                    )
+                ]
+            }
+
+            if ok {
+                return []
+            }
+
+            if object["parser_unavailable"] as? Bool == true {
+                let message = object["message"] as? String ?? "PyYAML is not available."
+                parserUnavailableMessages.append("\(executable): \(message)")
+                continue
+            }
+
+            let rawMessage = object["message"] as? String ?? "Invalid YAML."
+            let line = object["line"] as? Int
+            let column = object["column"] as? Int
+            let location: String
+            if let line, let column {
+                location = "Line \(line), column \(column): "
+            } else if let line {
+                location = "Line \(line): "
+            } else {
+                location = ""
+            }
+
             return [
                 CompanionValidationDiagnostic(
                     id: UUID(),
                     severity: .error,
-                    message: stderr?.isEmpty == false ? stderr! : "YAML parser failed with exit code \(process.terminationStatus).",
+                    message: "\(location)\(rawMessage)",
                     validator: "yamlParse"
                 )
             ]
         }
 
-        guard
-            let object = try? JSONSerialization.jsonObject(with: outputData) as? [String: Any],
-            let ok = object["ok"] as? Bool
-        else {
-            return [
-                CompanionValidationDiagnostic(
-                    id: UUID(),
-                    severity: .warning,
-                    message: "YAML parser returned an unreadable response; skipping strict YAML validation.",
-                    validator: "yamlParse"
-                )
-            ]
-        }
-
-        if ok {
-            return []
-        }
-
-        if object["parser_unavailable"] as? Bool == true {
-            let message = object["message"] as? String ?? "PyYAML is not available to the host companion."
-            return [
-                CompanionValidationDiagnostic(
-                    id: UUID(),
-                    severity: .warning,
-                    message: "YAML parser unavailable: \(message)",
-                    validator: "yamlParse"
-                )
-            ]
-        }
-
-        let rawMessage = object["message"] as? String ?? "Invalid YAML."
-        let line = object["line"] as? Int
-        let column = object["column"] as? Int
-        let location: String
-        if let line, let column {
-            location = "Line \(line), column \(column): "
-        } else if let line {
-            location = "Line \(line): "
-        } else {
-            location = ""
-        }
-
+        let details = parserUnavailableMessages.isEmpty ? "No Python executable was found." : parserUnavailableMessages.joined(separator: "; ")
         return [
             CompanionValidationDiagnostic(
                 id: UUID(),
-                severity: .error,
-                message: "\(location)\(rawMessage)",
+                severity: .warning,
+                message: "YAML parser unavailable: \(details)",
                 validator: "yamlParse"
             )
         ]
+    }
+
+    private func yamlPythonExecutableCandidates(targetPath: String) -> [String] {
+        let fileManager = FileManager.default
+        let targetURL = URL(fileURLWithPath: targetPath)
+        let targetDirectory = targetURL.deletingLastPathComponent()
+        let candidates = [
+            targetDirectory.appendingPathComponent("hermes-agent/venv/bin/python").path,
+            fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".hermes/hermes-agent/venv/bin/python").path,
+            "python3"
+        ]
+
+        var seen = Set<String>()
+        return candidates.filter { candidate in
+            guard seen.insert(candidate).inserted else { return false }
+            return candidate == "python3" || fileManager.isExecutableFile(atPath: candidate)
+        }
+    }
+
+    private func sanitizedSubprocessEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment.removeValue(forKey: "DYLD_INSERT_LIBRARIES")
+        environment.removeValue(forKey: "DYLD_LIBRARY_PATH")
+        environment.removeValue(forKey: "LD_PRELOAD")
+        return environment
     }
 
     private func appendYAMLValueDiagnostics(

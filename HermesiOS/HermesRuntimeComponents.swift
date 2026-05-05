@@ -156,6 +156,7 @@ enum HermesRuntimePanelKind: String, Identifiable {
     case skills
     case companion
     case profiles
+    case gateway
     case permissions
     case tools
     case mcpServers
@@ -179,7 +180,6 @@ struct HermesRuntimePanel: Identifiable {
     var id: HermesRuntimePanelKind { kind }
 
     static let placeholderPanels: [HermesRuntimePanel] = [
-        .init(kind: .profiles, title: "Profiles", subtitle: "Switch between runtime profiles and targets", systemImage: "person.crop.rectangle.stack", placeholder: "Profile routing, per-target overrides, and environment inheritance will live here."),
         .init(kind: .permissions, title: "Permissions", subtitle: "Approval policy and privileged operations", systemImage: "checkmark.shield", placeholder: "Approval policy, escalations, and audit-friendly permission controls can expand here."),
         .init(kind: .sandbox, title: "Sandbox", subtitle: "Filesystem and network boundaries", systemImage: "lock.square.stack", placeholder: "Workspace-write, read-only, and network isolation controls can be configured here."),
         .init(kind: .observability, title: "Observability", subtitle: "Logs, traces, and runtime diagnostics", systemImage: "waveform.and.magnifyingglass", placeholder: "Runtime logs, traces, and environment diagnostics can be collected and displayed here.")

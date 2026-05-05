@@ -304,6 +304,9 @@ final class CompanionClientSession {
     private let memoryRegistry = CompanionMemoryRegistry()
     private let scheduleRegistry = CompanionScheduleRegistry()
     private let mcpRegistry = CompanionMCPRegistry()
+    private let logRegistry = CompanionLogRegistry()
+    private let profileRegistry = CompanionProfileRegistry()
+    private let gatewayRegistry = CompanionGatewayRegistry()
 
     init(connection: NWConnection) {
         self.connection = connection
@@ -403,6 +406,7 @@ final class CompanionClientSession {
                         "list_mcp_servers",
                         "add_mcp_server",
                         "remove_mcp_server",
+                        "read_hermes_log",
                         "list_toolsets",
                         "set_toolset_enabled",
                         "list_models",
@@ -425,7 +429,17 @@ final class CompanionClientSession {
                         "remove_schedule",
                         "pause_schedule",
                         "resume_schedule",
-                        "trigger_schedule"
+                        "trigger_schedule",
+                        "list_profiles",
+                        "create_profile",
+                        "delete_profile",
+                        "set_active_profile",
+                        "get_gateway_config",
+                        "gateway_status",
+                        "set_gateway_running",
+                        "restart_gateway",
+                        "set_gateway_env",
+                        "set_gateway_platform"
                     ]
                 )
             )
@@ -572,6 +586,16 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: try mcpRegistry.removeServer(name: removePayload.name))
             } catch {
                 return .error(id: request.id, code: "remove_mcp_server_failed", message: error.localizedDescription)
+            }
+        case "read_hermes_log":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The read_hermes_log request requires a payload.")
+                }
+                let logPayload = try payload.decode(ReadHermesLogPayload.self)
+                return .success(id: request.id, payload: try logRegistry.readLog(logPayload))
+            } catch {
+                return .error(id: request.id, code: "read_hermes_log_failed", message: error.localizedDescription)
             }
         case "list_toolsets":
             do {
@@ -820,6 +844,96 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "trigger_schedule_failed", message: error.localizedDescription)
+            }
+        case "list_profiles":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The list_profiles request requires a payload.") }
+                let listPayload = try payload.decode(ListProfilesPayload.self)
+                let result = try profileRegistry.list(workspacePath: listPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "list_profiles_failed", message: error.localizedDescription)
+            }
+        case "create_profile":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The create_profile request requires a payload.") }
+                let createPayload = try payload.decode(CreateProfilePayload.self)
+                let result = try profileRegistry.create(workspacePath: createPayload.workspacePath, name: createPayload.name, clone: createPayload.clone)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "create_profile_failed", message: error.localizedDescription)
+            }
+        case "delete_profile":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The delete_profile request requires a payload.") }
+                let opPayload = try payload.decode(ProfileOperationPayload.self)
+                let result = try profileRegistry.remove(workspacePath: opPayload.workspacePath, name: opPayload.name)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "delete_profile_failed", message: error.localizedDescription)
+            }
+        case "set_active_profile":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_active_profile request requires a payload.") }
+                let opPayload = try payload.decode(ProfileOperationPayload.self)
+                let result = try profileRegistry.activate(workspacePath: opPayload.workspacePath, name: opPayload.name)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_active_profile_failed", message: error.localizedDescription)
+            }
+        case "get_gateway_config":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The get_gateway_config request requires a payload.") }
+                let gatewayPayload = try payload.decode(GatewayConfigPayload.self)
+                let result = try gatewayRegistry.config(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "get_gateway_config_failed", message: error.localizedDescription)
+            }
+        case "gateway_status":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The gateway_status request requires a payload.") }
+                let gatewayPayload = try payload.decode(GatewayStatusPayload.self)
+                let result = gatewayRegistry.gatewayStatus(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "gateway_status_failed", message: error.localizedDescription)
+            }
+        case "set_gateway_running":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_gateway_running request requires a payload.") }
+                let gatewayPayload = try payload.decode(SetGatewayRunningPayload.self)
+                let result = try gatewayRegistry.setGatewayRunning(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, running: gatewayPayload.running)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_gateway_running_failed", message: error.localizedDescription)
+            }
+        case "restart_gateway":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The restart_gateway request requires a payload.") }
+                let gatewayPayload = try payload.decode(RestartGatewayPayload.self)
+                let result = try gatewayRegistry.restartGateway(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "restart_gateway_failed", message: error.localizedDescription)
+            }
+        case "set_gateway_env":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_gateway_env request requires a payload.") }
+                let gatewayPayload = try payload.decode(SetGatewayEnvPayload.self)
+                let result = try gatewayRegistry.setEnv(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, key: gatewayPayload.key, value: gatewayPayload.value)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_gateway_env_failed", message: error.localizedDescription)
+            }
+        case "set_gateway_platform":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_gateway_platform request requires a payload.") }
+                let gatewayPayload = try payload.decode(SetGatewayPlatformPayload.self)
+                let result = try gatewayRegistry.setPlatformEnabled(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, platform: gatewayPayload.platform, enabled: gatewayPayload.enabled)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_gateway_platform_failed", message: error.localizedDescription)
             }
         default:
             return .error(

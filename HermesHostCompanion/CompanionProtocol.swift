@@ -220,6 +220,103 @@ struct CompanionMCPServerSummary: Codable, Identifiable {
     let status: String
 }
 
+struct GatewayConfigPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+}
+
+struct GatewayConfigResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let envFilePath: String
+    let configPath: String
+    let gatewayRunning: Bool
+    let env: [String: String]
+    let platformEnabled: [String: Bool]
+    let fields: [GatewayEnvFieldDefinition]
+    let platforms: [GatewayPlatformDefinition]
+}
+
+struct GatewayStatusPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+}
+
+struct GatewayStatusResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let running: Bool
+    let output: String
+    let error: String?
+}
+
+struct SetGatewayRunningPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+    let running: Bool
+}
+
+struct GatewayOperationResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let success: Bool
+    let gatewayRunning: Bool
+    let output: String
+    let error: String?
+    let config: GatewayConfigResult?
+}
+
+struct SetGatewayEnvPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+    let key: String
+    let value: String
+}
+
+struct SetGatewayEnvResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let envFilePath: String
+    let key: String
+    let value: String
+    let env: [String: String]
+    let gatewayRunning: Bool
+    let restartOutput: String?
+}
+
+struct SetGatewayPlatformPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+    let platform: String
+    let enabled: Bool
+}
+
+struct SetGatewayPlatformResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let configPath: String
+    let platform: String
+    let enabled: Bool
+    let platformEnabled: [String: Bool]
+    let gatewayRunning: Bool
+    let restartOutput: String?
+}
+
+struct RestartGatewayPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+}
+
 struct ListToolsetsPayload: Codable {
     let workspacePath: String
 }
@@ -502,6 +599,53 @@ struct SetMemoryEnvResult: Codable {
     let envFilePath: String
     let key: String
     let value: String
+}
+
+struct ProfileInfo: Codable, Identifiable {
+    let id: String
+    let name: String
+    let path: String
+    let isDefault: Bool
+    let isActive: Bool
+    let model: String
+    let provider: String
+    let hasEnv: Bool
+    let hasSoul: Bool
+    let skillCount: Int
+    let gatewayRunning: Bool
+}
+
+struct ListProfilesPayload: Codable {
+    let workspacePath: String
+}
+
+struct ListProfilesResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profilesDirectoryPath: String
+    let activeProfileName: String
+    let profiles: [ProfileInfo]
+}
+
+struct CreateProfilePayload: Codable {
+    let workspacePath: String
+    let name: String
+    let clone: Bool
+}
+
+struct ProfileOperationPayload: Codable {
+    let workspacePath: String
+    let name: String
+}
+
+struct ProfileOperationResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let success: Bool
+    let output: String
+    let error: String?
+    let activeProfileName: String
+    let profiles: [ProfileInfo]
 }
 
 struct ScheduleRepeatInfo: Codable {

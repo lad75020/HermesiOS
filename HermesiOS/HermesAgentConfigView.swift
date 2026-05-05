@@ -45,6 +45,28 @@ struct HermesAgentConfigView: View {
         return "\(active) active, \(paused) paused, \(companionRuntime.schedules.count) total"
     }
 
+    private var profilesSummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to manage host profiles"
+        }
+        if companionRuntime.profiles.isEmpty {
+            return "Default and named Hermes profiles"
+        }
+        return "\(companionRuntime.profiles.count) profiles · active \(companionRuntime.activeProfileName)"
+    }
+
+    private var gatewaySummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to manage messaging credentials"
+        }
+        let enabled = companionRuntime.gatewayPlatformEnabled.values.filter { $0 }.count
+        let total = companionRuntime.gatewayPlatforms.count
+        if total == 0 {
+            return "Messaging platform credentials and enablement"
+        }
+        return "\(enabled)/\(total) messaging platforms enabled"
+    }
+
     private var mcpServersSummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
             return "Enroll companion to list, add, or remove MCP servers"
@@ -53,6 +75,13 @@ struct HermesAgentConfigView: View {
             return "No MCP servers loaded from hermes mcp list"
         }
         return "\(companionRuntime.hermesMCPServers.count) configured via hermes mcp list"
+    }
+
+    private var observabilitySummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to read host Hermes logs"
+        }
+        return "\(companionRuntime.observabilityLogKind.label) · last \(companionRuntime.observabilityLineCount) lines"
     }
 
     var body: some View {
@@ -95,6 +124,42 @@ struct HermesAgentConfigView: View {
                     )
                 ) {
                     HermesCompanionPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                HermesRuntimeAccordionPanel(
+                    title: "Profiles",
+                    subtitle: profilesSummary,
+                    systemImage: "person.crop.rectangle.stack",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .profiles },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .profiles : nil
+                        }
+                    )
+                ) {
+                    HermesProfilesPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                HermesRuntimeAccordionPanel(
+                    title: "Messaging",
+                    subtitle: gatewaySummary,
+                    systemImage: "antenna.radiowaves.left.and.right",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .gateway },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .gateway : nil
+                        }
+                    )
+                ) {
+                    HermesGatewayPanel(
                         companionSettings: companionSettings,
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime
@@ -210,7 +275,25 @@ struct HermesAgentConfigView: View {
                     )
                 }
 
-                ForEach(HermesRuntimePanel.placeholderPanels) { panel in
+                HermesRuntimeAccordionPanel(
+                    title: "Observability",
+                    subtitle: observabilitySummary,
+                    systemImage: "waveform.and.magnifyingglass",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .observability },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .observability : nil
+                        }
+                    )
+                ) {
+                    HermesObservabilityPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                ForEach(HermesRuntimePanel.placeholderPanels.filter { $0.kind != .observability }) { panel in
                     HermesRuntimeAccordionPanel(
                         title: panel.title,
                         subtitle: panel.subtitle,

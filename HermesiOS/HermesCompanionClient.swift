@@ -245,6 +245,162 @@ struct HermesCompanionMCPServerSummary: Codable, Identifiable, Equatable {
     let status: String
 }
 
+enum HermesCompanionLogKind: String, Codable, CaseIterable, Identifiable {
+    case errors
+    case gateway
+    case agent
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .errors: "ERRORS"
+        case .gateway: "GATEWAY"
+        case .agent: "AGENT"
+        }
+    }
+
+    var path: String {
+        switch self {
+        case .errors: "/Users/laurent/.hermes/logs/errors.log"
+        case .gateway: "/Users/laurent/.hermes/logs/gateway.log"
+        case .agent: "/Users/laurent/.hermes/logs/agent.log"
+        }
+    }
+}
+
+struct HermesCompanionReadLogPayload: Codable {
+    let log: HermesCompanionLogKind
+    let lineCount: Int
+}
+
+struct HermesCompanionReadLogResult: Codable, Equatable {
+    let log: HermesCompanionLogKind
+    let label: String
+    let path: String
+    let requestedLineCount: Int
+    let loadedLineCount: Int
+    let content: String
+    let fileExists: Bool
+    let updatedAt: Date
+}
+
+struct HermesCompanionGatewayPlatformDefinition: Codable, Identifiable, Equatable {
+    let key: String
+    let label: String
+    let description: String
+    let fields: [String]
+
+    var id: String { key }
+}
+
+struct HermesCompanionGatewayEnvFieldDefinition: Codable, Identifiable, Equatable {
+    let key: String
+    let label: String
+    let type: String
+    let hint: String
+
+    var id: String { key }
+    var isSecret: Bool { type == "password" }
+}
+
+struct HermesCompanionGatewayConfigPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+}
+
+struct HermesCompanionGatewayConfigResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let envFilePath: String
+    let configPath: String
+    let gatewayRunning: Bool
+    let env: [String: String]
+    let platformEnabled: [String: Bool]
+    let fields: [HermesCompanionGatewayEnvFieldDefinition]
+    let platforms: [HermesCompanionGatewayPlatformDefinition]
+}
+
+struct HermesCompanionGatewayStatusPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+}
+
+struct HermesCompanionGatewayStatusResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let running: Bool
+    let output: String
+    let error: String?
+}
+
+struct HermesCompanionSetGatewayRunningPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+    let running: Bool
+}
+
+struct HermesCompanionGatewayOperationResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let success: Bool
+    let gatewayRunning: Bool
+    let output: String
+    let error: String?
+    let config: HermesCompanionGatewayConfigResult?
+}
+
+struct HermesCompanionSetGatewayEnvPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+    let key: String
+    let value: String
+}
+
+struct HermesCompanionSetGatewayEnvResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let envFilePath: String
+    let key: String
+    let value: String
+    let env: [String: String]
+    let gatewayRunning: Bool
+    let restartOutput: String?
+}
+
+struct HermesCompanionSetGatewayPlatformPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+    let platform: String
+    let enabled: Bool
+}
+
+struct HermesCompanionSetGatewayPlatformResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profileName: String
+    let profilePath: String
+    let configPath: String
+    let platform: String
+    let enabled: Bool
+    let platformEnabled: [String: Bool]
+    let gatewayRunning: Bool
+    let restartOutput: String?
+}
+
+struct HermesCompanionRestartGatewayPayload: Codable {
+    let workspacePath: String
+    let profileName: String?
+}
+
 struct HermesCompanionListToolsetsPayload: Codable {
     let workspacePath: String
 }
@@ -541,6 +697,53 @@ struct HermesCompanionSetMemoryEnvResult: Codable, Equatable {
     let value: String
 }
 
+struct HermesCompanionProfileInfo: Codable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let path: String
+    let isDefault: Bool
+    let isActive: Bool
+    let model: String
+    let provider: String
+    let hasEnv: Bool
+    let hasSoul: Bool
+    let skillCount: Int
+    let gatewayRunning: Bool
+}
+
+struct HermesCompanionListProfilesPayload: Codable {
+    let workspacePath: String
+}
+
+struct HermesCompanionListProfilesResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let profilesDirectoryPath: String
+    let activeProfileName: String
+    let profiles: [HermesCompanionProfileInfo]
+}
+
+struct HermesCompanionCreateProfilePayload: Codable {
+    let workspacePath: String
+    let name: String
+    let clone: Bool
+}
+
+struct HermesCompanionProfileOperationPayload: Codable {
+    let workspacePath: String
+    let name: String
+}
+
+struct HermesCompanionProfileOperationResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let success: Bool
+    let output: String
+    let error: String?
+    let activeProfileName: String
+    let profiles: [HermesCompanionProfileInfo]
+}
+
 struct HermesCompanionScheduleRepeatInfo: Codable, Equatable {
     let times: Int?
     let completed: Int
@@ -834,6 +1037,12 @@ final class HermesCompanionRuntimeSession {
     var hermesMCPServers: [HermesCompanionMCPServerSummary] = []
     var mcpListOutput = ""
     var mcpOperationOutput = ""
+    var observabilityLogKind: HermesCompanionLogKind = .errors
+    var observabilityLineCount = 200
+    var observabilityLogContent = ""
+    var observabilityLogPath = HermesCompanionLogKind.errors.path
+    var observabilityLoadedLineCount = 0
+    var observabilityUpdatedAt: Date?
     var resolvedHermesWorkspacePath = ""
     var hermesToolsets: [HermesCompanionToolsetInfo] = []
     var toolsetsConfigPath = ""
@@ -859,6 +1068,21 @@ final class HermesCompanionRuntimeSession {
     var memoryEnvFilePath = ""
     var schedules: [HermesCompanionScheduleCronJob] = []
     var schedulesFilePath = ""
+    var profiles: [HermesCompanionProfileInfo] = []
+    var profilesDirectoryPath = ""
+    var activeProfileName = "default"
+    var profileOperationOutput = ""
+    var gatewayConfig: HermesCompanionGatewayConfigResult?
+    var gatewayRunning = false
+    var gatewayEnv: [String: String] = [:]
+    var gatewayPlatformEnabled: [String: Bool] = [:]
+    var gatewayFields: [HermesCompanionGatewayEnvFieldDefinition] = []
+    var gatewayPlatforms: [HermesCompanionGatewayPlatformDefinition] = []
+    var gatewayProfileName = "default"
+    var gatewayProfilePath = ""
+    var gatewayEnvFilePath = ""
+    var gatewayConfigPath = ""
+    var gatewayOperationOutput = ""
 
     var selectedTarget: HermesCompanionTargetSummary? {
         targets.first(where: { $0.id == selectedTargetID })
@@ -1075,6 +1299,161 @@ final class HermesCompanionRuntimeSession {
             }
             isBusy = false
         }
+    }
+
+    func refreshGatewayConfig(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Loading Messaging"
+            let result: HermesCompanionGatewayConfigResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "get_gateway_config",
+                payload: HermesCompanionGatewayConfigPayload(workspacePath: settings.hermesWorkspacePath, profileName: self.activeProfileName)
+            )
+            self.applyGatewayConfig(result)
+            self.connectionStatus = "Messaging Loaded"
+        }
+    }
+
+    func refreshGatewayStatus(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            let result: HermesCompanionGatewayStatusResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "gateway_status",
+                payload: HermesCompanionGatewayStatusPayload(workspacePath: settings.hermesWorkspacePath, profileName: self.gatewayProfileName.isEmpty ? self.activeProfileName : self.gatewayProfileName)
+            )
+            self.gatewayRunning = result.running
+            self.gatewayProfileName = result.profileName
+            self.gatewayProfilePath = result.profilePath
+            self.gatewayOperationOutput = result.output
+            self.connectionStatus = result.running ? "Gateway Running" : "Gateway Stopped"
+        }
+    }
+
+    func setGatewayRunning(_ running: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = running ? "Starting Gateway" : "Stopping Gateway"
+            let result: HermesCompanionGatewayOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_gateway_running",
+                payload: HermesCompanionSetGatewayRunningPayload(workspacePath: settings.hermesWorkspacePath, profileName: self.gatewayProfileName.isEmpty ? self.activeProfileName : self.gatewayProfileName, running: running)
+            )
+            self.applyGatewayOperation(result)
+            self.connectionStatus = result.gatewayRunning ? "Gateway Running" : "Gateway Stopped"
+        }
+    }
+
+    func restartGateway(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Restarting Gateway"
+            let result: HermesCompanionGatewayOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "restart_gateway",
+                payload: HermesCompanionRestartGatewayPayload(workspacePath: settings.hermesWorkspacePath, profileName: self.gatewayProfileName.isEmpty ? self.activeProfileName : self.gatewayProfileName)
+            )
+            self.applyGatewayOperation(result)
+            self.connectionStatus = result.gatewayRunning ? "Gateway Restarted" : "Gateway Restarted / Stopped"
+        }
+    }
+
+    func setGatewayEnvValue(key: String, value: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        gatewayEnv[key] = value
+        run {
+            self.connectionStatus = "Saving \(key)"
+            let result: HermesCompanionSetGatewayEnvResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_gateway_env",
+                payload: HermesCompanionSetGatewayEnvPayload(workspacePath: settings.hermesWorkspacePath, profileName: self.gatewayProfileName.isEmpty ? self.activeProfileName : self.gatewayProfileName, key: key, value: value)
+            )
+            self.gatewayEnv = result.env
+            self.gatewayRunning = result.gatewayRunning
+            self.gatewayProfileName = result.profileName
+            self.gatewayProfilePath = result.profilePath
+            self.gatewayEnvFilePath = result.envFilePath
+            self.gatewayOperationOutput = result.restartOutput ?? "Saved \(result.key)"
+            self.connectionStatus = "Messaging Key Saved"
+        }
+    }
+
+    func setGatewayPlatformEnabled(platform: String, enabled: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        gatewayPlatformEnabled[platform] = enabled
+        run {
+            self.connectionStatus = enabled ? "Enabling Platform" : "Disabling Platform"
+            let result: HermesCompanionSetGatewayPlatformResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_gateway_platform",
+                payload: HermesCompanionSetGatewayPlatformPayload(workspacePath: settings.hermesWorkspacePath, profileName: self.gatewayProfileName.isEmpty ? self.activeProfileName : self.gatewayProfileName, platform: platform, enabled: enabled)
+            )
+            self.gatewayPlatformEnabled = result.platformEnabled
+            self.gatewayRunning = result.gatewayRunning
+            self.gatewayProfileName = result.profileName
+            self.gatewayProfilePath = result.profilePath
+            self.gatewayConfigPath = result.configPath
+            self.gatewayOperationOutput = result.restartOutput ?? "Updated \(result.platform)"
+            self.connectionStatus = "Messaging Platform Updated"
+        }
+    }
+
+    private func applyGatewayOperation(_ result: HermesCompanionGatewayOperationResult) {
+        gatewayRunning = result.gatewayRunning
+        gatewayProfileName = result.profileName
+        gatewayProfilePath = result.profilePath
+        gatewayOperationOutput = result.output
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+        if let config = result.config {
+            applyGatewayConfig(config)
+        }
+    }
+
+    private func applyGatewayConfig(_ result: HermesCompanionGatewayConfigResult) {
+        gatewayConfig = result
+        gatewayRunning = result.gatewayRunning
+        gatewayEnv = result.env
+        gatewayPlatformEnabled = result.platformEnabled
+        gatewayFields = result.fields
+        gatewayPlatforms = result.platforms
+        gatewayProfileName = result.profileName
+        gatewayProfilePath = result.profilePath
+        gatewayEnvFilePath = result.envFilePath
+        gatewayConfigPath = result.configPath
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+    }
+
+    func refreshHermesLog(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Loading \(self.observabilityLogKind.label) Log"
+            let result: HermesCompanionReadLogResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "read_hermes_log",
+                payload: HermesCompanionReadLogPayload(
+                    log: self.observabilityLogKind,
+                    lineCount: self.observabilityLineCount
+                )
+            )
+            self.observabilityLogKind = result.log
+            self.observabilityLineCount = result.requestedLineCount
+            self.observabilityLogContent = result.content
+            self.observabilityLogPath = result.path
+            self.observabilityLoadedLineCount = result.loadedLineCount
+            self.observabilityUpdatedAt = result.updatedAt
+            self.connectionStatus = result.fileExists ? "\(result.label) Log Loaded" : "\(result.label) Log Missing"
+        }
+    }
+
+    func setHermesObservabilityLog(_ log: HermesCompanionLogKind, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        observabilityLogKind = log
+        observabilityLogPath = log.path
+        refreshHermesLog(settings: settings, identityState: identityState)
+    }
+
+    func setHermesObservabilityLineCount(_ lineCount: Int) {
+        observabilityLineCount = min(max(lineCount, 10), 10_000)
     }
 
     func refreshHermesMCPServers(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
@@ -1552,6 +1931,79 @@ final class HermesCompanionRuntimeSession {
         memoryConfigPath = result.configPath
         memoryEnvFilePath = result.envFilePath
         resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+    }
+
+    func refreshProfiles(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Loading Profiles"
+            let result: HermesCompanionListProfilesResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "list_profiles",
+                payload: HermesCompanionListProfilesPayload(workspacePath: settings.hermesWorkspacePath)
+            )
+            self.applyProfiles(result)
+            self.connectionStatus = result.profiles.isEmpty ? "No Profiles" : "Profiles Loaded"
+        }
+    }
+
+    func createProfile(name: String, clone: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Creating Profile"
+            let result: HermesCompanionProfileOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "create_profile",
+                payload: HermesCompanionCreateProfilePayload(workspacePath: settings.hermesWorkspacePath, name: name, clone: clone)
+            )
+            self.applyProfileOperation(result)
+            self.connectionStatus = result.success ? "Profile Created" : "Profile Create Failed"
+        }
+    }
+
+    func deleteProfile(name: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Deleting Profile"
+            let result: HermesCompanionProfileOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "delete_profile",
+                payload: HermesCompanionProfileOperationPayload(workspacePath: settings.hermesWorkspacePath, name: name)
+            )
+            self.applyProfileOperation(result)
+            self.connectionStatus = result.success ? "Profile Deleted" : "Profile Delete Failed"
+        }
+    }
+
+    func setActiveProfile(name: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Switching Profile"
+            let result: HermesCompanionProfileOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_active_profile",
+                payload: HermesCompanionProfileOperationPayload(workspacePath: settings.hermesWorkspacePath, name: name)
+            )
+            self.applyProfileOperation(result)
+            self.connectionStatus = result.success ? "Profile Active" : "Profile Switch Failed"
+        }
+    }
+
+    private func applyProfiles(_ result: HermesCompanionListProfilesResult) {
+        profiles = result.profiles
+        profilesDirectoryPath = result.profilesDirectoryPath
+        activeProfileName = result.activeProfileName
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+    }
+
+    private func applyProfileOperation(_ result: HermesCompanionProfileOperationResult) {
+        profiles = result.profiles
+        activeProfileName = result.activeProfileName
+        profileOperationOutput = result.output
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+        if let error = result.error, !error.isEmpty {
+            lastErrorMessage = error
+        }
     }
 
     func refreshSchedules(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {

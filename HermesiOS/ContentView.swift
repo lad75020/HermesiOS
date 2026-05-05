@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var companionRuntime = HermesCompanionRuntimeSession()
 
     init() {
+        HermesAppearance.configureGlobalAppearance()
         _apiSettings = State(initialValue: HermesSettingsPersistence.loadAPISettings())
         _companionSettings = State(initialValue: HermesSettingsPersistence.loadCompanionSettings())
         _responsesDraft = State(initialValue: HermesSettingsPersistence.loadResponsesDraft())
@@ -41,7 +42,8 @@ struct ContentView: View {
                 iPadLayout
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.hermesCanvas)
+        .tint(.igActionBlue)
         .onChange(of: apiSettings) { _, newValue in
             HermesSettingsPersistence.saveAPISettings(newValue)
         }
@@ -231,12 +233,14 @@ private struct WorkspaceSidebar: View {
                         .font(.headline)
                     Text(section.subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.hermesSecondaryText)
                 }
                 .padding(.vertical, 4)
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Color.hermesCanvas)
     }
 }
 
@@ -257,8 +261,8 @@ private struct HermesResponsesConsoleView: View {
 
                 HermesStatusRow(
                     items: [
-                        .init(title: "Thread", value: responseSession.previousResponseID.isEmpty ? "New response" : "Continuing thread", accent: .purple),
-                        .init(title: "Status", value: responseSession.connectionStatus, accent: .orange)
+                        .init(title: "Thread", value: responseSession.previousResponseID.isEmpty ? "New response" : "Continuing thread", accent: .igGradPurple),
+                        .init(title: "Status", value: responseSession.connectionStatus, accent: .igGradOrange)
                     ]
                 )
 
@@ -270,18 +274,20 @@ private struct HermesResponsesConsoleView: View {
                                     .font(.caption.weight(.semibold))
                                 Text(responseSession.previousResponseID)
                                     .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.hermesSecondaryText)
                                     .textSelection(.enabled)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
                         TextEditor(text: $requestDraft.userPrompt)
+                            .scrollContentBackground(.hidden)
                             .frame(minHeight: 160)
+                            .igFieldBackground()
                             .overlay(alignment: .topLeading) {
                                 if requestDraft.userPrompt.isEmpty {
                                     Text("Ask Hermes to inspect files, run tools, or explain context...")
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.hermesSecondaryText)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 8)
                                         .allowsHitTesting(false)
@@ -291,7 +297,7 @@ private struct HermesResponsesConsoleView: View {
                         HStack {
                             Label("Send a prompt and inspect Hermes events", systemImage: "waveform.path.ecg")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                             Spacer()
 
                             if !responseSession.previousResponseID.isEmpty && !responseSession.isSending {
@@ -322,25 +328,25 @@ private struct HermesResponsesConsoleView: View {
                         if !responseSession.previousResponseID.isEmpty {
                             Label("Continuing from: \(responseSession.previousResponseID)", systemImage: "link")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         }
 
                         if !responseSession.latestResponseID.isEmpty {
                             Label("Response ID: \(responseSession.latestResponseID)", systemImage: "number")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         }
 
                         if !responseSession.lastErrorMessage.isEmpty {
                             Text(responseSession.lastErrorMessage)
                                 .font(.subheadline)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(.igDestructive)
                         }
 
                         Group {
                             if responseSession.streamedText.isEmpty {
                                 Text("Send a `/v1/responses` request to populate streamed assistant output here.")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.hermesSecondaryText)
                             } else {
                                 Text(responseSession.streamedText)
                                     .textSelection(.enabled)
@@ -355,12 +361,12 @@ private struct HermesResponsesConsoleView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("\(responseSession.eventCount) events received", systemImage: "timeline.selection")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
 
                         if responseSession.entries.isEmpty {
                             Text("The SSE event stream will appear here, including `response.created`, text deltas, tool events, and completion.")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         } else {
                             LazyVStack(spacing: 12) {
                                 ForEach(responseSession.entries) { response in
@@ -374,6 +380,7 @@ private struct HermesResponsesConsoleView: View {
             .padding()
         }
         .navigationTitle("Responses API")
+        .background(Color.hermesCanvas)
     }
 }
 
@@ -394,19 +401,21 @@ private struct HermesChatConsoleView: View {
 
                 HermesStatusRow(
                     items: [
-                        .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .purple),
-                        .init(title: "Status", value: chatSession.connectionStatus, accent: .orange)
+                        .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .igGradPurple),
+                        .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange)
                     ]
                 )
 
                 HermesSectionCard("Message Draft") {
                     VStack(alignment: .leading, spacing: 14) {
                         TextEditor(text: $chatDraft.userPrompt)
+                            .scrollContentBackground(.hidden)
                             .frame(minHeight: 160)
+                            .igFieldBackground()
                             .overlay(alignment: .topLeading) {
                                 if chatDraft.userPrompt.isEmpty {
                                     Text("Send a message to Hermes using the chat completions format...")
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.hermesSecondaryText)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 8)
                                         .allowsHitTesting(false)
@@ -416,7 +425,7 @@ private struct HermesChatConsoleView: View {
                         HStack {
                             Label("Chat transcript stays separate from `/v1/responses`", systemImage: "rectangle.split.3x1")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                             Spacer()
 
                             if !chatSession.entries.isEmpty && !chatSession.isSending {
@@ -447,13 +456,13 @@ private struct HermesChatConsoleView: View {
                         if !chatSession.lastErrorMessage.isEmpty {
                             Text(chatSession.lastErrorMessage)
                                 .font(.subheadline)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(.igDestructive)
                         }
 
                         Group {
                             if chatSession.streamedText.isEmpty {
                                 Text("Send a `/v1/chat/completions` message to populate assistant output here.")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.hermesSecondaryText)
                             } else {
                                 Text(chatSession.streamedText)
                                     .textSelection(.enabled)
@@ -468,12 +477,12 @@ private struct HermesChatConsoleView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("\(chatSession.eventCount) stream events received", systemImage: "timeline.selection")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
 
                         if chatSession.entries.isEmpty {
                             Text("User and assistant messages from the chat completions session will accumulate here.")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         } else {
                             LazyVStack(spacing: 12) {
                                 ForEach(chatSession.entries) { message in
@@ -487,6 +496,7 @@ private struct HermesChatConsoleView: View {
             .padding()
         }
         .navigationTitle("Chat Completions")
+        .background(Color.hermesCanvas)
     }
 }
 
@@ -561,7 +571,7 @@ private struct HermesSettingsView: View {
                 if !companionEnrollment.lastErrorMessage.isEmpty {
                     Text(companionEnrollment.lastErrorMessage)
                         .font(.subheadline)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(.igDestructive)
                 }
 
                 HStack {
@@ -615,9 +625,11 @@ private struct HermesSettingsView: View {
                 Text("For the host companion, copy the server fingerprint from the macOS app, create a pairing there, then enroll this device to import its client certificate.")
                 Text("Set the Hermes workspace path to the host-side `.hermes` directory you want the Skills panel to manage.")
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.hermesSecondaryText)
         }
         .navigationTitle("Settings")
+        .scrollContentBackground(.hidden)
+        .background(Color.hermesCanvas)
         .sheet(isPresented: $isPairingScannerPresented) {
             HermesPairingQRScannerView { payload in
                 applyPairingPayload(payload)
@@ -647,7 +659,7 @@ private struct HermesSettingsView: View {
             Spacer()
             Text(value)
                 .multilineTextAlignment(.trailing)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
         }
         .font(.subheadline)
     }
@@ -702,7 +714,7 @@ private struct HermesPairingQRScannerView: View {
                 if !errorMessage.isEmpty {
                     Text(errorMessage)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(.igDestructive)
                         .padding()
                         .background(.ultraThinMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -808,13 +820,15 @@ private struct HermesHistoryView: View {
                                 .textSelection(.enabled)
                             Text(session.updatedAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         }
                     }
                 }
             }
         }
         .navigationTitle("History")
+        .scrollContentBackground(.hidden)
+        .background(Color.hermesCanvas)
     }
 }
 
@@ -973,7 +987,7 @@ private struct HermesAgentConfigView: View {
                     ) {
                         Text(panel.placeholder)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -981,6 +995,7 @@ private struct HermesAgentConfigView: View {
             .padding()
         }
         .navigationTitle("Agent Runtime")
+        .background(Color.hermesCanvas)
     }
 }
 
@@ -1000,8 +1015,8 @@ private struct HermesCompanionPanel: View {
             } else {
                 HermesStatusRow(
                     items: [
-                        .init(title: "Companion", value: companionRuntime.connectionStatus, accent: .blue),
-                        .init(title: "Service", value: companionRuntime.linkedServiceStatus.isEmpty ? "Unknown" : companionRuntime.linkedServiceStatus, accent: .green)
+                        .init(title: "Companion", value: companionRuntime.connectionStatus, accent: .igActionBlue),
+                        .init(title: "Service", value: companionRuntime.linkedServiceStatus.isEmpty ? "Unknown" : companionRuntime.linkedServiceStatus, accent: .igOnlineGreen)
                     ]
                 )
 
@@ -1010,13 +1025,13 @@ private struct HermesCompanionPanel: View {
                         if !companionRuntime.lastErrorMessage.isEmpty {
                             Text(companionRuntime.lastErrorMessage)
                                 .font(.subheadline)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(.igDestructive)
                         }
 
                         if companionRuntime.targets.isEmpty {
                             Text("Fetch the host companion target registry to begin editing allowlisted files.")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         } else {
                             Picker("Target", selection: $companionRuntime.selectedTargetID) {
                                 ForEach(companionRuntime.targets) { target in
@@ -1028,7 +1043,7 @@ private struct HermesCompanionPanel: View {
                             if let selectedTarget = companionRuntime.selectedTarget {
                                 Text(selectedTarget.path)
                                     .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.hermesSecondaryText)
                                     .textSelection(.enabled)
                             }
                         }
@@ -1061,7 +1076,7 @@ private struct HermesCompanionPanel: View {
                             if !companionRuntime.currentRevision.isEmpty {
                                 Label("Revision: \(companionRuntime.currentRevision)", systemImage: "number")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.hermesSecondaryText)
                             }
 
                             TextEditor(text: $companionRuntime.targetContent)
@@ -1092,7 +1107,7 @@ private struct HermesCompanionPanel: View {
                         if companionRuntime.diagnostics.isEmpty {
                             Text("Run validation to inspect syntax and policy diagnostics before writing to the host.")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         } else {
                             VStack(alignment: .leading, spacing: 10) {
                                 ForEach(companionRuntime.diagnostics) { diagnostic in
@@ -1104,15 +1119,15 @@ private struct HermesCompanionPanel: View {
                                             Spacer()
                                             Text(diagnostic.validator)
                                                 .font(.caption.monospaced())
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(.hermesSecondaryText)
                                         }
                                         Text(diagnostic.message)
                                             .font(.subheadline)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(.hermesSecondaryText)
                                     }
                                     .padding(14)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color(.secondarySystemGroupedBackground))
+                                    .background(Color.hermesSurfaceInput)
                                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 }
                             }
@@ -1126,7 +1141,7 @@ private struct HermesCompanionPanel: View {
                                     .font(.subheadline.weight(.semibold))
                                 Text(companionRuntime.linkedServiceOutput.isEmpty ? "No service output returned yet." : companionRuntime.linkedServiceOutput)
                                     .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.hermesSecondaryText)
                                     .textSelection(.enabled)
 
                                 HStack {
@@ -1149,7 +1164,7 @@ private struct HermesCompanionPanel: View {
                             } else {
                                 Text("The selected target is not associated with a managed service.")
                                     .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.hermesSecondaryText)
                             }
                         }
                     }
@@ -1170,11 +1185,11 @@ private struct HermesCompanionPanel: View {
     private func severityColor(for severity: HermesCompanionValidationSeverity) -> Color {
         switch severity {
         case .error:
-            .red
+            .igDestructive
         case .warning:
-            .orange
+            .igGradOrange
         case .info:
-            .blue
+            .igActionBlue
         }
     }
 }
@@ -1197,7 +1212,7 @@ private struct HermesToolsPanel: View {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("This panel mirrors the desktop toolset editor and writes `platform_toolsets.cli` in the live Hermes `config.yaml` for the configured workspace.")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
 
                         companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
                         companionSummaryRow(label: "Config", value: companionRuntime.toolsetsConfigPath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/config.yaml" : companionRuntime.toolsetsConfigPath)
@@ -1205,13 +1220,13 @@ private struct HermesToolsPanel: View {
                         if !companionRuntime.lastErrorMessage.isEmpty {
                             Text(companionRuntime.lastErrorMessage)
                                 .font(.subheadline)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(.igDestructive)
                         }
 
                         if companionRuntime.hermesToolsets.isEmpty {
                             Text("Open this panel after enrollment to load the toolsets declared by Hermes desktop semantics.")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         } else {
                             VStack(alignment: .leading, spacing: 12) {
                                 ForEach(companionRuntime.hermesToolsets) { toolset in
@@ -1255,7 +1270,7 @@ private struct HermesToolsPanel: View {
             Spacer()
             Text(value)
                 .multilineTextAlignment(.trailing)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
                 .textSelection(.enabled)
         }
         .font(.subheadline)
@@ -1284,7 +1299,7 @@ private struct HermesModelsPanel: View {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("This panel mirrors the desktop models registry and edits the live `models.json` inventory in the configured Hermes workspace.")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
 
                         companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
                         companionSummaryRow(label: "Models File", value: companionRuntime.modelsFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/models.json" : companionRuntime.modelsFilePath)
@@ -1292,7 +1307,7 @@ private struct HermesModelsPanel: View {
                         if !companionRuntime.lastErrorMessage.isEmpty {
                             Text(companionRuntime.lastErrorMessage)
                                 .font(.subheadline)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(.igDestructive)
                         }
 
                         HermesSectionCard("Add Model") {
@@ -1334,7 +1349,7 @@ private struct HermesModelsPanel: View {
                         if companionRuntime.hermesModels.isEmpty {
                             Text("Loading models will seed the default desktop model list if `models.json` does not already exist.")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.hermesSecondaryText)
                         } else {
                             VStack(alignment: .leading, spacing: 12) {
                                 ForEach(companionRuntime.hermesModels) { model in
@@ -1383,7 +1398,7 @@ private struct HermesModelsPanel: View {
             Spacer()
             Text(value)
                 .multilineTextAlignment(.trailing)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
                 .textSelection(.enabled)
         }
         .font(.subheadline)
@@ -1411,13 +1426,13 @@ private struct HermesSkillsPanel: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Skills are loaded from the configured Hermes workspace and toggles write the live `.hermes/skills/.usage.json` state on the host companion.")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
 
                         settingsSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
 
                         Text(companionRuntime.isBusy ? "Syncing…" : "\(companionRuntime.hermesSkills.filter(\.isEnabled).count) enabled")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
                     }
                 }
             }
@@ -1438,7 +1453,7 @@ private struct HermesSkillsPanel: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Toggle any skill on to mark it active in Hermes, or off to archive it from the live workspace state.")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
 
                         ForEach(visibleSkills) { skill in
                             HermesSkillToggleRow(
@@ -1479,7 +1494,7 @@ private struct HermesSkillsPanel: View {
             Spacer()
             Text(value)
                 .multilineTextAlignment(.trailing)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
                 .textSelection(.enabled)
         }
         .font(.subheadline)
@@ -1501,7 +1516,7 @@ private struct HermesRuntimeAccordionPanel<Content: View>: View {
                 HStack(spacing: 14) {
                     Image(systemName: systemImage)
                         .font(.title3)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.igActionBlue)
                         .frame(width: 28)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title)
@@ -1509,16 +1524,16 @@ private struct HermesRuntimeAccordionPanel<Content: View>: View {
                             .foregroundStyle(.primary)
                         Text(subtitle)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
                     }
                     Spacer()
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.hermesSecondaryText)
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.background)
+                .background(Color.hermesElevated)
             }
             .buttonStyle(.plain)
 
@@ -1534,7 +1549,7 @@ private struct HermesRuntimeAccordionPanel<Content: View>: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(.background)
+        .background(Color.hermesElevated)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 }
@@ -1552,31 +1567,31 @@ private struct HermesSkillToggleRow: View {
                             .font(.headline)
                         Text(isEnabled ? "On" : "Off")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(isEnabled ? .green : .secondary)
+                            .foregroundStyle(isEnabled ? .igOnlineGreen : .secondary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background((isEnabled ? Color.green : Color.secondary).opacity(0.12))
+                            .background((isEnabled ? Color.igOnlineGreen : Color.secondary).opacity(0.12))
                             .clipShape(Capsule())
                     }
 
                     Text(skill.description)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.hermesSecondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     HStack(spacing: 8) {
                         Text(skill.category.uppercased())
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.hermesSecondaryText)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color.blue.opacity(0.08))
+                            .background(Color.igActionBlue.opacity(0.08))
                             .clipShape(Capsule())
                     }
 
                     Text(skill.path)
                         .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.hermesSecondaryText)
                         .textSelection(.enabled)
                 }
 
@@ -1586,7 +1601,7 @@ private struct HermesSkillToggleRow: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.hermesSurfaceInput)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
@@ -1603,20 +1618,20 @@ private struct HermesToolsetToggleRow: View {
                         .font(.headline)
                     Text(toolset.enabled ? "On" : "Off")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(toolset.enabled ? .green : .secondary)
+                        .foregroundStyle(toolset.enabled ? .igOnlineGreen : .secondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background((toolset.enabled ? Color.green : Color.secondary).opacity(0.12))
+                        .background((toolset.enabled ? Color.igOnlineGreen : Color.secondary).opacity(0.12))
                         .clipShape(Capsule())
                 }
 
                 Text(toolset.description)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.hermesSecondaryText)
 
                 Text(toolset.key)
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.hermesSecondaryText)
                     .textSelection(.enabled)
             }
 
@@ -1627,7 +1642,7 @@ private struct HermesToolsetToggleRow: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.hermesSurfaceInput)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
@@ -1659,7 +1674,7 @@ private struct HermesSavedModelEditorCard: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.createdAtDate.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
 
             TextField("Display name", text: $name)
             TextField("Provider", text: $provider)
@@ -1696,7 +1711,7 @@ private struct HermesSavedModelEditorCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.hermesSurfaceInput)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
@@ -1708,27 +1723,35 @@ private struct HermesHeroCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            LinearGradient(
-                colors: [Color.blue.opacity(0.9), Color.cyan.opacity(0.65)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            LinearGradient.instagramBrand
 
-            VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.largeTitle)
-                Text(title)
-                    .font(.title2.bold())
+            Circle()
+                .fill(.white.opacity(0.16))
+                .frame(width: 180, height: 180)
+                .offset(x: 160, y: -80)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 12) {
+                    StoryRing(systemImage: systemImage, isActive: true, size: 54, tint: .white)
+                    Text(title)
+                        .font(.igUsernameLarge)
+                        .foregroundStyle(.white)
+                }
+
                 Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.9))
+                    .font(.igBio)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .foregroundStyle(.white)
-            .padding(24)
+            .padding(20)
         }
-        .frame(maxWidth: .infinity, minHeight: 180)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .blue.opacity(0.18), radius: 16, y: 10)
+        .frame(maxWidth: .infinity, minHeight: 156, alignment: .bottomLeading)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: Color.igGradPurple.opacity(0.16), radius: 12, y: 6)
     }
 }
 
@@ -1742,15 +1765,32 @@ private struct HermesSectionCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.headline)
-            content
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(title.uppercased())
+                    .font(.igSecondaryMeta.weight(.semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(.hermesSecondaryText)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
+            IGHairline()
+
+            VStack(alignment: .leading, spacing: 16) {
+                content
+            }
+            .padding(16)
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.hermesElevated)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.hermesDivider.opacity(0.65), lineWidth: 0.5)
+        )
     }
 }
 
@@ -1778,19 +1818,25 @@ private struct HermesStatusPill: View {
     let item: HermesStatusItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(item.title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(item.accent)
-            Text(item.value)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
+        HStack(spacing: 10) {
+            Circle()
+                .fill(item.accent)
+                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title.uppercased())
+                    .font(.igBadge)
+                    .tracking(0.6)
+                    .foregroundStyle(.hermesSecondaryText)
+                Text(item.value)
+                    .font(.igUsername)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(item.accent.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Capsule().fill(Color.hermesSurfaceInput))
     }
 }
 
@@ -1813,30 +1859,30 @@ private struct HermesResponseCard: View {
 
             Text(response.summary)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
 
             ForEach(response.metadata, id: \.self) { line in
                 Label(line, systemImage: "circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.hermesSecondaryText)
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.hermesSurfaceInput)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var statusColor: Color {
         switch response.status.lowercased() {
         case "failed":
-            .red
+            .igDestructive
         case "streaming", "update":
-            .blue
+            .igActionBlue
         case "done", "completed":
-            .green
+            .igOnlineGreen
         default:
-            .orange
+            .igGradOrange
         }
     }
 }
@@ -1860,17 +1906,17 @@ private struct HermesChatMessageCard: View {
 
             Text(message.content)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
                 .textSelection(.enabled)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.hermesSurfaceInput)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var roleColor: Color {
-        message.role == "user" ? .blue : .green
+        message.role == "user" ? .igActionBlue : .igOnlineGreen
     }
 }
 
@@ -1881,12 +1927,12 @@ private struct HermesHistoryExchangeCard: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(exchange.completedAt.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.hermesSecondaryText)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Request")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.hermesSecondaryText)
                 Text(exchange.requestText)
                     .font(.subheadline)
                     .textSelection(.enabled)
@@ -1895,10 +1941,10 @@ private struct HermesHistoryExchangeCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Final Response")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.hermesSecondaryText)
                 Text(exchange.responseText)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.hermesSecondaryText)
                     .textSelection(.enabled)
             }
         }

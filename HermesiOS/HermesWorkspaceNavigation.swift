@@ -63,10 +63,16 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
 struct WorkspaceSidebar: View {
     @Binding var selection: WorkspaceSection?
     @Bindable var statusMonitor: HermesStatusMonitor
+    var apiChannelActive = false
+    var companionChannelActive = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HermesStatusBand(statusMonitor: statusMonitor)
+            HermesStatusBand(
+                statusMonitor: statusMonitor,
+                apiChannelActive: apiChannelActive,
+                companionChannelActive: companionChannelActive
+            )
 
             List(WorkspaceSection.allCases, selection: $selection) { section in
                 NavigationLink(value: section) {

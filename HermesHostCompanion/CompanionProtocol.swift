@@ -183,6 +183,43 @@ struct CompanionHermesSkillSummary: Codable, Identifiable {
     let isEnabled: Bool
 }
 
+enum MCPServerTransport: String, Codable, CaseIterable {
+    case stdio
+    case streamableHTTP
+}
+
+struct ListMCPServersResult: Codable {
+    let servers: [CompanionMCPServerSummary]
+    let output: String
+}
+
+struct AddMCPServerPayload: Codable {
+    let name: String
+    let transport: MCPServerTransport
+    let command: String
+    let arguments: String
+    let url: String
+    let bearerToken: String
+}
+
+struct RemoveMCPServerPayload: Codable {
+    let name: String
+}
+
+struct MCPServerOperationResult: Codable {
+    let serverName: String
+    let output: String
+    let servers: [CompanionMCPServerSummary]
+}
+
+struct CompanionMCPServerSummary: Codable, Identifiable {
+    let id: String
+    let name: String
+    let transport: String
+    let tools: String
+    let status: String
+}
+
 struct ListToolsetsPayload: Codable {
     let workspacePath: String
 }

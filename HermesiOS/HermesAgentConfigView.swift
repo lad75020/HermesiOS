@@ -48,6 +48,16 @@ struct HermesAgentConfigView: View {
         return "\(active) active, \(paused) paused, \(companionRuntime.schedules.count) total"
     }
 
+    private var mcpServersSummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to list, add, or remove MCP servers"
+        }
+        if companionRuntime.hermesMCPServers.isEmpty {
+            return "No MCP servers loaded from hermes mcp list"
+        }
+        return "\(companionRuntime.hermesMCPServers.count) configured via hermes mcp list"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -191,6 +201,24 @@ struct HermesAgentConfigView: View {
                     )
                 ) {
                     HermesToolsPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                HermesRuntimeAccordionPanel(
+                    title: "MCP Servers",
+                    subtitle: mcpServersSummary,
+                    systemImage: "point.3.connected.trianglepath.dotted",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .mcpServers },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .mcpServers : nil
+                        }
+                    )
+                ) {
+                    HermesMCPServersPanel(
                         companionSettings: companionSettings,
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime

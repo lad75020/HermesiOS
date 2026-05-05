@@ -186,6 +186,7 @@ enum HermesRuntimePanelKind: String, Identifiable {
     case profiles
     case permissions
     case tools
+    case mcpServers
     case providers
     case models
     case sandbox

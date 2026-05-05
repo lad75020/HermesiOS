@@ -547,11 +547,14 @@ struct HermesLooseJSON {
     private let object: Any?
 
     init(json: String) {
-        guard let data = json.data(using: .utf8) else {
+        if let data = json.data(using: .utf8) {
+            object = try? JSONSerialization.jsonObject(with: data)
+        } else {
             object = nil
-            return
         }
+    }
 
+    init(data: Data) {
         object = try? JSONSerialization.jsonObject(with: data)
     }
 

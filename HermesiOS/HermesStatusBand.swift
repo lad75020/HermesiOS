@@ -35,6 +35,8 @@ enum HermesServiceReachability: String {
 final class HermesStatusMonitor {
     var apiServerStatus: HermesServiceReachability = .down
     var companionStatus: HermesServiceReachability = .down
+    var isAPIProbeActive = false
+    var isCompanionProbeActive = false
 
     private let refreshInterval: Duration = .seconds(10)
 
@@ -72,6 +74,9 @@ final class HermesStatusMonitor {
 
     private func checkAPIServer(settings: HermesAPISettings) async -> Bool {
         guard let url = statusURL(from: settings.baseURL) else { return false }
+        isAPIProbeActive = true
+        defer { isAPIProbeActive = false }
+
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 3
@@ -90,6 +95,9 @@ final class HermesStatusMonitor {
 
     private func checkCompanion(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async -> Bool {
         guard identityState.isEnrolled else { return false }
+        isCompanionProbeActive = true
+        defer { isCompanionProbeActive = false }
+
         do {
             let result: HermesCompanionHelloResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
@@ -113,11 +121,21 @@ final class HermesStatusMonitor {
 
 struct HermesStatusBand: View {
     @Bindable var statusMonitor: HermesStatusMonitor
+    var apiChannelActive = false
+    var companionChannelActive = false
 
     var body: some View {
         HStack(spacing: 12) {
-            HermesStatusLED(label: "API", status: statusMonitor.apiServerStatus)
-            HermesStatusLED(label: "Mac", status: statusMonitor.companionStatus)
+            HermesStatusLED(
+                label: "API",
+                status: statusMonitor.apiServerStatus,
+                isActive: apiChannelActive || statusMonitor.isAPIProbeActive
+            )
+            HermesStatusLED(
+                label: "Mac",
+                status: statusMonitor.companionStatus,
+                isActive: companionChannelActive || statusMonitor.isCompanionProbeActive
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -134,19 +152,30 @@ struct HermesStatusBand: View {
 private struct HermesStatusLED: View {
     let label: String
     let status: HermesServiceReachability
+    let isActive: Bool
 
     var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(status.color)
-                .frame(width: 9, height: 9)
-                .shadow(color: status.color.opacity(0.45), radius: 3)
+        TimelineView(.animation(minimumInterval: 0.12)) { timeline in
+            let flashOn = Int(timeline.date.timeIntervalSinceReferenceDate * 9) % 2 == 0
+            let activeColor = flashOn ? Color.igOnlineGreen : Color.igOnlineGreen.opacity(0.38)
+            let ledColor = isActive ? activeColor : status.color
 
-            Text(label)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.hermesSecondaryText)
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(ledColor)
+                    .frame(width: 9, height: 9)
+                    .shadow(color: ledColor.opacity(isActive ? 0.75 : 0.45), radius: isActive ? 5 : 3)
+                    .overlay {
+                        Circle()
+                            .stroke(Color.white.opacity(isActive && flashOn ? 0.65 : 0.2), lineWidth: 0.6)
+                    }
+
+                Text(label)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+            }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label) status \(status.accessibilityLabel)")
+        .accessibilityLabel("\(label) status \(isActive ? "active" : status.accessibilityLabel)")
     }
 }

@@ -122,6 +122,10 @@ final class HermesChatSession {
         let envelope = try JSONDecoder().decode(HermesChatCompletionEnvelope.self, from: data)
         streamedText = envelope.assistantText
         eventCount = 1
+        if streamedText.isEmpty {
+            let payload = HermesLooseJSON(data: data)
+            streamedText = extractChatText(from: payload)
+        }
     }
 
     private func buildRequest(
@@ -162,6 +166,23 @@ final class HermesChatSession {
         return request
     }
 
+
+    private func extractChatText(from payload: HermesLooseJSON) -> String {
+        let candidates = [
+            payload.texts(at: ["choices", "0", "delta", "content"]),
+            payload.texts(at: ["choices", "0", "message", "content"]),
+            payload.texts(at: ["choices", "0", "text"]),
+            payload.texts(at: ["delta", "content"]),
+            payload.texts(at: ["message", "content"]),
+            payload.texts(at: ["content"]),
+            payload.texts(at: ["text"])
+        ]
+
+        return candidates
+            .map { $0.joined() }
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
+    }
+
     private func validate(response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw HermesResponsesError.invalidResponse
@@ -180,7 +201,7 @@ final class HermesChatSession {
 
         eventCount += 1
         let payload = HermesLooseJSON(json: event.data)
-        let delta = payload.string(at: ["choices", "0", "delta", "content"]) ?? ""
+        let delta = extractChatText(from: payload)
 
         if !delta.isEmpty {
             streamedText += delta
@@ -219,7 +240,7 @@ private struct HermesChatCompletionEnvelope: Decodable {
     let choices: [HermesChatChoice]
 
     var assistantText: String {
-        choices.compactMap(\.message?.content).joined(separator: "\n\n")
+        choices.compactMap(\.message?.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 }
 
@@ -228,7 +249,43 @@ private struct HermesChatChoice: Decodable {
 }
 
 private struct HermesChatChoiceMessage: Decodable {
-    let content: String
+    let content: HermesChatMessageContent?
+
+    var text: String {
+        content?.text ?? ""
+    }
+}
+
+private struct HermesChatMessageContent: Decodable {
+    let text: String
+
+    init(from decoder: Decoder) throws {
+        if let value = try? decoder.singleValueContainer(), let string = try? value.decode(String.self) {
+            text = string
+            return
+        }
+
+        if let parts = try? [HermesChatContentPart](from: decoder) {
+            text = parts.compactMap(\.textValue).joined()
+            return
+        }
+
+        text = ""
+    }
+}
+
+private struct HermesChatContentPart: Decodable {
+    let text: String?
+    let outputText: String?
+
+    var textValue: String? {
+        text ?? outputText
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case outputText = "output_text"
+    }
 }
 
 private struct HermesChatSSEEvent {

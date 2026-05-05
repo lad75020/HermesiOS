@@ -197,6 +197,54 @@ struct HermesCompanionSkillSummary: Codable, Identifiable, Equatable {
     let isEnabled: Bool
 }
 
+struct HermesCompanionEmptyPayload: Codable {}
+
+struct HermesCompanionListMCPServersResult: Codable {
+    let servers: [HermesCompanionMCPServerSummary]
+    let output: String
+}
+
+enum HermesCompanionMCPServerTransport: String, Codable, CaseIterable, Identifiable {
+    case stdio
+    case streamableHTTP
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .stdio: "Stdio"
+        case .streamableHTTP: "Streamable HTTP"
+        }
+    }
+}
+
+struct HermesCompanionAddMCPServerPayload: Codable {
+    let name: String
+    let transport: HermesCompanionMCPServerTransport
+    let command: String
+    let arguments: String
+    let url: String
+    let bearerToken: String
+}
+
+struct HermesCompanionRemoveMCPServerPayload: Codable {
+    let name: String
+}
+
+struct HermesCompanionMCPOperationResult: Codable {
+    let serverName: String
+    let output: String
+    let servers: [HermesCompanionMCPServerSummary]
+}
+
+struct HermesCompanionMCPServerSummary: Codable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let transport: String
+    let tools: String
+    let status: String
+}
+
 struct HermesCompanionListToolsetsPayload: Codable {
     let workspacePath: String
 }
@@ -783,6 +831,9 @@ final class HermesCompanionRuntimeSession {
     var lastErrorMessage = ""
     var isBusy = false
     var hermesSkills: [HermesCompanionSkillSummary] = []
+    var hermesMCPServers: [HermesCompanionMCPServerSummary] = []
+    var mcpListOutput = ""
+    var mcpOperationOutput = ""
     var resolvedHermesWorkspacePath = ""
     var hermesToolsets: [HermesCompanionToolsetInfo] = []
     var toolsetsConfigPath = ""
@@ -1023,6 +1074,67 @@ final class HermesCompanionRuntimeSession {
                 connectionStatus = "Skills Sync Failed"
             }
             isBusy = false
+        }
+    }
+
+    func refreshHermesMCPServers(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Loading MCP Servers"
+            let result: HermesCompanionListMCPServersResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "list_mcp_servers",
+                payload: HermesCompanionEmptyPayload()
+            )
+            self.hermesMCPServers = result.servers
+            self.mcpListOutput = result.output
+            self.connectionStatus = result.servers.isEmpty ? "No MCP Servers" : "MCP Servers Loaded"
+        }
+    }
+
+    func addHermesMCPServer(
+        name: String,
+        transport: HermesCompanionMCPServerTransport,
+        command: String,
+        arguments: String,
+        url: String,
+        bearerToken: String,
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        run {
+            self.connectionStatus = "Adding MCP Server"
+            let result: HermesCompanionMCPOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "add_mcp_server",
+                payload: HermesCompanionAddMCPServerPayload(
+                    name: name,
+                    transport: transport,
+                    command: command,
+                    arguments: arguments,
+                    url: url,
+                    bearerToken: bearerToken
+                )
+            )
+            self.hermesMCPServers = result.servers
+            self.mcpOperationOutput = result.output
+            self.connectionStatus = "MCP Server Added"
+        }
+    }
+
+    func removeHermesMCPServer(name: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Removing MCP Server"
+            let result: HermesCompanionMCPOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "remove_mcp_server",
+                payload: HermesCompanionRemoveMCPServerPayload(name: name)
+            )
+            self.hermesMCPServers = result.servers
+            self.mcpOperationOutput = result.output
+            self.connectionStatus = "MCP Server Removed"
         }
     }
 

@@ -70,6 +70,15 @@ struct ContentView: View {
         }
     }
 
+
+    private var apiChannelActive: Bool {
+        responseSession.isSending || chatSession.isSending
+    }
+
+    private var companionChannelActive: Bool {
+        companionEnrollment.isEnrolling || companionRuntime.isBusy
+    }
+
     private var statusRefreshKey: String {
         [
             apiSettings.baseURL,
@@ -85,8 +94,13 @@ struct ContentView: View {
 
     private var iPadLayout: some View {
         NavigationSplitView {
-            WorkspaceSidebar(selection: $selectedWorkspace, statusMonitor: statusMonitor)
-                .navigationTitle("Hermes")
+            WorkspaceSidebar(
+                selection: $selectedWorkspace,
+                statusMonitor: statusMonitor,
+                apiChannelActive: apiChannelActive,
+                companionChannelActive: companionChannelActive
+            )
+            .navigationTitle("Hermes")
                 .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
         } detail: {
             workspaceDetail(for: selectedWorkspace ?? .responses)
@@ -96,7 +110,11 @@ struct ContentView: View {
 
     private var iPhoneLayout: some View {
         VStack(spacing: 0) {
-            HermesStatusBand(statusMonitor: statusMonitor)
+            HermesStatusBand(
+                statusMonitor: statusMonitor,
+                apiChannelActive: apiChannelActive,
+                companionChannelActive: companionChannelActive
+            )
 
             TabView {
                 NavigationStack {

@@ -303,6 +303,7 @@ final class CompanionClientSession {
     private let providerRegistry = CompanionProviderRegistry()
     private let memoryRegistry = CompanionMemoryRegistry()
     private let scheduleRegistry = CompanionScheduleRegistry()
+    private let mcpRegistry = CompanionMCPRegistry()
 
     init(connection: NWConnection) {
         self.connection = connection
@@ -399,6 +400,9 @@ final class CompanionClientSession {
                         "service_restart",
                         "list_skills",
                         "set_skill_state",
+                        "list_mcp_servers",
+                        "add_mcp_server",
+                        "remove_mcp_server",
                         "list_toolsets",
                         "set_toolset_enabled",
                         "list_models",
@@ -542,6 +546,32 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "set_skill_state_failed", message: error.localizedDescription)
+            }
+        case "list_mcp_servers":
+            do {
+                return .success(id: request.id, payload: try mcpRegistry.listServers())
+            } catch {
+                return .error(id: request.id, code: "list_mcp_servers_failed", message: error.localizedDescription)
+            }
+        case "add_mcp_server":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The add_mcp_server request requires a payload.")
+                }
+                let addPayload = try payload.decode(AddMCPServerPayload.self)
+                return .success(id: request.id, payload: try mcpRegistry.addServer(addPayload))
+            } catch {
+                return .error(id: request.id, code: "add_mcp_server_failed", message: error.localizedDescription)
+            }
+        case "remove_mcp_server":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The remove_mcp_server request requires a payload.")
+                }
+                let removePayload = try payload.decode(RemoveMCPServerPayload.self)
+                return .success(id: request.id, payload: try mcpRegistry.removeServer(name: removePayload.name))
+            } catch {
+                return .error(id: request.id, code: "remove_mcp_server_failed", message: error.localizedDescription)
             }
         case "list_toolsets":
             do {

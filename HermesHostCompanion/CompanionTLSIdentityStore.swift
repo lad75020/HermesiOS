@@ -16,6 +16,8 @@ struct CompanionServerIdentity {
 }
 
 struct CompanionSignedClientIdentity {
+    let identityPKCS12Base64: String
+    let identityPassword: String
     let certificatePEM: String
     let caCertificatePEM: String
 }
@@ -57,8 +59,8 @@ final class CompanionTLSIdentityStore {
 
     private init() {}
 
-    func loadServerIdentity() throws -> CompanionServerIdentity {
-        try bootstrapIfNeeded()
+    func loadServerIdentity(host: String) throws -> CompanionServerIdentity {
+        try bootstrapIfNeeded(host: host)
 
         let caCertificate = try loadCertificate(from: caCertificateURL())
         let serverCertificate = try loadCertificate(from: serverCertificateURL())
@@ -71,18 +73,30 @@ final class CompanionTLSIdentityStore {
         )
     }
 
-    func createSignedClientIdentity(csrPEM: String, commonName: String) throws -> CompanionSignedClientIdentity {
-        try bootstrapIfNeeded()
+    func createSignedClientIdentity(commonName: String) throws -> CompanionSignedClientIdentity {
+        try bootstrapIfNeeded(host: "localhost")
 
         let temporaryDirectory = try makeTemporaryDirectory(prefix: "client-signing")
         defer { try? fileManager.removeItem(at: temporaryDirectory) }
 
+        let privateKeyURL = temporaryDirectory.appendingPathComponent("client.key.pem")
         let csrURL = temporaryDirectory.appendingPathComponent("client.csr.pem")
         let certificateURL = temporaryDirectory.appendingPathComponent("client.cert.pem")
         let extensionURL = temporaryDirectory.appendingPathComponent("client.ext")
+        let identityURL = temporaryDirectory.appendingPathComponent("client.p12")
+        let identityPassword = UUID().uuidString.replacingOccurrences(of: "-", with: "")
 
-        try csrPEM.write(to: csrURL, atomically: true, encoding: .utf8)
         try clientExtensionsPEM(commonName: commonName).write(to: extensionURL, atomically: true, encoding: .utf8)
+
+        try runOpenSSL(arguments: [
+            "req",
+            "-new",
+            "-newkey", "rsa:4096",
+            "-keyout", privateKeyURL.path,
+            "-out", csrURL.path,
+            "-nodes",
+            "-subj", "/CN=\(sanitizedCommonName(commonName))"
+        ])
 
         try runOpenSSL(arguments: [
             "x509",
@@ -97,17 +111,33 @@ final class CompanionTLSIdentityStore {
             "-extfile", extensionURL.path
         ])
 
+        try runOpenSSL(arguments: [
+            "pkcs12",
+            "-export",
+            "-inkey", privateKeyURL.path,
+            "-in", certificateURL.path,
+            "-certfile", caCertificateURL().path,
+            "-out", identityURL.path,
+            "-passout", "pass:\(identityPassword)"
+        ])
+
         let certificatePEM = try String(contentsOf: certificateURL, encoding: .utf8)
         let caPEM = try String(contentsOf: caCertificateURL(), encoding: .utf8)
-        return CompanionSignedClientIdentity(certificatePEM: certificatePEM, caCertificatePEM: caPEM)
+        let identityData = try Data(contentsOf: identityURL)
+        return CompanionSignedClientIdentity(
+            identityPKCS12Base64: identityData.base64EncodedString(),
+            identityPassword: identityPassword,
+            certificatePEM: certificatePEM,
+            caCertificatePEM: caPEM
+        )
     }
 
     func caCertificatePEM() throws -> String {
-        try bootstrapIfNeeded()
+        try bootstrapIfNeeded(host: "localhost")
         return try String(contentsOf: caCertificateURL(), encoding: .utf8)
     }
 
-    private func bootstrapIfNeeded() throws {
+    private func bootstrapIfNeeded(host: String) throws {
         guard fileManager.fileExists(atPath: opensslPath) else {
             throw CompanionTLSIdentityStoreError.opensslUnavailable
         }
@@ -125,8 +155,12 @@ final class CompanionTLSIdentityStore {
 
         let serverP12Path = try serverP12URL().path
         let serverCertificatePath = try serverCertificateURL().path
-        if fileManager.fileExists(atPath: serverP12Path) == false || fileManager.fileExists(atPath: serverCertificatePath) == false {
-            try generateServerIdentity()
+        let normalizedHost = normalizedServerHost(host)
+        let storedHost = (try? String(contentsOf: serverHostURL(), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        if fileManager.fileExists(atPath: serverP12Path) == false ||
+            fileManager.fileExists(atPath: serverCertificatePath) == false ||
+            storedHost != normalizedHost {
+            try generateServerIdentity(host: normalizedHost)
         }
     }
 
@@ -143,14 +177,14 @@ final class CompanionTLSIdentityStore {
         ])
     }
 
-    private func generateServerIdentity() throws {
+    private func generateServerIdentity(host: String) throws {
         let temporaryDirectory = try makeTemporaryDirectory(prefix: "server-bootstrap")
         defer { try? fileManager.removeItem(at: temporaryDirectory) }
 
         let csrURL = temporaryDirectory.appendingPathComponent("server.csr.pem")
         let extensionURL = temporaryDirectory.appendingPathComponent("server.ext")
 
-        try serverExtensionsPEM().write(to: extensionURL, atomically: true, encoding: .utf8)
+        try serverExtensionsPEM(host: host).write(to: extensionURL, atomically: true, encoding: .utf8)
 
         try runOpenSSL(arguments: [
             "req",
@@ -184,6 +218,8 @@ final class CompanionTLSIdentityStore {
             "-out", serverP12URL().path,
             "-passout", "pass:\(serverP12Password)"
         ])
+
+        try host.write(to: serverHostURL(), atomically: true, encoding: .utf8)
     }
 
     private func loadPKCS12Identity() throws -> SecIdentity {
@@ -274,12 +310,20 @@ final class CompanionTLSIdentityStore {
         try pkiDirectory().appendingPathComponent("server.p12")
     }
 
-    private func serverExtensionsPEM() -> String {
-        """
+    private func serverExtensionsPEM(host: String) -> String {
+        var subjectAltNames = ["DNS:localhost", "IP:127.0.0.1"]
+        if host != "localhost", host != "127.0.0.1" {
+            if isIPAddress(host) {
+                subjectAltNames.append("IP:\(host)")
+            } else {
+                subjectAltNames.append("DNS:\(host)")
+            }
+        }
+        return """
         basicConstraints=CA:FALSE
         keyUsage=digitalSignature,keyEncipherment
         extendedKeyUsage=serverAuth
-        subjectAltName=DNS:localhost,IP:127.0.0.1
+        subjectAltName=\(subjectAltNames.joined(separator: ","))
         """
     }
 
@@ -295,6 +339,19 @@ final class CompanionTLSIdentityStore {
     private func sanitizedCommonName(_ value: String) -> String {
         let allowed = value.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "." }
         return allowed.isEmpty ? "hermes-ios-device" : allowed
+    }
+
+    private func normalizedServerHost(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "localhost" : trimmed
+    }
+
+    private func isIPAddress(_ value: String) -> Bool {
+        value.allSatisfy { $0.isNumber || $0 == "." || $0 == ":" }
+    }
+
+    private func serverHostURL() throws -> URL {
+        try pkiDirectory().appendingPathComponent("server-host.txt")
     }
 
     private static func fingerprint(for certificate: SecCertificate) -> String {

@@ -43,20 +43,43 @@ final class CompanionServer {
     private var enrollmentListener: NWListener?
     private var sessions: [UUID: CompanionClientSession] = [:]
     private var enrollmentSessions: [UUID: CompanionEnrollmentSession] = [:]
-    private let configuration = CompanionServerConfiguration.default
+    private var configuration = CompanionServerConfigurationStore.load()
+
+    var currentConfiguration: CompanionServerConfiguration {
+        configuration
+    }
+
+    func updateConfiguration(_ configuration: CompanionServerConfiguration) {
+        self.configuration = configuration
+        CompanionServerConfigurationStore.save(configuration)
+
+        if state == .running {
+            listenerDescription = "wss://\(configuration.host):\(configuration.port.rawValue)/ws"
+            enrollmentListenerDescription = "wss://\(configuration.host):\(configuration.enrollmentPort.rawValue)/enroll"
+        }
+    }
 
     func start() async throws {
         stop()
         state = .starting
         lastErrorMessage = ""
 
-        let identity = try CompanionTLSIdentityStore.shared.loadServerIdentity()
+        let identity = try CompanionTLSIdentityStore.shared.loadServerIdentity(host: configuration.host)
         let parameters = try CompanionServerParametersFactory.makeAuthenticatedParameters(
             identity: identity,
             allowedClientCA: identity.caCertificate,
             authenticationStore: CompanionAuthenticationStore.shared
         )
         let enrollmentParameters = try CompanionServerParametersFactory.makeEnrollmentParameters(identity: identity)
+
+        parameters.requiredLocalEndpoint = .hostPort(
+            host: NWEndpoint.Host(configuration.host),
+            port: configuration.port
+        )
+        enrollmentParameters.requiredLocalEndpoint = .hostPort(
+            host: NWEndpoint.Host(configuration.host),
+            port: configuration.enrollmentPort
+        )
 
         let listener = try NWListener(using: parameters, on: configuration.port)
         let enrollmentListener = try NWListener(using: enrollmentParameters, on: configuration.enrollmentPort)
@@ -70,16 +93,35 @@ final class CompanionServer {
                     self.state = .running
                     self.listenerDescription = "wss://\(self.configuration.host):\(self.configuration.port.rawValue)/ws"
                     self.enrollmentListenerDescription = "wss://\(self.configuration.host):\(self.configuration.enrollmentPort.rawValue)/enroll"
-                    logger.info("Companion server ready on port \(self.configuration.port.rawValue)")
+                    logger.info("Companion API server ready on port \(self.configuration.port.rawValue)")
                 case .failed(let error):
                     self.state = .failed
-                    self.lastErrorMessage = error.localizedDescription
-                    self.listenerDescription = "Listener failed"
-                    self.enrollmentListenerDescription = "Enrollment listener failed"
-                    logger.error("Companion server failed: \(error.localizedDescription, privacy: .public)")
+                    self.lastErrorMessage = "API listener failed on port \(self.configuration.port.rawValue): \(error.localizedDescription)"
+                    self.listenerDescription = "API listener failed"
+                    logger.error("Companion API server failed: \(error.localizedDescription, privacy: .public)")
                 case .cancelled:
                     self.state = .stopped
                     self.listenerDescription = "Not listening"
+                    self.enrollmentListenerDescription = "Not listening"
+                default:
+                    break
+                }
+            }
+        }
+
+        enrollmentListener.stateUpdateHandler = { [weak self] newState in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch newState {
+                case .ready:
+                    self.enrollmentListenerDescription = "wss://\(self.configuration.host):\(self.configuration.enrollmentPort.rawValue)/enroll"
+                    logger.info("Companion enrollment server ready on port \(self.configuration.enrollmentPort.rawValue)")
+                case .failed(let error):
+                    self.state = .failed
+                    self.lastErrorMessage = "Enrollment listener failed on port \(self.configuration.enrollmentPort.rawValue): \(error.localizedDescription)"
+                    self.enrollmentListenerDescription = "Enrollment listener failed"
+                    logger.error("Companion enrollment server failed: \(error.localizedDescription, privacy: .public)")
+                case .cancelled:
                     self.enrollmentListenerDescription = "Not listening"
                 default:
                     break
@@ -147,7 +189,38 @@ struct CompanionServerConfiguration {
     let port: NWEndpoint.Port
     let enrollmentPort: NWEndpoint.Port
 
-    static let `default` = CompanionServerConfiguration(host: "localhost", port: 9443, enrollmentPort: 9444)
+    static let `default` = CompanionServerConfiguration(host: "localhost", port: 9112, enrollmentPort: 9113)
+}
+
+private enum CompanionServerConfigurationStore {
+    private static let hostKey = "companion.server.host"
+    private static let portKey = "companion.server.port"
+    private static let enrollmentPortKey = "companion.server.enrollmentPort"
+
+    static func load() -> CompanionServerConfiguration {
+        let defaults = UserDefaults.standard
+        let host = defaults.string(forKey: hostKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let portValue = defaults.integer(forKey: portKey)
+        let enrollmentPortValue = defaults.integer(forKey: enrollmentPortKey)
+
+        let hostValue = (host?.isEmpty == false ? host! : CompanionServerConfiguration.default.host)
+        let port = validPort(from: portValue) ?? CompanionServerConfiguration.default.port
+        let enrollmentPort = validPort(from: enrollmentPortValue) ?? CompanionServerConfiguration.default.enrollmentPort
+
+        return CompanionServerConfiguration(host: hostValue, port: port, enrollmentPort: enrollmentPort)
+    }
+
+    static func save(_ configuration: CompanionServerConfiguration) {
+        let defaults = UserDefaults.standard
+        defaults.set(configuration.host, forKey: hostKey)
+        defaults.set(Int(configuration.port.rawValue), forKey: portKey)
+        defaults.set(Int(configuration.enrollmentPort.rawValue), forKey: enrollmentPortKey)
+    }
+
+    private static func validPort(from value: Int) -> NWEndpoint.Port? {
+        guard value > 0, value < 65536 else { return nil }
+        return NWEndpoint.Port(rawValue: UInt16(value))
+    }
 }
 
 private enum CompanionServerParametersFactory {
@@ -225,6 +298,8 @@ final class CompanionClientSession {
     private let encoder = JSONEncoder()
     private let registry = CompanionTargetRegistry.shared
     private let serviceRegistry = CompanionServiceRegistry.shared
+    private let toolsetRegistry = CompanionToolsetRegistry.shared
+    private let modelRegistry = CompanionModelRegistry.shared
 
     init(connection: NWConnection) {
         self.connection = connection
@@ -318,7 +393,15 @@ final class CompanionClientSession {
                         "list_backups",
                         "restore_backup",
                         "service_status",
-                        "service_restart"
+                        "service_restart",
+                        "list_skills",
+                        "set_skill_state",
+                        "list_toolsets",
+                        "set_toolset_enabled",
+                        "list_models",
+                        "add_model",
+                        "update_model",
+                        "remove_model"
                     ]
                 )
             )
@@ -408,6 +491,118 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "service_restart_failed", message: error.localizedDescription)
+            }
+        case "list_skills":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The list_skills request requires a payload.")
+                }
+                let listPayload = try payload.decode(ListHermesSkillsPayload.self)
+                let result = try registry.listHermesSkills(workspacePath: listPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "list_skills_failed", message: error.localizedDescription)
+            }
+        case "set_skill_state":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The set_skill_state request requires a payload.")
+                }
+                let setPayload = try payload.decode(SetHermesSkillStatePayload.self)
+                let result = try registry.setHermesSkillState(
+                    workspacePath: setPayload.workspacePath,
+                    skillID: setPayload.skillID,
+                    isEnabled: setPayload.isEnabled
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_skill_state_failed", message: error.localizedDescription)
+            }
+        case "list_toolsets":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The list_toolsets request requires a payload.")
+                }
+                let listPayload = try payload.decode(ListToolsetsPayload.self)
+                let result = try toolsetRegistry.listToolsets(workspacePath: listPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "list_toolsets_failed", message: error.localizedDescription)
+            }
+        case "set_toolset_enabled":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The set_toolset_enabled request requires a payload.")
+                }
+                let setPayload = try payload.decode(SetToolsetEnabledPayload.self)
+                let result = try toolsetRegistry.setToolsetEnabled(
+                    workspacePath: setPayload.workspacePath,
+                    key: setPayload.key,
+                    enabled: setPayload.enabled
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_toolset_enabled_failed", message: error.localizedDescription)
+            }
+        case "list_models":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The list_models request requires a payload.")
+                }
+                let listPayload = try payload.decode(ListModelsPayload.self)
+                let result = try modelRegistry.listModels(workspacePath: listPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "list_models_failed", message: error.localizedDescription)
+            }
+        case "add_model":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The add_model request requires a payload.")
+                }
+                let addPayload = try payload.decode(AddModelPayload.self)
+                let result = try modelRegistry.addModel(
+                    workspacePath: addPayload.workspacePath,
+                    name: addPayload.name,
+                    provider: addPayload.provider,
+                    model: addPayload.model,
+                    baseURL: addPayload.baseURL
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "add_model_failed", message: error.localizedDescription)
+            }
+        case "update_model":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The update_model request requires a payload.")
+                }
+                let updatePayload = try payload.decode(UpdateModelPayload.self)
+                let result = try modelRegistry.updateModel(
+                    workspacePath: updatePayload.workspacePath,
+                    id: updatePayload.id,
+                    name: updatePayload.name,
+                    provider: updatePayload.provider,
+                    model: updatePayload.model,
+                    baseURL: updatePayload.baseURL
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "update_model_failed", message: error.localizedDescription)
+            }
+        case "remove_model":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The remove_model request requires a payload.")
+                }
+                let removePayload = try payload.decode(RemoveModelPayload.self)
+                let result = try modelRegistry.removeModel(
+                    workspacePath: removePayload.workspacePath,
+                    id: removePayload.id
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "remove_model_failed", message: error.localizedDescription)
             }
         default:
             return .error(
@@ -518,7 +713,6 @@ final class CompanionEnrollmentSession {
                 }
                 let enrollPayload = try payload.decode(EnrollClientPayload.self)
                 let signedIdentity = try CompanionTLSIdentityStore.shared.createSignedClientIdentity(
-                    csrPEM: enrollPayload.csrPEM,
                     commonName: enrollPayload.deviceName
                 )
                 let enrolledDevice = try CompanionAuthenticationStore.shared.enrollDevice(
@@ -527,13 +721,14 @@ final class CompanionEnrollmentSession {
                     deviceName: enrollPayload.deviceName,
                     clientCertificatePEM: signedIdentity.certificatePEM
                 )
-                let serverIdentity = try CompanionTLSIdentityStore.shared.loadServerIdentity()
+                let serverIdentity = try CompanionTLSIdentityStore.shared.loadServerIdentity(host: configuration.host)
                 return .success(
                     id: request.id,
                     payload: EnrollClientResult(
                         deviceID: enrolledDevice.id,
                         deviceName: enrolledDevice.commonName,
-                        clientCertificatePEM: signedIdentity.certificatePEM,
+                        clientIdentityPKCS12Base64: signedIdentity.identityPKCS12Base64,
+                        clientIdentityPassword: signedIdentity.identityPassword,
                         caCertificatePEM: signedIdentity.caCertificatePEM,
                         serverEndpoint: "wss://\(configuration.host):\(configuration.port.rawValue)/ws",
                         serverCertificateFingerprint: serverIdentity.serverCertificateFingerprint

@@ -6,22 +6,29 @@
 //
 
 import Observation
+import PhotosUI
 import SwiftUI
+import Vision
+import VisionKit
 
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
     @State private var apiSettings: HermesAPISettings
+    @State private var companionSettings: HermesCompanionSettings
     @State private var agentConfiguration = HermesAgentConfiguration()
     @State private var responsesDraft: HermesRequestDraft
     @State private var responseSession = HermesResponsesSession()
     @State private var chatDraft: HermesChatDraft
     @State private var chatSession = HermesChatSession()
     @State private var historyStore = HermesHistoryStore()
+    @State private var companionEnrollment = HermesCompanionEnrollmentSession()
+    @State private var companionRuntime = HermesCompanionRuntimeSession()
 
     init() {
         _apiSettings = State(initialValue: HermesSettingsPersistence.loadAPISettings())
+        _companionSettings = State(initialValue: HermesSettingsPersistence.loadCompanionSettings())
         _responsesDraft = State(initialValue: HermesSettingsPersistence.loadResponsesDraft())
         _chatDraft = State(initialValue: HermesSettingsPersistence.loadChatDraft())
     }
@@ -37,6 +44,9 @@ struct ContentView: View {
         .background(Color(.systemGroupedBackground))
         .onChange(of: apiSettings) { _, newValue in
             HermesSettingsPersistence.saveAPISettings(newValue)
+        }
+        .onChange(of: companionSettings) { _, newValue in
+            HermesSettingsPersistence.saveCompanionSettings(newValue)
         }
         .onChange(of: responsesDraft) { _, newValue in
             HermesSettingsPersistence.saveResponsesDraft(newValue)
@@ -93,8 +103,10 @@ struct ContentView: View {
             NavigationStack {
                 HermesSettingsView(
                     apiSettings: $apiSettings,
+                    companionSettings: $companionSettings,
                     responsesDraft: $responsesDraft,
-                    chatDraft: $chatDraft
+                    chatDraft: $chatDraft,
+                    companionEnrollment: companionEnrollment
                 )
             }
             .tabItem {
@@ -102,7 +114,12 @@ struct ContentView: View {
             }
 
             NavigationStack {
-                HermesAgentConfigView(agentConfiguration: $agentConfiguration)
+                HermesAgentConfigView(
+                    agentConfiguration: $agentConfiguration,
+                    companionSettings: companionSettings,
+                    companionEnrollment: companionEnrollment,
+                    companionRuntime: companionRuntime
+                )
             }
             .tabItem {
                 Label("Runtime", systemImage: "server.rack")
@@ -132,11 +149,18 @@ struct ContentView: View {
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,
+                companionSettings: $companionSettings,
                 responsesDraft: $responsesDraft,
-                chatDraft: $chatDraft
+                chatDraft: $chatDraft,
+                companionEnrollment: companionEnrollment
             )
         case .runtime:
-            HermesAgentConfigView(agentConfiguration: $agentConfiguration)
+            HermesAgentConfigView(
+                agentConfiguration: $agentConfiguration,
+                companionSettings: companionSettings,
+                companionEnrollment: companionEnrollment,
+                companionRuntime: companionRuntime
+            )
         }
     }
 }
@@ -468,8 +492,12 @@ private struct HermesChatConsoleView: View {
 
 private struct HermesSettingsView: View {
     @Binding var apiSettings: HermesAPISettings
+    @Binding var companionSettings: HermesCompanionSettings
     @Binding var responsesDraft: HermesRequestDraft
     @Binding var chatDraft: HermesChatDraft
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @State private var isPairingScannerPresented = false
+    @State private var selectedPairingQRImage: PhotosPickerItem?
 
     var body: some View {
         Form {
@@ -484,6 +512,78 @@ private struct HermesSettingsView: View {
 
                 settingsRow(label: "Responses URL", value: HermesAPISettings.responseURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
                 settingsRow(label: "Chat URL", value: HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
+            }
+
+            Section("Host Companion") {
+                TextField("Enrollment URL", text: $companionSettings.enrollmentURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                TextField("API URL", text: $companionSettings.apiURL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                TextField("Hermes workspace path", text: $companionSettings.hermesWorkspacePath)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                TextField("Device name", text: $companionSettings.deviceName)
+
+                TextField("Server fingerprint", text: $companionSettings.expectedServerFingerprint, axis: .vertical)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .lineLimit(3, reservesSpace: true)
+
+                TextField("Pairing ID", text: $companionSettings.pairingID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                SecureField("Pairing secret", text: $companionSettings.pairingSecret)
+
+                Button("Scan Pairing QR") {
+                    isPairingScannerPresented = true
+                }
+                .disabled(HermesPairingQRScannerView.isSupported == false)
+
+                PhotosPicker(selection: $selectedPairingQRImage, matching: .images) {
+                    Label("Pick Pairing QR Image", systemImage: "photo")
+                }
+
+                settingsRow(label: "Enrollment Status", value: companionEnrollment.connectionStatus)
+
+                if companionEnrollment.identityState.isEnrolled {
+                    settingsRow(label: "Enrolled Device", value: companionEnrollment.identityState.deviceName)
+                    settingsRow(label: "Device ID", value: companionEnrollment.identityState.deviceID)
+                    settingsRow(label: "Pinned Fingerprint", value: companionEnrollment.identityState.serverCertificateFingerprint)
+                    settingsRow(label: "Companion Endpoint", value: companionEnrollment.identityState.serverEndpoint)
+                }
+
+                if !companionEnrollment.lastErrorMessage.isEmpty {
+                    Text(companionEnrollment.lastErrorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+
+                HStack {
+                    Button(companionEnrollment.identityState.isEnrolled ? "Re-enroll" : "Enroll Device") {
+                        companionEnrollment.enroll(settings: companionSettings)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(
+                        companionEnrollment.isEnrolling ||
+                        companionSettings.enrollmentURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        companionSettings.expectedServerFingerprint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        companionSettings.pairingID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        companionSettings.pairingSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+
+                    if companionEnrollment.identityState.isEnrolled {
+                        Button("Clear Identity", role: .destructive) {
+                            companionEnrollment.clearIdentity()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
             }
 
             Section("/v1/responses") {
@@ -512,10 +612,32 @@ private struct HermesSettingsView: View {
                 Text("Responses and Chat screens are now limited to message exchange and output.")
                 Text("Use this screen for endpoint, auth, model, streaming, and prompt configuration.")
                 Text("Keep self-signed certificate support off unless you trust the Hermes API server.")
+                Text("For the host companion, copy the server fingerprint from the macOS app, create a pairing there, then enroll this device to import its client certificate.")
+                Text("Set the Hermes workspace path to the host-side `.hermes` directory you want the Skills panel to manage.")
             }
             .foregroundStyle(.secondary)
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: $isPairingScannerPresented) {
+            HermesPairingQRScannerView { payload in
+                applyPairingPayload(payload)
+                isPairingScannerPresented = false
+            }
+        }
+        .task(id: selectedPairingQRImage) {
+            guard let selectedPairingQRImage else { return }
+            do {
+                guard let imageData = try await selectedPairingQRImage.loadTransferable(type: Data.self) else {
+                    throw HermesCompanionClientError.invalidPairingQRCode
+                }
+                let payload = try HermesPairingImageDecoder.decode(from: imageData)
+                applyPairingPayload(payload)
+                self.selectedPairingQRImage = nil
+            } catch {
+                companionEnrollment.lastErrorMessage = error.localizedDescription
+                self.selectedPairingQRImage = nil
+            }
+        }
     }
 
     private func settingsRow(label: String, value: String) -> some View {
@@ -528,6 +650,116 @@ private struct HermesSettingsView: View {
                 .foregroundStyle(.secondary)
         }
         .font(.subheadline)
+    }
+
+    private func applyPairingPayload(_ payload: HermesCompanionPairingQRCodePayload) {
+        companionSettings.enrollmentURL = payload.enrollmentURL
+        companionSettings.apiURL = payload.apiURL
+        companionSettings.expectedServerFingerprint = payload.serverFingerprint
+        companionSettings.pairingID = payload.pairingID
+        companionSettings.pairingSecret = payload.pairingSecret
+    }
+}
+
+private struct HermesPairingQRScannerView: View {
+    static var isSupported: Bool {
+        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
+    }
+
+    let onPayload: (HermesCompanionPairingQRCodePayload) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var errorMessage = ""
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if Self.isSupported {
+                    HermesDataScannerContainer { scannedValue in
+                        do {
+                            let payload = try HermesCompanionPairingPayloadDecoder.decode(scannedValue)
+                            onPayload(payload)
+                        } catch {
+                            errorMessage = error.localizedDescription
+                        }
+                    }
+                } else {
+                    ContentUnavailableView(
+                        "Scanner Unavailable",
+                        systemImage: "qrcode.viewfinder",
+                        description: Text("QR scanning requires a real camera-backed iOS device. The simulator cannot scan pairing codes.")
+                    )
+                }
+            }
+            .navigationTitle("Scan Pairing QR")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .padding()
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding()
+                }
+            }
+        }
+    }
+}
+
+private struct HermesDataScannerContainer: UIViewControllerRepresentable {
+    let onScannedValue: (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onScannedValue: onScannedValue)
+    }
+
+    func makeUIViewController(context: Context) -> DataScannerViewController {
+        let controller = DataScannerViewController(
+            recognizedDataTypes: [.barcode(symbologies: [.qr])],
+            qualityLevel: .balanced,
+            recognizesMultipleItems: false,
+            isHighFrameRateTrackingEnabled: false,
+            isPinchToZoomEnabled: true,
+            isGuidanceEnabled: true,
+            isHighlightingEnabled: true
+        )
+        controller.delegate = context.coordinator
+        try? controller.startScanning()
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+        private let onScannedValue: (String) -> Void
+        private var hasScanned = false
+
+        init(onScannedValue: @escaping (String) -> Void) {
+            self.onScannedValue = onScannedValue
+        }
+
+        func dataScanner(
+            _ dataScanner: DataScannerViewController,
+            didAdd addedItems: [RecognizedItem],
+            allItems: [RecognizedItem]
+        ) {
+            guard hasScanned == false else { return }
+            for item in addedItems {
+                guard case .barcode(let barcode) = item else { continue }
+                guard let payload = barcode.payloadStringValue, payload.isEmpty == false else { continue }
+                hasScanned = true
+                dataScanner.stopScanning()
+                onScannedValue(payload)
+                return
+            }
+        }
     }
 }
 
@@ -588,6 +820,9 @@ private struct HermesHistoryView: View {
 
 private struct HermesAgentConfigView: View {
     @Binding var agentConfiguration: HermesAgentConfiguration
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
 
     var body: some View {
         ScrollView {
@@ -600,7 +835,7 @@ private struct HermesAgentConfigView: View {
 
                 HermesRuntimeAccordionPanel(
                     title: "Skills",
-                    subtitle: "\(agentConfiguration.installedSkills.count) installed, \(agentConfiguration.filteredCatalogSkills.count) visible in catalog",
+                    subtitle: "\(companionRuntime.hermesSkills.filter(\.isEnabled).count) enabled, \(companionRuntime.hermesSkills.count) visible in workspace",
                     systemImage: "square.stack.3d.up.fill",
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .skills },
@@ -609,7 +844,30 @@ private struct HermesAgentConfigView: View {
                         }
                     )
                 ) {
-                    HermesSkillsPanel(agentConfiguration: $agentConfiguration)
+                    HermesSkillsPanel(
+                        agentConfiguration: $agentConfiguration,
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                HermesRuntimeAccordionPanel(
+                    title: "Companion",
+                    subtitle: companionEnrollment.identityState.isEnrolled ? companionRuntime.connectionStatus : "Enroll an iOS client certificate to unlock host operations",
+                    systemImage: "lock.laptopcomputer",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .companion },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .companion : nil
+                        }
+                    )
+                ) {
+                    HermesCompanionPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
                 }
 
                 HermesRuntimeAccordionPanel(
@@ -665,6 +923,42 @@ private struct HermesAgentConfigView: View {
                     .opacity(agentConfiguration.backend == .ssh ? 1 : 0.45)
                 }
 
+                HermesRuntimeAccordionPanel(
+                    title: "Tools",
+                    subtitle: "\(companionRuntime.hermesToolsets.filter(\.enabled).count) enabled, \(companionRuntime.hermesToolsets.count) available in config",
+                    systemImage: "wrench.and.screwdriver",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .tools },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .tools : nil
+                        }
+                    )
+                ) {
+                    HermesToolsPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                HermesRuntimeAccordionPanel(
+                    title: "Models",
+                    subtitle: "\(companionRuntime.hermesModels.count) saved in workspace inventory",
+                    systemImage: "cpu",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .models },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .models : nil
+                        }
+                    )
+                ) {
+                    HermesModelsPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
                 ForEach(HermesRuntimePanel.placeholderPanels) { panel in
                     HermesRuntimeAccordionPanel(
                         title: panel.title,
@@ -690,104 +984,505 @@ private struct HermesAgentConfigView: View {
     }
 }
 
-private struct HermesSkillsPanel: View {
-    @Binding var agentConfiguration: HermesAgentConfiguration
+private struct HermesCompanionPanel: View {
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Picker("Source", selection: $agentConfiguration.skillsLibraryMode) {
-                ForEach(HermesSkillsLibraryMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            if agentConfiguration.skillsLibraryMode == .browse {
-                TextField("Search skills", text: $agentConfiguration.skillSearchQuery)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-
-            let visibleSkills = agentConfiguration.visibleSkills
-            if visibleSkills.isEmpty {
+            if companionEnrollment.identityState.isEnrolled == false {
                 ContentUnavailableView(
-                    "No Skills Found",
-                    systemImage: "magnifyingglass",
-                    description: Text(agentConfiguration.skillsLibraryMode == .installed ? "Install a bundled skill to populate this panel." : "Adjust the search query to find another skill.")
+                    "Enrollment Required",
+                    systemImage: "person.badge.key",
+                    description: Text("Use Settings → Host Companion to enroll this iOS device and import its client identity before attempting host configuration changes.")
                 )
             } else {
-                VStack(spacing: 12) {
-                    ForEach(visibleSkills) { skill in
-                        Button {
-                            agentConfiguration.selectedSkillID = skill.id
-                        } label: {
-                            HermesSkillRow(skill: skill, isSelected: agentConfiguration.selectedSkillID == skill.id)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
+                HermesStatusRow(
+                    items: [
+                        .init(title: "Companion", value: companionRuntime.connectionStatus, accent: .blue),
+                        .init(title: "Service", value: companionRuntime.linkedServiceStatus.isEmpty ? "Unknown" : companionRuntime.linkedServiceStatus, accent: .green)
+                    ]
+                )
 
-            if let selectedSkill = agentConfiguration.selectedSkill {
-                HermesSectionCard("Skill Details") {
+                HermesSectionCard("Allowlisted Targets") {
                     VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(selectedSkill.name)
-                                    .font(.headline)
-                                Text(selectedSkill.category)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text(selectedSkill.isInstalled ? "Installed" : selectedSkill.source.capitalized)
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background((selectedSkill.isInstalled ? Color.green : Color.orange).opacity(0.12))
-                                .clipShape(Capsule())
+                        if !companionRuntime.lastErrorMessage.isEmpty {
+                            Text(companionRuntime.lastErrorMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
                         }
 
-                        Text(selectedSkill.description)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-
-                        if let path = selectedSkill.path {
-                            Text(path)
-                                .font(.caption.monospaced())
+                        if companionRuntime.targets.isEmpty {
+                            Text("Fetch the host companion target registry to begin editing allowlisted files.")
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
+                        } else {
+                            Picker("Target", selection: $companionRuntime.selectedTargetID) {
+                                ForEach(companionRuntime.targets) { target in
+                                    Text(target.displayName).tag(target.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
 
-                        ScrollView {
-                            Text(selectedSkill.detail)
-                                .font(.caption.monospaced())
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
+                            if let selectedTarget = companionRuntime.selectedTarget {
+                                Text(selectedTarget.path)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
                         }
-                        .frame(minHeight: 180, maxHeight: 240)
-                        .padding(12)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
                         HStack {
-                            Spacer()
-                            if selectedSkill.isInstalled {
-                                Button("Uninstall Skill") {
-                                    agentConfiguration.uninstallSkill(selectedSkill.id)
+                            Button("Refresh Targets") {
+                                companionRuntime.refreshTargets(
+                                    settings: companionSettings,
+                                    identityState: companionEnrollment.identityState
+                                )
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            if !companionRuntime.selectedTargetID.isEmpty {
+                                Button("Reload Target") {
+                                    companionRuntime.loadSelectedTarget(
+                                        settings: companionSettings,
+                                        identityState: companionEnrollment.identityState
+                                    )
                                 }
                                 .buttonStyle(.bordered)
-                            } else {
-                                Button("Install Skill") {
-                                    agentConfiguration.installSelectedSkill()
+                            }
+                        }
+                    }
+                }
+
+                if companionRuntime.selectedTarget != nil {
+                    HermesSectionCard("Target Editor") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            if !companionRuntime.currentRevision.isEmpty {
+                                Label("Revision: \(companionRuntime.currentRevision)", systemImage: "number")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            TextEditor(text: $companionRuntime.targetContent)
+                                .font(.system(.body, design: .monospaced))
+                                .frame(minHeight: 240)
+
+                            HStack {
+                                Button("Validate") {
+                                    companionRuntime.validateSelectedTarget(
+                                        settings: companionSettings,
+                                        identityState: companionEnrollment.identityState
+                                    )
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button("Save with Backup") {
+                                    companionRuntime.saveSelectedTarget(
+                                        settings: companionSettings,
+                                        identityState: companionEnrollment.identityState
+                                    )
                                 }
                                 .buttonStyle(.borderedProminent)
+                            }
+                        }
+                    }
+
+                    HermesSectionCard("Validation") {
+                        if companionRuntime.diagnostics.isEmpty {
+                            Text("Run validation to inspect syntax and policy diagnostics before writing to the host.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(companionRuntime.diagnostics) { diagnostic in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text(diagnostic.severity.rawValue.capitalized)
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(severityColor(for: diagnostic.severity))
+                                            Spacer()
+                                            Text(diagnostic.validator)
+                                                .font(.caption.monospaced())
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Text(diagnostic.message)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(14)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color(.secondarySystemGroupedBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                }
+                            }
+                        }
+                    }
+
+                    HermesSectionCard("Linked Service") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            if let serviceID = companionRuntime.selectedTarget?.serviceID, !serviceID.isEmpty {
+                                Label("Service: \(serviceID)", systemImage: "server.rack")
+                                    .font(.subheadline.weight(.semibold))
+                                Text(companionRuntime.linkedServiceOutput.isEmpty ? "No service output returned yet." : companionRuntime.linkedServiceOutput)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+
+                                HStack {
+                                    Button("Refresh Service Status") {
+                                        companionRuntime.refreshLinkedServiceStatus(
+                                            settings: companionSettings,
+                                            identityState: companionEnrollment.identityState
+                                        )
+                                    }
+                                    .buttonStyle(.bordered)
+
+                                    Button("Restart Service") {
+                                        companionRuntime.restartLinkedService(
+                                            settings: companionSettings,
+                                            identityState: companionEnrollment.identityState
+                                        )
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                }
+                            } else {
+                                Text("The selected target is not associated with a managed service.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
                 }
             }
         }
+        .task(id: companionEnrollment.identityState.deviceID) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            if companionRuntime.targets.isEmpty {
+                companionRuntime.refreshTargets(
+                    settings: companionSettings,
+                    identityState: companionEnrollment.identityState
+                )
+            }
+        }
+    }
+
+    private func severityColor(for severity: HermesCompanionValidationSeverity) -> Color {
+        switch severity {
+        case .error:
+            .red
+        case .warning:
+            .orange
+        case .info:
+            .blue
+        }
+    }
+}
+
+private struct HermesToolsPanel: View {
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if companionEnrollment.identityState.isEnrolled == false {
+                ContentUnavailableView(
+                    "Enrollment Required",
+                    systemImage: "person.badge.key",
+                    description: Text("Use Settings → Host Companion to enroll this iOS device before editing Hermes toolsets.")
+                )
+            } else {
+                HermesSectionCard("Hermes Toolsets") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("This panel mirrors the desktop toolset editor and writes `platform_toolsets.cli` in the live Hermes `config.yaml` for the configured workspace.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
+                        companionSummaryRow(label: "Config", value: companionRuntime.toolsetsConfigPath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/config.yaml" : companionRuntime.toolsetsConfigPath)
+
+                        if !companionRuntime.lastErrorMessage.isEmpty {
+                            Text(companionRuntime.lastErrorMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                        }
+
+                        if companionRuntime.hermesToolsets.isEmpty {
+                            Text("Open this panel after enrollment to load the toolsets declared by Hermes desktop semantics.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(companionRuntime.hermesToolsets) { toolset in
+                                    HermesToolsetToggleRow(
+                                        toolset: toolset,
+                                        isEnabled: Binding(
+                                            get: {
+                                                companionRuntime.hermesToolsets.first(where: { $0.key == toolset.key })?.enabled ?? toolset.enabled
+                                            },
+                                            set: { isEnabled in
+                                                companionRuntime.setHermesToolsetEnabled(
+                                                    key: toolset.key,
+                                                    enabled: isEnabled,
+                                                    settings: companionSettings,
+                                                    identityState: companionEnrollment.identityState
+                                                )
+                                            }
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: companionEnrollment.identityState.deviceID) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshHermesToolsets(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+        .task(id: companionSettings.hermesWorkspacePath) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshHermesToolsets(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+    }
+
+    private func companionSummaryRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .fontWeight(.semibold)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+        .font(.subheadline)
+    }
+}
+
+private struct HermesModelsPanel: View {
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    @State private var newModelName = ""
+    @State private var newModelProvider = ""
+    @State private var newModelID = ""
+    @State private var newModelBaseURL = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if companionEnrollment.identityState.isEnrolled == false {
+                ContentUnavailableView(
+                    "Enrollment Required",
+                    systemImage: "person.badge.key",
+                    description: Text("Use Settings → Host Companion to enroll this iOS device before editing Hermes saved models.")
+                )
+            } else {
+                HermesSectionCard("Saved Models") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("This panel mirrors the desktop models registry and edits the live `models.json` inventory in the configured Hermes workspace.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
+                        companionSummaryRow(label: "Models File", value: companionRuntime.modelsFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/models.json" : companionRuntime.modelsFilePath)
+
+                        if !companionRuntime.lastErrorMessage.isEmpty {
+                            Text(companionRuntime.lastErrorMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                        }
+
+                        HermesSectionCard("Add Model") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                TextField("Display name", text: $newModelName)
+                                TextField("Provider", text: $newModelProvider)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                TextField("Model ID", text: $newModelID)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                TextField("Base URL", text: $newModelBaseURL)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+
+                                Button("Add Model") {
+                                    companionRuntime.addHermesModel(
+                                        name: newModelName.trimmingCharacters(in: .whitespacesAndNewlines),
+                                        provider: newModelProvider.trimmingCharacters(in: .whitespacesAndNewlines),
+                                        model: newModelID.trimmingCharacters(in: .whitespacesAndNewlines),
+                                        baseURL: newModelBaseURL.trimmingCharacters(in: .whitespacesAndNewlines),
+                                        settings: companionSettings,
+                                        identityState: companionEnrollment.identityState
+                                    )
+                                    newModelName = ""
+                                    newModelProvider = ""
+                                    newModelID = ""
+                                    newModelBaseURL = ""
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(
+                                    newModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                    newModelProvider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                    newModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                )
+                            }
+                        }
+
+                        if companionRuntime.hermesModels.isEmpty {
+                            Text("Loading models will seed the default desktop model list if `models.json` does not already exist.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(companionRuntime.hermesModels) { model in
+                                    HermesSavedModelEditorCard(
+                                        model: model,
+                                        onSave: { name, provider, modelID, baseURL in
+                                            companionRuntime.updateHermesModel(
+                                                id: model.id,
+                                                name: name,
+                                                provider: provider,
+                                                model: modelID,
+                                                baseURL: baseURL,
+                                                settings: companionSettings,
+                                                identityState: companionEnrollment.identityState
+                                            )
+                                        },
+                                        onRemove: {
+                                            companionRuntime.removeHermesModel(
+                                                id: model.id,
+                                                settings: companionSettings,
+                                                identityState: companionEnrollment.identityState
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: companionEnrollment.identityState.deviceID) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshHermesModels(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+        .task(id: companionSettings.hermesWorkspacePath) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshHermesModels(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+    }
+
+    private func companionSummaryRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .fontWeight(.semibold)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+        .font(.subheadline)
+    }
+}
+
+private struct HermesSkillsPanel: View {
+    @Binding var agentConfiguration: HermesAgentConfiguration
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
+
+    private var filteredHermesSkills: [HermesCompanionSkillSummary] {
+        let query = agentConfiguration.skillSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty == false else { return companionRuntime.hermesSkills }
+        return companionRuntime.hermesSkills.filter { skill in
+            skill.name.lowercased().hasPrefix(query.lowercased())
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if companionEnrollment.identityState.isEnrolled {
+                HermesSectionCard("Companion Skills Store") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Skills are loaded from the configured Hermes workspace and toggles write the live `.hermes/skills/.usage.json` state on the host companion.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        settingsSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
+
+                        Text(companionRuntime.isBusy ? "Syncing…" : "\(companionRuntime.hermesSkills.filter(\.isEnabled).count) enabled")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            TextField("Start with", text: $agentConfiguration.skillSearchQuery)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            let visibleSkills = filteredHermesSkills
+            if visibleSkills.isEmpty {
+                ContentUnavailableView(
+                    "No Skills Found",
+                    systemImage: "magnifyingglass",
+                    description: Text(companionEnrollment.identityState.isEnrolled ? "Enter the beginning of a skill name or verify the Hermes workspace path in Settings." : "Enroll the host companion first, then load skills from the Hermes workspace.")
+                )
+            } else {
+                HermesSectionCard("Skills Catalog") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Toggle any skill on to mark it active in Hermes, or off to archive it from the live workspace state.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(visibleSkills) { skill in
+                            HermesSkillToggleRow(
+                                skill: skill,
+                                isEnabled: Binding(
+                                    get: {
+                                        companionRuntime.hermesSkills.first(where: { $0.id == skill.id })?.isEnabled ?? skill.isEnabled
+                                    },
+                                    set: { isEnabled in
+                                        companionRuntime.setHermesSkillState(
+                                            skillID: skill.id,
+                                            isEnabled: isEnabled,
+                                            settings: companionSettings,
+                                            identityState: companionEnrollment.identityState
+                                        )
+                                    }
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: companionEnrollment.identityState.deviceID) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshHermesSkills(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+        .task(id: companionSettings.hermesWorkspacePath) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshHermesSkills(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+    }
+
+    private func settingsSummaryRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .fontWeight(.semibold)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+        .font(.subheadline)
     }
 }
 
@@ -844,36 +1539,164 @@ private struct HermesRuntimeAccordionPanel<Content: View>: View {
     }
 }
 
-private struct HermesSkillRow: View {
-    let skill: HermesSkillDescriptor
-    let isSelected: Bool
+private struct HermesSkillToggleRow: View {
+    let skill: HermesCompanionSkillSummary
+    @Binding var isEnabled: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(skill.name)
-                    .font(.headline)
-                Spacer()
-                Text(skill.isInstalled ? "Installed" : skill.source.capitalized)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background((skill.isInstalled ? Color.green : Color.orange).opacity(0.12))
-                    .clipShape(Capsule())
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(skill.name)
+                            .font(.headline)
+                        Text(isEnabled ? "On" : "Off")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(isEnabled ? .green : .secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background((isEnabled ? Color.green : Color.secondary).opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+
+                    Text(skill.description)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack(spacing: 8) {
+                        Text(skill.category.uppercased())
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.blue.opacity(0.08))
+                            .clipShape(Capsule())
+                    }
+
+                    Text(skill.path)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                Toggle("", isOn: $isEnabled)
+                    .labelsHidden()
             }
-
-            Text(skill.description)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(skill.category)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? Color.blue.opacity(0.08) : Color(.secondarySystemGroupedBackground))
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+private struct HermesToolsetToggleRow: View {
+    let toolset: HermesCompanionToolsetInfo
+    @Binding var isEnabled: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text(toolset.label)
+                        .font(.headline)
+                    Text(toolset.enabled ? "On" : "Off")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(toolset.enabled ? .green : .secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background((toolset.enabled ? Color.green : Color.secondary).opacity(0.12))
+                        .clipShape(Capsule())
+                }
+
+                Text(toolset.description)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Text(toolset.key)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            Spacer(minLength: 12)
+
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+private struct HermesSavedModelEditorCard: View {
+    let model: HermesCompanionSavedModel
+    let onSave: (String, String, String, String) -> Void
+    let onRemove: () -> Void
+    @State private var name: String
+    @State private var provider: String
+    @State private var modelID: String
+    @State private var baseURL: String
+
+    init(
+        model: HermesCompanionSavedModel,
+        onSave: @escaping (String, String, String, String) -> Void,
+        onRemove: @escaping () -> Void
+    ) {
+        self.model = model
+        self.onSave = onSave
+        self.onRemove = onRemove
+        _name = State(initialValue: model.name)
+        _provider = State(initialValue: model.provider)
+        _modelID = State(initialValue: model.model)
+        _baseURL = State(initialValue: model.baseURL)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(model.createdAtDate.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            TextField("Display name", text: $name)
+            TextField("Provider", text: $provider)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("Model ID", text: $modelID)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("Base URL", text: $baseURL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            HStack {
+                Button("Save") {
+                    onSave(
+                        name.trimmingCharacters(in: .whitespacesAndNewlines),
+                        provider.trimmingCharacters(in: .whitespacesAndNewlines),
+                        modelID.trimmingCharacters(in: .whitespacesAndNewlines),
+                        baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+
+                Button("Remove", role: .destructive) {
+                    onRemove()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
@@ -1117,6 +1940,7 @@ private enum HermesTerminalBackend: String, CaseIterable, Identifiable {
 
 private enum HermesRuntimePanelKind: String, Identifiable {
     case skills
+    case companion
     case backend
     case ssh
     case profiles
@@ -1142,39 +1966,10 @@ private struct HermesRuntimePanel: Identifiable {
     static let placeholderPanels: [HermesRuntimePanel] = [
         .init(kind: .profiles, title: "Profiles", subtitle: "Switch between runtime profiles and targets", systemImage: "person.crop.rectangle.stack", placeholder: "Profile routing, per-target overrides, and environment inheritance will live here."),
         .init(kind: .permissions, title: "Permissions", subtitle: "Approval policy and privileged operations", systemImage: "checkmark.shield", placeholder: "Approval policy, escalations, and audit-friendly permission controls can expand here."),
-        .init(kind: .tools, title: "Tools", subtitle: "Enable and scope MCP servers and terminal tools", systemImage: "wrench.and.screwdriver", placeholder: "MCP server selection, shell tool policies, and tool-scoped access rules can be configured in this panel."),
-        .init(kind: .models, title: "Models", subtitle: "Default model and routing behavior", systemImage: "cpu", placeholder: "Model defaults, failover routing, and provider-specific options can be surfaced in this panel."),
         .init(kind: .sandbox, title: "Sandbox", subtitle: "Filesystem and network boundaries", systemImage: "lock.square.stack", placeholder: "Workspace-write, read-only, and network isolation controls can be configured here."),
         .init(kind: .memory, title: "Memory", subtitle: "Persistent context and workspace notes", systemImage: "brain.head.profile", placeholder: "Persistent notes, workspace memory, and user-level memory toggles fit naturally in this section."),
         .init(kind: .observability, title: "Observability", subtitle: "Logs, traces, and runtime diagnostics", systemImage: "waveform.and.magnifyingglass", placeholder: "Runtime logs, traces, and environment diagnostics can be collected and displayed here.")
     ]
-}
-
-private enum HermesSkillsLibraryMode: String, CaseIterable, Identifiable {
-    case installed
-    case browse
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .installed:
-            "Installed"
-        case .browse:
-            "Browse"
-        }
-    }
-}
-
-private struct HermesSkillDescriptor: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let category: String
-    let description: String
-    let detail: String
-    let source: String
-    let path: String?
-    var isInstalled: Bool
 }
 
 private struct HermesAgentConfiguration {
@@ -1185,11 +1980,8 @@ private struct HermesAgentConfiguration {
     var sshUser = ""
     var sshPort = "22"
     var sshKeyPath = "~/.ssh/id_rsa"
-    var activeRuntimePanel: HermesRuntimePanelKind? = .skills
-    var skillsLibraryMode: HermesSkillsLibraryMode = .installed
+    var activeRuntimePanel: HermesRuntimePanelKind? = .companion
     var skillSearchQuery = ""
-    var selectedSkillID: String? = "aidesigner-frontend"
-    var installedSkillIDs: Set<String> = ["aidesigner-frontend", "skill-installer"]
 
     var backendSummary: String {
         switch backend {
@@ -1200,142 +1992,6 @@ private struct HermesAgentConfiguration {
         }
     }
 
-    var skillCatalog: [HermesSkillDescriptor] {
-        HermesSkillCatalog.seed.map { skill in
-            var copy = skill
-            copy.isInstalled = installedSkillIDs.contains(skill.id)
-            return copy
-        }
-    }
-
-    var installedSkills: [HermesSkillDescriptor] {
-        skillCatalog.filter(\.isInstalled)
-    }
-
-    var filteredCatalogSkills: [HermesSkillDescriptor] {
-        let query = skillSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return skillCatalog }
-        return skillCatalog.filter { skill in
-            skill.name.localizedCaseInsensitiveContains(query) ||
-            skill.category.localizedCaseInsensitiveContains(query) ||
-            skill.description.localizedCaseInsensitiveContains(query)
-        }
-    }
-
-    var visibleSkills: [HermesSkillDescriptor] {
-        switch skillsLibraryMode {
-        case .installed:
-            installedSkills
-        case .browse:
-            filteredCatalogSkills
-        }
-    }
-
-    var selectedSkill: HermesSkillDescriptor? {
-        if let selectedSkillID {
-            return skillCatalog.first(where: { $0.id == selectedSkillID })
-        }
-        return visibleSkills.first
-    }
-
-    mutating func installSelectedSkill() {
-        guard let selectedSkill else { return }
-        installedSkillIDs.insert(selectedSkill.id)
-        selectedSkillID = selectedSkill.id
-        skillsLibraryMode = .installed
-    }
-
-    mutating func uninstallSkill(_ skillID: String) {
-        installedSkillIDs.remove(skillID)
-        if selectedSkillID == skillID {
-            selectedSkillID = installedSkills.first?.id ?? filteredCatalogSkills.first?.id
-        }
-    }
-}
-
-private enum HermesSkillCatalog {
-    static let seed: [HermesSkillDescriptor] = [
-        HermesSkillDescriptor(
-            id: "aidesigner-frontend",
-            name: "aidesigner-frontend",
-            category: "design",
-            description: "Use AIDesigner to generate or refine frontend directions, capture artifacts, and port them into the repo UI.",
-            detail: """
-            ---
-            name: "aidesigner-frontend"
-            description: "Create or redesign frontend surfaces with AIDesigner, then adopt them into the repo."
-            ---
-
-            Workflow:
-            1. Inspect the repo and infer the existing visual system.
-            2. Generate or refine an AIDesigner artifact.
-            3. Capture the artifact locally for preview and adoption.
-            4. Port the visual system into the real app code instead of shipping raw HTML.
-            """,
-            source: "bundled",
-            path: "~/.agents/skills/aidesigner-frontend",
-            isInstalled: false
-        ),
-        HermesSkillDescriptor(
-            id: "openai-playwright",
-            name: "openai-playwright",
-            category: "automation",
-            description: "Automate a real browser from the terminal for navigation, form fill, screenshots, and UI-flow debugging.",
-            detail: """
-            # openai-playwright
-
-            Use this skill when a task requires browser automation from the terminal, including snapshots, screenshots, data extraction, or reproducing interactive UI bugs.
-            """,
-            source: "bundled",
-            path: "~/.agents/skills/openai-playwright",
-            isInstalled: false
-        ),
-        HermesSkillDescriptor(
-            id: "skill-installer",
-            name: "skill-installer",
-            category: "system",
-            description: "Install Codex skills from a curated list or a GitHub repo path into the active profile.",
-            detail: """
-            # skill-installer
-
-            Mirrors the desktop skills install flow:
-            - list curated skills
-            - install a skill into $CODEX_HOME/skills
-            - install from a repo path, including private repos
-            """,
-            source: "bundled",
-            path: "~/Library/Developer/Xcode/CodingAssistant/codex/skills/.system/skill-installer",
-            isInstalled: false
-        ),
-        HermesSkillDescriptor(
-            id: "skill-creator",
-            name: "skill-creator",
-            category: "system",
-            description: "Guide for creating or updating specialized skills that extend the coding agent.",
-            detail: """
-            # skill-creator
-
-            Use this when the user wants to create a new skill or update an existing skill with specialized knowledge, workflow, or tool integration.
-            """,
-            source: "bundled",
-            path: "~/Library/Developer/Xcode/CodingAssistant/codex/skills/.system/skill-creator",
-            isInstalled: false
-        ),
-        HermesSkillDescriptor(
-            id: "deploy-model",
-            name: "deploy-model",
-            category: "microsoft-foundry",
-            description: "Unified Azure OpenAI model deployment flow with routing between preset, customize, and capacity discovery.",
-            detail: """
-            # deploy-model
-
-            Handles quick preset deployments, customized deployments, and capacity discovery across regions and projects.
-            """,
-            source: "bundled",
-            path: "~/.agents/skills/microsoft-foundry/models/deploy-model",
-            isInstalled: false
-        )
-    ]
 }
 
 #Preview("Default") {

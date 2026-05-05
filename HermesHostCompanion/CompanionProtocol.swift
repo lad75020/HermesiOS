@@ -148,17 +148,135 @@ struct ServiceRestartResult: Codable {
     let output: String
 }
 
+struct ListHermesSkillsPayload: Codable {
+    let workspacePath: String
+}
+
+struct ListHermesSkillsResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let skills: [CompanionHermesSkillSummary]
+}
+
+struct SetHermesSkillStatePayload: Codable {
+    let workspacePath: String
+    let skillID: String
+    let isEnabled: Bool
+}
+
+struct SetHermesSkillStateResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let skill: CompanionHermesSkillSummary
+}
+
+struct CompanionHermesSkillSummary: Codable, Identifiable {
+    let id: String
+    let name: String
+    let category: String
+    let description: String
+    let path: String
+    let isEnabled: Bool
+}
+
+struct ListToolsetsPayload: Codable {
+    let workspacePath: String
+}
+
+struct ListToolsetsResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let configPath: String
+    let toolsets: [CompanionToolsetInfo]
+}
+
+struct SetToolsetEnabledPayload: Codable {
+    let workspacePath: String
+    let key: String
+    let enabled: Bool
+}
+
+struct SetToolsetEnabledResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let configPath: String
+    let toolset: CompanionToolsetInfo
+}
+
+struct CompanionToolsetInfo: Codable, Identifiable {
+    let key: String
+    let label: String
+    let description: String
+    let enabled: Bool
+
+    var id: String { key }
+}
+
+struct ListModelsPayload: Codable {
+    let workspacePath: String
+}
+
+struct ListModelsResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let modelsFilePath: String
+    let models: [CompanionSavedModel]
+}
+
+struct AddModelPayload: Codable {
+    let workspacePath: String
+    let name: String
+    let provider: String
+    let model: String
+    let baseURL: String
+}
+
+struct AddModelResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let modelsFilePath: String
+    let model: CompanionSavedModel
+}
+
+struct UpdateModelPayload: Codable {
+    let workspacePath: String
+    let id: String
+    let name: String
+    let provider: String
+    let model: String
+    let baseURL: String
+}
+
+struct UpdateModelResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let modelsFilePath: String
+    let model: CompanionSavedModel
+}
+
+struct RemoveModelPayload: Codable {
+    let workspacePath: String
+    let id: String
+}
+
+struct RemoveModelResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let modelsFilePath: String
+    let removedModelID: String
+}
+
 struct EnrollClientPayload: Codable {
     let pairingID: String
     let pairingSecret: String
     let deviceName: String
-    let csrPEM: String
 }
 
 struct EnrollClientResult: Codable {
     let deviceID: String
     let deviceName: String
-    let clientCertificatePEM: String
+    let clientIdentityPKCS12Base64: String
+    let clientIdentityPassword: String
     let caCertificatePEM: String
     let serverEndpoint: String
     let serverCertificateFingerprint: String

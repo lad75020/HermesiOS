@@ -21,7 +21,12 @@ struct HermesSettingsView: View {
     @State private var selectedPairingQRImage: PhotosPickerItem?
 
     var body: some View {
-        Form {
+        VStack(spacing: 0) {
+            HermesTabHeader("Settings", systemImage: "slider.horizontal.3")
+                .padding(.horizontal)
+                .padding(.top)
+
+            Form {
             Section("Appearance") {
                 Picker("App Theme", selection: $appTheme) {
                     ForEach(HermesAppTheme.allCases) { theme in
@@ -178,10 +183,11 @@ struct HermesSettingsView: View {
                 Text("Set the Hermes workspace path to the host-side `.hermes` directory you want the Skills panel to manage.")
             }
             .foregroundStyle(.hermesSecondaryText)
+            }
+            .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Settings")
-        .scrollContentBackground(.hidden)
         .background(Color.hermesCanvas)
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $isPairingScannerPresented) {
             HermesPairingQRScannerView { payload in
                 applyPairingPayload(payload)

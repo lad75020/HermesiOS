@@ -88,11 +88,7 @@ struct HermesAgentConfigView: View {
         ScrollView {
             HermesGlassEffectContainer(spacing: 28) {
                 VStack(alignment: .leading, spacing: 18) {
-                HermesHeroCard(
-                    title: "Agent Runtime",
-                    detail: "This area is structured as an accordion so one operational panel can stay expanded while the others collapse into quick section headers.",
-                    systemImage: "server.rack"
-                )
+                HermesTabHeader("Agent Runtime", systemImage: "server.rack")
 
                 HermesRuntimeAccordionPanel(
                     title: "Skills",
@@ -298,7 +294,7 @@ struct HermesAgentConfigView: View {
                 .padding()
             }
         }
-        .navigationTitle("Agent Runtime")
         .background(Color.hermesCanvas)
+        .toolbar(.hidden, for: .navigationBar)
     }
 }

@@ -16,11 +16,7 @@ struct HermesResponsesConsoleView: View {
         ScrollView {
             HermesGlassEffectContainer(spacing: 26) {
                 VStack(alignment: .leading, spacing: 20) {
-                HermesHeroCard(
-                    title: "Hermes Gateway API",
-                    detail: "This first implementation targets `/v1/responses` and uses SSE so the app can render incremental output and tool events as Hermes works.",
-                    systemImage: "bolt.horizontal.circle.fill"
-                )
+                HermesTabHeader("Responses API", systemImage: "dot.radiowaves.left.and.right")
 
                 HermesStatusRow(
                     items: [
@@ -143,8 +139,8 @@ struct HermesResponsesConsoleView: View {
                 .padding()
             }
         }
-        .navigationTitle("Responses API")
         .background(Color.hermesCanvas)
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -158,11 +154,7 @@ struct HermesChatConsoleView: View {
         ScrollView {
             HermesGlassEffectContainer(spacing: 26) {
                 VStack(alignment: .leading, spacing: 20) {
-                HermesHeroCard(
-                    title: "Hermes Chat Completions",
-                    detail: "This surface uses `/v1/chat/completions` independently from the Responses API, with its own transcript and streaming lifecycle.",
-                    systemImage: "text.bubble.fill"
-                )
+                HermesTabHeader("Chat Completions", systemImage: "text.bubble")
 
                 HermesStatusRow(
                     items: [
@@ -261,7 +253,7 @@ struct HermesChatConsoleView: View {
                 .padding()
             }
         }
-        .navigationTitle("Chat Completions")
         .background(Color.hermesCanvas)
+        .toolbar(.hidden, for: .navigationBar)
     }
 }

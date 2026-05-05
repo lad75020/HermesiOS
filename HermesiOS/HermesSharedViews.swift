@@ -59,6 +59,39 @@ struct HermesHeroCard: View {
     }
 }
 
+struct HermesTabHeader: View {
+    let title: String
+    let systemImage: String
+
+    init(_ title: String, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            Image(systemName: systemImage)
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(.igActionBlue)
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct HermesSectionCard<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content

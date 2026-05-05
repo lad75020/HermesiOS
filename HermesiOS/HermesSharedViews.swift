@@ -12,35 +12,37 @@ struct HermesHeroCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            LinearGradient.instagramBrand
+            LinearGradient.instagramBrandShort
 
             Circle()
-                .fill(.white.opacity(0.16))
-                .frame(width: 180, height: 180)
-                .offset(x: 160, y: -80)
+                .fill(.white.opacity(0.12))
+                .frame(width: 78, height: 78)
+                .offset(x: 230, y: -28)
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 12) {
-                    StoryRing(systemImage: systemImage, isActive: true, size: 54, tint: .white)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 8) {
+                    StoryRing(systemImage: systemImage, isActive: true, size: 32, tint: .white)
                     Text(title)
-                        .font(.igUsernameLarge)
+                        .font(.igUsername)
                         .foregroundStyle(.white)
                 }
 
                 Text(detail)
-                    .font(.igBio)
-                    .foregroundStyle(.white.opacity(0.92))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(20)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
         }
-        .frame(maxWidth: .infinity, minHeight: 156, alignment: .bottomLeading)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .bottomLeading)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(0.14), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: Color.igGradPurple.opacity(0.16), radius: 12, y: 6)
+        .shadow(color: Color.igGradPurple.opacity(0.10), radius: 8, y: 4)
     }
 }
 

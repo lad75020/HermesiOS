@@ -62,22 +62,27 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
 
 struct WorkspaceSidebar: View {
     @Binding var selection: WorkspaceSection?
+    @Bindable var statusMonitor: HermesStatusMonitor
 
     var body: some View {
-        List(WorkspaceSection.allCases, selection: $selection) { section in
-            NavigationLink(value: section) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label(section.title, systemImage: section.systemImage)
-                        .font(.headline)
-                    Text(section.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
+        VStack(spacing: 0) {
+            HermesStatusBand(statusMonitor: statusMonitor)
+
+            List(WorkspaceSection.allCases, selection: $selection) { section in
+                NavigationLink(value: section) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(section.title, systemImage: section.systemImage)
+                            .font(.headline)
+                        Text(section.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
             }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
         .background(Color.hermesCanvas)
     }
 }

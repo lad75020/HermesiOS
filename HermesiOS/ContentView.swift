@@ -28,6 +28,7 @@ struct ContentView: View {
     @State private var historyStore = HermesHistoryStore()
     @State private var companionEnrollment = HermesCompanionEnrollmentSession()
     @State private var companionRuntime = HermesCompanionRuntimeSession()
+    @State private var statusMonitor = HermesStatusMonitor()
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -60,11 +61,31 @@ struct ContentView: View {
         .onChange(of: chatDraft) { _, newValue in
             HermesSettingsPersistence.saveChatDraft(newValue)
         }
+        .task(id: statusRefreshKey) {
+            await statusMonitor.runStatusLoop(
+                apiSettings: apiSettings,
+                companionSettings: companionSettings,
+                identityState: companionEnrollment.identityState
+            )
+        }
+    }
+
+    private var statusRefreshKey: String {
+        [
+            apiSettings.baseURL,
+            apiSettings.apiKey.isEmpty ? "no-api-key" : "api-key-set",
+            String(apiSettings.allowSelfSignedCertificates),
+            companionSettings.apiURL,
+            companionSettings.expectedServerFingerprint,
+            companionEnrollment.identityState.deviceID,
+            companionEnrollment.identityState.serverEndpoint,
+            companionEnrollment.identityState.serverCertificateFingerprint
+        ].joined(separator: "|")
     }
 
     private var iPadLayout: some View {
         NavigationSplitView {
-            WorkspaceSidebar(selection: $selectedWorkspace)
+            WorkspaceSidebar(selection: $selectedWorkspace, statusMonitor: statusMonitor)
                 .navigationTitle("Hermes")
                 .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
         } detail: {
@@ -74,63 +95,67 @@ struct ContentView: View {
     }
 
     private var iPhoneLayout: some View {
-        TabView {
-            NavigationStack {
-                HermesResponsesConsoleView(
-                    apiSettings: $apiSettings,
-                    requestDraft: $responsesDraft,
-                    responseSession: responseSession,
-                    historyStore: historyStore
-                )
-            }
-            .tabItem {
-                Label("Responses", systemImage: "dot.radiowaves.left.and.right")
-            }
+        VStack(spacing: 0) {
+            HermesStatusBand(statusMonitor: statusMonitor)
 
-            NavigationStack {
-                HermesChatConsoleView(
-                    apiSettings: $apiSettings,
-                    chatDraft: $chatDraft,
-                    chatSession: chatSession,
-                    historyStore: historyStore
-                )
-            }
-            .tabItem {
-                Label("Chat", systemImage: "text.bubble")
-            }
+            TabView {
+                NavigationStack {
+                    HermesResponsesConsoleView(
+                        apiSettings: $apiSettings,
+                        requestDraft: $responsesDraft,
+                        responseSession: responseSession,
+                        historyStore: historyStore
+                    )
+                }
+                .tabItem {
+                    Label("Responses", systemImage: "dot.radiowaves.left.and.right")
+                }
 
-            NavigationStack {
-                HermesHistoryView(historyStore: historyStore)
-            }
-            .tabItem {
-                Label("History", systemImage: "clock.arrow.circlepath")
-            }
+                NavigationStack {
+                    HermesChatConsoleView(
+                        apiSettings: $apiSettings,
+                        chatDraft: $chatDraft,
+                        chatSession: chatSession,
+                        historyStore: historyStore
+                    )
+                }
+                .tabItem {
+                    Label("Chat", systemImage: "text.bubble")
+                }
 
-            NavigationStack {
-                HermesSettingsView(
-                    apiSettings: $apiSettings,
-                    companionSettings: $companionSettings,
-                    responsesDraft: $responsesDraft,
-                    chatDraft: $chatDraft,
-                    appTheme: $appTheme,
-                    companionEnrollment: companionEnrollment,
-                    companionRuntime: companionRuntime
-                )
-            }
-            .tabItem {
-                Label("Settings", systemImage: "slider.horizontal.3")
-            }
+                NavigationStack {
+                    HermesHistoryView(historyStore: historyStore)
+                }
+                .tabItem {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
 
-            NavigationStack {
-                HermesAgentConfigView(
-                    agentConfiguration: $agentConfiguration,
-                    companionSettings: companionSettings,
-                    companionEnrollment: companionEnrollment,
-                    companionRuntime: companionRuntime
-                )
-            }
-            .tabItem {
-                Label("Runtime", systemImage: "server.rack")
+                NavigationStack {
+                    HermesSettingsView(
+                        apiSettings: $apiSettings,
+                        companionSettings: $companionSettings,
+                        responsesDraft: $responsesDraft,
+                        chatDraft: $chatDraft,
+                        appTheme: $appTheme,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+                .tabItem {
+                    Label("Settings", systemImage: "slider.horizontal.3")
+                }
+
+                NavigationStack {
+                    HermesAgentConfigView(
+                        agentConfiguration: $agentConfiguration,
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+                .tabItem {
+                    Label("Runtime", systemImage: "server.rack")
+                }
             }
         }
     }

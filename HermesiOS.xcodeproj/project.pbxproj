@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		4D4AAD2E2FA93A6D00AEE3FB /* HermesiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5A8C00012FAB000100000001 /* HermesHostCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesHostCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -17,6 +18,13 @@
 				Info.plist,
 			);
 			target = 4D4AAD2D2FA93A6D00AEE3FB /* HermesiOS */;
+		};
+		5A8C00022FAB000100000001 /* Exceptions for "HermesHostCompanion" folder in "HermesHostCompanion" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 5A8C00072FAB000100000001 /* HermesHostCompanion */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -29,10 +37,25 @@
 			path = HermesiOS;
 			sourceTree = "<group>";
 		};
+		5A8C00032FAB000100000001 /* HermesHostCompanion */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5A8C00022FAB000100000001 /* Exceptions for "HermesHostCompanion" folder in "HermesHostCompanion" target */,
+			);
+			path = HermesHostCompanion;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		4D4AAD2B2FA93A6D00AEE3FB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5A8C00052FAB000100000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				4D4AAD302FA93A6D00AEE3FB /* HermesiOS */,
+				5A8C00032FAB000100000001 /* HermesHostCompanion */,
 				4D4AAD2F2FA93A6D00AEE3FB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				4D4AAD2E2FA93A6D00AEE3FB /* HermesiOS.app */,
+				5A8C00012FAB000100000001 /* HermesHostCompanion.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,6 +108,28 @@
 			productReference = 4D4AAD2E2FA93A6D00AEE3FB /* HermesiOS.app */;
 			productType = "com.apple.product-type.application";
 		};
+		5A8C00072FAB000100000001 /* HermesHostCompanion */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5A8C000E2FAB000100000001 /* Build configuration list for PBXNativeTarget "HermesHostCompanion" */;
+			buildPhases = (
+				5A8C00042FAB000100000001 /* Sources */,
+				5A8C00052FAB000100000001 /* Frameworks */,
+				5A8C00062FAB000100000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				5A8C00032FAB000100000001 /* HermesHostCompanion */,
+			);
+			name = HermesHostCompanion;
+			packageProductDependencies = (
+			);
+			productName = HermesHostCompanion;
+			productReference = 5A8C00012FAB000100000001 /* HermesHostCompanion.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -94,6 +141,9 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					4D4AAD2D2FA93A6D00AEE3FB = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
+					5A8C00072FAB000100000001 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
 				};
@@ -113,6 +163,7 @@
 			projectRoot = "";
 			targets = (
 				4D4AAD2D2FA93A6D00AEE3FB /* HermesiOS */,
+				5A8C00072FAB000100000001 /* HermesHostCompanion */,
 			);
 		};
 /* End PBXProject section */
@@ -125,10 +176,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5A8C00062FAB000100000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		4D4AAD2A2FA93A6D00AEE3FB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5A8C00042FAB000100000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -150,6 +215,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HermesiOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Hermes on iOS";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -163,6 +230,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesiOS;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -184,6 +255,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HermesiOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Hermes on iOS";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -197,6 +270,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesiOS;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -327,6 +404,66 @@
 			};
 			name = Release;
 		};
+		5A8C000C2FAB000100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RJYVGK9S3F;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HermesHostCompanion/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Hermes Host Companion";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesHostCompanion;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		5A8C000D2FAB000100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RJYVGK9S3F;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HermesHostCompanion/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Hermes Host Companion";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesHostCompanion;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -344,6 +481,15 @@
 			buildConfigurations = (
 				4D4AAD3D2FA93A6E00AEE3FB /* Debug */,
 				4D4AAD3E2FA93A6E00AEE3FB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5A8C000E2FAB000100000001 /* Build configuration list for PBXNativeTarget "HermesHostCompanion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5A8C000C2FAB000100000001 /* Debug */,
+				5A8C000D2FAB000100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -55,6 +55,10 @@ struct ListTargetsResult: Codable {
     let targets: [CompanionTargetSummary]
 }
 
+struct ListTargetsPayload: Codable {
+    let workspacePath: String?
+}
+
 struct CompanionTargetSummary: Codable, Identifiable {
     let id: String
     let displayName: String
@@ -265,6 +269,261 @@ struct RemoveModelResult: Codable {
     let modelsFilePath: String
     let removedModelID: String
 }
+
+
+
+struct ProviderEnvField: Codable, Identifiable {
+    let key: String
+    let label: String
+    let type: String
+    let hint: String
+    var id: String { key }
+}
+
+struct ProviderEnvSection: Codable, Identifiable {
+    let id: String
+    let title: String
+    let items: [ProviderEnvField]
+}
+
+struct ProviderModelConfig: Codable {
+    let provider: String
+    let model: String
+    let baseUrl: String
+}
+
+struct ProviderCredentialEntry: Codable, Identifiable {
+    let key: String
+    let label: String
+    var id: String { label + ":" + String(key.prefix(8)) }
+}
+
+struct ProvidersConfigPayload: Codable {
+    let workspacePath: String
+}
+
+struct ProvidersConfigResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let envFilePath: String
+    let configPath: String
+    let authFilePath: String
+    let env: [String: String]
+    let modelConfig: ProviderModelConfig
+    let credentialPool: [String: [ProviderCredentialEntry]]
+    let sections: [ProviderEnvSection]
+    let providerOptions: [ProviderOption]
+}
+
+struct ProviderOption: Codable, Identifiable {
+    let value: String
+    let label: String
+    var id: String { value }
+}
+
+struct SetProviderEnvPayload: Codable {
+    let workspacePath: String
+    let key: String
+    let value: String
+}
+
+struct SetProviderEnvResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let key: String
+    let value: String
+    let envFilePath: String
+}
+
+struct SetProviderModelConfigPayload: Codable {
+    let workspacePath: String
+    let provider: String
+    let model: String
+    let baseUrl: String
+}
+
+struct SetProviderModelConfigResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let configPath: String
+    let modelConfig: ProviderModelConfig
+}
+
+struct SetCredentialPoolPayload: Codable {
+    let workspacePath: String
+    let provider: String
+    let entries: [ProviderCredentialEntry]
+}
+
+struct SetCredentialPoolResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let authFilePath: String
+    let credentialPool: [String: [ProviderCredentialEntry]]
+}
+
+
+struct MemoryEntry: Codable, Identifiable {
+    let index: Int
+    let content: String
+    var id: Int { index }
+}
+
+struct MemoryFileInfo: Codable {
+    let content: String
+    let exists: Bool
+    let lastModified: Int?
+    let entries: [MemoryEntry]?
+    let charCount: Int
+    let charLimit: Int
+}
+
+struct MemoryStats: Codable {
+    let totalSessions: Int
+    let totalMessages: Int
+}
+
+struct MemoryProviderInfo: Codable, Identifiable {
+    let name: String
+    let description: String
+    let installed: Bool
+    let active: Bool
+    let envVars: [String]
+    var id: String { name }
+}
+
+struct MemoryConfigPayload: Codable {
+    let workspacePath: String
+}
+
+struct MemoryConfigResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let memoryFilePath: String
+    let userFilePath: String
+    let configPath: String
+    let envFilePath: String
+    let memory: MemoryFileInfo
+    let user: MemoryFileInfo
+    let stats: MemoryStats
+    let provider: String
+    let providers: [MemoryProviderInfo]
+    let env: [String: String]
+}
+
+struct AddMemoryEntryPayload: Codable {
+    let workspacePath: String
+    let content: String
+}
+
+struct UpdateMemoryEntryPayload: Codable {
+    let workspacePath: String
+    let index: Int
+    let content: String
+}
+
+struct RemoveMemoryEntryPayload: Codable {
+    let workspacePath: String
+    let index: Int
+}
+
+struct WriteUserProfilePayload: Codable {
+    let workspacePath: String
+    let content: String
+}
+
+struct MemoryOperationResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let success: Bool
+    let error: String?
+    let memory: MemoryConfigResult?
+}
+
+struct SetMemoryProviderPayload: Codable {
+    let workspacePath: String
+    let provider: String
+}
+
+struct SetMemoryProviderResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let configPath: String
+    let provider: String
+    let providers: [MemoryProviderInfo]
+}
+
+struct SetMemoryEnvPayload: Codable {
+    let workspacePath: String
+    let key: String
+    let value: String
+}
+
+struct SetMemoryEnvResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let envFilePath: String
+    let key: String
+    let value: String
+}
+
+struct ScheduleRepeatInfo: Codable {
+    let times: Int?
+    let completed: Int
+}
+
+struct ScheduleCronJob: Codable, Identifiable {
+    let id: String
+    let name: String
+    let schedule: String
+    let prompt: String
+    let state: String
+    let enabled: Bool
+    let nextRunAt: String?
+    let lastRunAt: String?
+    let lastStatus: String?
+    let lastError: String?
+    let repeatInfo: ScheduleRepeatInfo?
+    let deliver: [String]
+    let skills: [String]
+    let script: String?
+}
+
+struct ListSchedulesPayload: Codable {
+    let workspacePath: String
+    let includeDisabled: Bool
+}
+
+struct ListSchedulesResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let jobsFilePath: String
+    let jobs: [ScheduleCronJob]
+}
+
+struct CreateSchedulePayload: Codable {
+    let workspacePath: String
+    let schedule: String
+    let prompt: String?
+    let name: String?
+    let deliver: String?
+}
+
+struct ScheduleOperationPayload: Codable {
+    let workspacePath: String
+    let jobID: String
+}
+
+struct ScheduleOperationResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let jobsFilePath: String
+    let success: Bool
+    let output: String
+    let error: String?
+    let jobs: [ScheduleCronJob]
+}
+
 
 struct EnrollClientPayload: Codable {
     let pairingID: String

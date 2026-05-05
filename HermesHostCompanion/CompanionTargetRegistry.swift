@@ -129,8 +129,9 @@ final class CompanionTargetRegistry {
         ensureSeededTargetFilesExist()
     }
 
-    func listTargets() -> [CompanionTargetSummary] {
-        document.targets.map {
+    func listTargets(workspacePath: String? = nil) throws -> [CompanionTargetSummary] {
+        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath)
+        return document.targets.map {
             CompanionTargetSummary(
                 id: $0.id,
                 displayName: $0.displayName,
@@ -377,9 +378,9 @@ final class CompanionTargetRegistry {
                 CompanionTargetRecord(
                     id: "hermes-config",
                     displayName: "Hermes Config",
-                    path: "\(home)/.hermes/config.toml",
-                    format: .toml,
-                    validators: [.tomlParse],
+                    path: "\(home)/.hermes/config.yaml",
+                    format: .yaml,
+                    validators: [.yamlParse],
                     serviceID: "hermesd",
                     restartPolicy: .manual
                 ),
@@ -401,16 +402,30 @@ final class CompanionTargetRegistry {
         let expectedSkillsPath = "\(home)/HermesHostCompanionTest/skills/installed-skills.txt"
 
         let migratedTargets = document.targets.map { target in
-            guard target.id == "codex-skills" else { return target }
-            return CompanionTargetRecord(
-                id: target.id,
-                displayName: "Skills Test Manifest",
-                path: expectedSkillsPath,
-                format: .text,
-                validators: target.validators,
-                serviceID: target.serviceID,
-                restartPolicy: target.restartPolicy
-            )
+            switch target.id {
+            case "hermes-config":
+                return CompanionTargetRecord(
+                    id: target.id,
+                    displayName: "Hermes Config",
+                    path: target.path.hasSuffix("config.toml") ? "\(home)/.hermes/config.yaml" : target.path,
+                    format: .yaml,
+                    validators: [.yamlParse],
+                    serviceID: target.serviceID,
+                    restartPolicy: target.restartPolicy
+                )
+            case "codex-skills":
+                return CompanionTargetRecord(
+                    id: target.id,
+                    displayName: "Skills Test Manifest",
+                    path: expectedSkillsPath,
+                    format: .text,
+                    validators: target.validators,
+                    serviceID: target.serviceID,
+                    restartPolicy: target.restartPolicy
+                )
+            default:
+                return target
+            }
         }
 
         if migratedTargets.contains(where: { $0.id == "codex-skills" }) == false {
@@ -430,6 +445,41 @@ final class CompanionTargetRegistry {
         }
 
         return CompanionTargetRegistryDocument(targets: migratedTargets)
+    }
+
+    private func updateHermesConfigTargetIfNeeded(workspacePath: String?) throws {
+        guard let workspacePath, workspacePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return
+        }
+
+        let workspaceURL = try resolvedHermesWorkspaceURL(from: workspacePath)
+        let configURL = workspaceURL.appendingPathComponent("config.yaml")
+        guard document.targets.contains(where: { $0.id == "hermes-config" }) else { return }
+
+        var didChange = false
+        let updatedTargets = document.targets.map { target -> CompanionTargetRecord in
+            guard target.id == "hermes-config" else { return target }
+            if target.path == configURL.path, target.format == .yaml, target.validators == [.yamlParse] {
+                return target
+            }
+            didChange = true
+            return CompanionTargetRecord(
+                id: target.id,
+                displayName: "Hermes Config",
+                path: configURL.path,
+                format: .yaml,
+                validators: [.yamlParse],
+                serviceID: target.serviceID,
+                restartPolicy: target.restartPolicy
+            )
+        }
+
+        if didChange {
+            document = CompanionTargetRegistryDocument(targets: updatedTargets)
+            if let data = try? JSONEncoder().encode(document) {
+                try? data.write(to: fileURL, options: [.atomic])
+            }
+        }
     }
 
     private func ensureSeededTargetFilesExist() {

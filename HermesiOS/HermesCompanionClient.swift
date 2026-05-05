@@ -94,6 +94,10 @@ struct HermesCompanionListTargetsResult: Codable {
     let targets: [HermesCompanionTargetSummary]
 }
 
+struct HermesCompanionListTargetsPayload: Codable {
+    let workspacePath: String
+}
+
 struct HermesCompanionTargetSummary: Codable, Identifiable, Equatable {
     let id: String
     let displayName: String
@@ -292,6 +296,260 @@ struct HermesCompanionRemoveModelResult: Codable {
     let modelsFilePath: String
     let removedModelID: String
 }
+
+
+struct HermesCompanionProviderEnvField: Codable, Identifiable, Equatable {
+    let key: String
+    let label: String
+    let type: String
+    let hint: String
+    var id: String { key }
+}
+
+struct HermesCompanionProviderEnvSection: Codable, Identifiable, Equatable {
+    let id: String
+    let title: String
+    let items: [HermesCompanionProviderEnvField]
+}
+
+struct HermesCompanionProviderOption: Codable, Identifiable, Equatable {
+    let value: String
+    let label: String
+    var id: String { value }
+}
+
+struct HermesCompanionProviderModelConfig: Codable, Equatable {
+    let provider: String
+    let model: String
+    let baseUrl: String
+}
+
+struct HermesCompanionProviderCredentialEntry: Codable, Identifiable, Equatable {
+    let key: String
+    let label: String
+    var id: String { label + ":" + String(key.prefix(8)) }
+}
+
+struct HermesCompanionProvidersConfigPayload: Codable {
+    let workspacePath: String
+}
+
+struct HermesCompanionProvidersConfigResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let envFilePath: String
+    let configPath: String
+    let authFilePath: String
+    let env: [String: String]
+    let modelConfig: HermesCompanionProviderModelConfig
+    let credentialPool: [String: [HermesCompanionProviderCredentialEntry]]
+    let sections: [HermesCompanionProviderEnvSection]
+    let providerOptions: [HermesCompanionProviderOption]
+}
+
+struct HermesCompanionSetProviderEnvPayload: Codable {
+    let workspacePath: String
+    let key: String
+    let value: String
+}
+
+struct HermesCompanionSetProviderEnvResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let key: String
+    let value: String
+    let envFilePath: String
+}
+
+struct HermesCompanionSetProviderModelConfigPayload: Codable {
+    let workspacePath: String
+    let provider: String
+    let model: String
+    let baseUrl: String
+}
+
+struct HermesCompanionSetProviderModelConfigResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let configPath: String
+    let modelConfig: HermesCompanionProviderModelConfig
+}
+
+struct HermesCompanionSetCredentialPoolPayload: Codable {
+    let workspacePath: String
+    let provider: String
+    let entries: [HermesCompanionProviderCredentialEntry]
+}
+
+struct HermesCompanionSetCredentialPoolResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let authFilePath: String
+    let credentialPool: [String: [HermesCompanionProviderCredentialEntry]]
+}
+
+
+struct HermesCompanionMemoryEntry: Codable, Identifiable, Equatable {
+    let index: Int
+    let content: String
+    var id: Int { index }
+}
+
+struct HermesCompanionMemoryFileInfo: Codable, Equatable {
+    let content: String
+    let exists: Bool
+    let lastModified: Int?
+    let entries: [HermesCompanionMemoryEntry]?
+    let charCount: Int
+    let charLimit: Int
+}
+
+struct HermesCompanionMemoryStats: Codable, Equatable {
+    let totalSessions: Int
+    let totalMessages: Int
+}
+
+struct HermesCompanionMemoryProviderInfo: Codable, Identifiable, Equatable {
+    let name: String
+    let description: String
+    let installed: Bool
+    let active: Bool
+    let envVars: [String]
+    var id: String { name }
+}
+
+struct HermesCompanionMemoryConfigPayload: Codable {
+    let workspacePath: String
+}
+
+struct HermesCompanionMemoryConfigResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let memoryFilePath: String
+    let userFilePath: String
+    let configPath: String
+    let envFilePath: String
+    let memory: HermesCompanionMemoryFileInfo
+    let user: HermesCompanionMemoryFileInfo
+    let stats: HermesCompanionMemoryStats
+    let provider: String
+    let providers: [HermesCompanionMemoryProviderInfo]
+    let env: [String: String]
+}
+
+struct HermesCompanionAddMemoryEntryPayload: Codable {
+    let workspacePath: String
+    let content: String
+}
+
+struct HermesCompanionUpdateMemoryEntryPayload: Codable {
+    let workspacePath: String
+    let index: Int
+    let content: String
+}
+
+struct HermesCompanionRemoveMemoryEntryPayload: Codable {
+    let workspacePath: String
+    let index: Int
+}
+
+struct HermesCompanionWriteUserProfilePayload: Codable {
+    let workspacePath: String
+    let content: String
+}
+
+struct HermesCompanionMemoryOperationResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let success: Bool
+    let error: String?
+    let memory: HermesCompanionMemoryConfigResult?
+}
+
+struct HermesCompanionSetMemoryProviderPayload: Codable {
+    let workspacePath: String
+    let provider: String
+}
+
+struct HermesCompanionSetMemoryProviderResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let configPath: String
+    let provider: String
+    let providers: [HermesCompanionMemoryProviderInfo]
+}
+
+struct HermesCompanionSetMemoryEnvPayload: Codable {
+    let workspacePath: String
+    let key: String
+    let value: String
+}
+
+struct HermesCompanionSetMemoryEnvResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let envFilePath: String
+    let key: String
+    let value: String
+}
+
+struct HermesCompanionScheduleRepeatInfo: Codable, Equatable {
+    let times: Int?
+    let completed: Int
+}
+
+struct HermesCompanionScheduleCronJob: Codable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let schedule: String
+    let prompt: String
+    let state: String
+    let enabled: Bool
+    let nextRunAt: String?
+    let lastRunAt: String?
+    let lastStatus: String?
+    let lastError: String?
+    let repeatInfo: HermesCompanionScheduleRepeatInfo?
+    let deliver: [String]
+    let skills: [String]
+    let script: String?
+}
+
+struct HermesCompanionListSchedulesPayload: Codable {
+    let workspacePath: String
+    let includeDisabled: Bool
+}
+
+struct HermesCompanionListSchedulesResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let jobsFilePath: String
+    let jobs: [HermesCompanionScheduleCronJob]
+}
+
+struct HermesCompanionCreateSchedulePayload: Codable {
+    let workspacePath: String
+    let schedule: String
+    let prompt: String?
+    let name: String?
+    let deliver: String?
+}
+
+struct HermesCompanionScheduleOperationPayload: Codable {
+    let workspacePath: String
+    let jobID: String
+}
+
+struct HermesCompanionScheduleOperationResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let jobsFilePath: String
+    let success: Bool
+    let output: String
+    let error: String?
+    let jobs: [HermesCompanionScheduleCronJob]
+}
+
 
 struct HermesCompanionValidationDiagnostic: Codable, Identifiable, Equatable {
     let id: UUID
@@ -530,6 +788,26 @@ final class HermesCompanionRuntimeSession {
     var toolsetsConfigPath = ""
     var hermesModels: [HermesCompanionSavedModel] = []
     var modelsFilePath = ""
+    var providerEnv: [String: String] = [:]
+    var providerSections: [HermesCompanionProviderEnvSection] = []
+    var providerOptions: [HermesCompanionProviderOption] = []
+    var providerCredentialPool: [String: [HermesCompanionProviderCredentialEntry]] = [:]
+    var providerModelConfig = HermesCompanionProviderModelConfig(provider: "auto", model: "", baseUrl: "")
+    var providerEnvFilePath = ""
+    var providerConfigPath = ""
+    var providerAuthFilePath = ""
+    var memoryConfig: HermesCompanionMemoryConfigResult?
+    var memoryEntries: [HermesCompanionMemoryEntry] = []
+    var memoryUserContent = ""
+    var memoryProvider = ""
+    var memoryProviders: [HermesCompanionMemoryProviderInfo] = []
+    var memoryEnv: [String: String] = [:]
+    var memoryFilePath = ""
+    var memoryUserFilePath = ""
+    var memoryConfigPath = ""
+    var memoryEnvFilePath = ""
+    var schedules: [HermesCompanionScheduleCronJob] = []
+    var schedulesFilePath = ""
 
     var selectedTarget: HermesCompanionTargetSummary? {
         targets.first(where: { $0.id == selectedTargetID })
@@ -542,7 +820,7 @@ final class HermesCompanionRuntimeSession {
                 settings: settings,
                 state: identityState,
                 type: "list_targets",
-                payload: nil as EmptyPayload?
+                payload: HermesCompanionListTargetsPayload(workspacePath: settings.hermesWorkspacePath)
             )
             self.targets = result.targets
             if self.selectedTargetID.isEmpty || self.targets.contains(where: { $0.id == self.selectedTargetID }) == false {
@@ -642,14 +920,19 @@ final class HermesCompanionRuntimeSession {
             linkedServiceOutput = ""
             return
         }
-        let result: HermesCompanionServiceStatusResult = try await HermesCompanionSessionFactory.request(
-            settings: settings,
-            state: identityState,
-            type: "service_status",
-            payload: HermesCompanionServiceStatusPayload(serviceID: serviceID)
-        )
-        linkedServiceStatus = result.status.rawValue.capitalized
-        linkedServiceOutput = result.output
+        do {
+            let result: HermesCompanionServiceStatusResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "service_status",
+                payload: HermesCompanionServiceStatusPayload(serviceID: serviceID)
+            )
+            linkedServiceStatus = result.status.rawValue.capitalized
+            linkedServiceOutput = result.output
+        } catch {
+            linkedServiceStatus = "Unavailable"
+            linkedServiceOutput = error.localizedDescription
+        }
     }
 
     private func run(_ operation: @escaping @MainActor () async throws -> Void) {
@@ -887,6 +1170,355 @@ final class HermesCompanionRuntimeSession {
             try await self.refreshHermesModelsImmediately(settings: settings, identityState: identityState)
             self.connectionStatus = "Model Removed"
         }
+    }
+
+    func refreshProvidersConfig(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Loading Providers"
+            let result: HermesCompanionProvidersConfigResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "get_providers_config",
+                payload: HermesCompanionProvidersConfigPayload(workspacePath: settings.hermesWorkspacePath)
+            )
+            self.applyProvidersConfig(result)
+            self.connectionStatus = "Providers Loaded"
+        }
+    }
+
+    func setProviderEnvValue(
+        key: String,
+        value: String,
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        providerEnv[key] = value
+        run {
+            self.connectionStatus = "Saving \(key)"
+            let result: HermesCompanionSetProviderEnvResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_provider_env",
+                payload: HermesCompanionSetProviderEnvPayload(
+                    workspacePath: settings.hermesWorkspacePath,
+                    key: key,
+                    value: value
+                )
+            )
+            self.providerEnv[result.key] = result.value
+            self.providerEnvFilePath = result.envFilePath
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = "Provider Key Saved"
+        }
+    }
+
+    func saveProviderModelConfig(
+        provider: String,
+        model: String,
+        baseUrl: String,
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        providerModelConfig = HermesCompanionProviderModelConfig(provider: provider, model: model, baseUrl: baseUrl)
+        run {
+            self.connectionStatus = "Saving Provider Model"
+            let result: HermesCompanionSetProviderModelConfigResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_provider_model_config",
+                payload: HermesCompanionSetProviderModelConfigPayload(
+                    workspacePath: settings.hermesWorkspacePath,
+                    provider: provider,
+                    model: model,
+                    baseUrl: baseUrl
+                )
+            )
+            self.providerModelConfig = result.modelConfig
+            self.providerConfigPath = result.configPath
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            if model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                _ = try await HermesCompanionSessionFactory.request(
+                    settings: settings,
+                    state: identityState,
+                    type: "add_model",
+                    payload: HermesCompanionAddModelPayload(
+                        workspacePath: settings.hermesWorkspacePath,
+                        name: model.split(separator: "/").last.map(String.init) ?? model,
+                        provider: provider,
+                        model: model,
+                        baseURL: baseUrl
+                    )
+                ) as HermesCompanionAddModelResult
+                try await self.refreshHermesModelsImmediately(settings: settings, identityState: identityState)
+            }
+            self.connectionStatus = "Provider Model Saved"
+        }
+    }
+
+    func setProviderCredentialPool(
+        provider: String,
+        entries: [HermesCompanionProviderCredentialEntry],
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        providerCredentialPool[provider] = entries
+        run {
+            self.connectionStatus = "Saving Credential Pool"
+            let result: HermesCompanionSetCredentialPoolResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_credential_pool",
+                payload: HermesCompanionSetCredentialPoolPayload(
+                    workspacePath: settings.hermesWorkspacePath,
+                    provider: provider,
+                    entries: entries
+                )
+            )
+            self.providerCredentialPool = result.credentialPool
+            self.providerAuthFilePath = result.authFilePath
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = "Credential Pool Saved"
+        }
+    }
+
+    private func applyProvidersConfig(_ result: HermesCompanionProvidersConfigResult) {
+        providerEnv = result.env
+        providerSections = result.sections
+        providerOptions = result.providerOptions
+        providerCredentialPool = result.credentialPool
+        providerModelConfig = result.modelConfig
+        providerEnvFilePath = result.envFilePath
+        providerConfigPath = result.configPath
+        providerAuthFilePath = result.authFilePath
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+    }
+
+
+    func refreshMemoryConfig(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Loading Memory"
+            let result: HermesCompanionMemoryConfigResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "get_memory_config",
+                payload: HermesCompanionMemoryConfigPayload(workspacePath: settings.hermesWorkspacePath)
+            )
+            self.applyMemoryConfig(result)
+            self.connectionStatus = "Memory Loaded"
+        }
+    }
+
+    func addMemoryEntry(content: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Adding Memory"
+            let result: HermesCompanionMemoryOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "add_memory_entry",
+                payload: HermesCompanionAddMemoryEntryPayload(workspacePath: settings.hermesWorkspacePath, content: content)
+            )
+            self.applyMemoryOperation(result)
+            self.connectionStatus = result.success ? "Memory Added" : "Memory Add Failed"
+        }
+    }
+
+    func updateMemoryEntry(index: Int, content: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Updating Memory"
+            let result: HermesCompanionMemoryOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "update_memory_entry",
+                payload: HermesCompanionUpdateMemoryEntryPayload(workspacePath: settings.hermesWorkspacePath, index: index, content: content)
+            )
+            self.applyMemoryOperation(result)
+            self.connectionStatus = result.success ? "Memory Updated" : "Memory Update Failed"
+        }
+    }
+
+    func removeMemoryEntry(index: Int, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Removing Memory"
+            let result: HermesCompanionMemoryOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "remove_memory_entry",
+                payload: HermesCompanionRemoveMemoryEntryPayload(workspacePath: settings.hermesWorkspacePath, index: index)
+            )
+            self.applyMemoryOperation(result)
+            self.connectionStatus = result.success ? "Memory Removed" : "Memory Remove Failed"
+        }
+    }
+
+    func writeUserProfile(content: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        memoryUserContent = content
+        run {
+            self.connectionStatus = "Saving User Profile"
+            let result: HermesCompanionMemoryOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "write_user_profile",
+                payload: HermesCompanionWriteUserProfilePayload(workspacePath: settings.hermesWorkspacePath, content: content)
+            )
+            self.applyMemoryOperation(result)
+            self.connectionStatus = result.success ? "User Profile Saved" : "User Profile Save Failed"
+        }
+    }
+
+    func setMemoryProvider(_ provider: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        memoryProvider = provider
+        memoryProviders = memoryProviders.map { item in
+            HermesCompanionMemoryProviderInfo(name: item.name, description: item.description, installed: item.installed, active: item.name == provider, envVars: item.envVars)
+        }
+        run {
+            self.connectionStatus = provider.isEmpty ? "Disabling Memory Provider" : "Activating \(provider)"
+            let result: HermesCompanionSetMemoryProviderResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_memory_provider",
+                payload: HermesCompanionSetMemoryProviderPayload(workspacePath: settings.hermesWorkspacePath, provider: provider)
+            )
+            self.memoryProvider = result.provider
+            self.memoryProviders = result.providers
+            self.memoryConfigPath = result.configPath
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = result.provider.isEmpty ? "Memory Provider Disabled" : "Memory Provider Active"
+        }
+    }
+
+    func setMemoryEnvValue(key: String, value: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        memoryEnv[key] = value
+        run {
+            self.connectionStatus = "Saving \(key)"
+            let result: HermesCompanionSetMemoryEnvResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_memory_env",
+                payload: HermesCompanionSetMemoryEnvPayload(workspacePath: settings.hermesWorkspacePath, key: key, value: value)
+            )
+            self.memoryEnv[result.key] = result.value
+            self.memoryEnvFilePath = result.envFilePath
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = "Memory Provider Key Saved"
+        }
+    }
+
+    private func applyMemoryOperation(_ result: HermesCompanionMemoryOperationResult) {
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+        if let error = result.error, !error.isEmpty {
+            lastErrorMessage = error
+        }
+        if let memory = result.memory {
+            applyMemoryConfig(memory)
+        }
+    }
+
+    private func applyMemoryConfig(_ result: HermesCompanionMemoryConfigResult) {
+        memoryConfig = result
+        memoryEntries = result.memory.entries ?? []
+        memoryUserContent = result.user.content
+        memoryProvider = result.provider
+        memoryProviders = result.providers
+        memoryEnv = result.env
+        memoryFilePath = result.memoryFilePath
+        memoryUserFilePath = result.userFilePath
+        memoryConfigPath = result.configPath
+        memoryEnvFilePath = result.envFilePath
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+    }
+
+    func refreshSchedules(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Loading Schedules"
+            let result: HermesCompanionListSchedulesResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "list_schedules",
+                payload: HermesCompanionListSchedulesPayload(workspacePath: settings.hermesWorkspacePath, includeDisabled: true)
+            )
+            self.applySchedules(result)
+            self.connectionStatus = result.jobs.isEmpty ? "No Schedules" : "Schedules Loaded"
+        }
+    }
+
+    func createSchedule(
+        schedule: String,
+        prompt: String?,
+        name: String?,
+        deliver: String?,
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        run {
+            self.connectionStatus = "Creating Schedule"
+            let result: HermesCompanionScheduleOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "create_schedule",
+                payload: HermesCompanionCreateSchedulePayload(
+                    workspacePath: settings.hermesWorkspacePath,
+                    schedule: schedule,
+                    prompt: prompt,
+                    name: name,
+                    deliver: deliver
+                )
+            )
+            self.applyScheduleOperation(result)
+            self.connectionStatus = result.success ? "Schedule Created" : "Schedule Create Failed"
+        }
+    }
+
+    func pauseSchedule(jobID: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        scheduleAction(type: "pause_schedule", status: "Pausing Schedule", successStatus: "Schedule Paused", failureStatus: "Schedule Pause Failed", jobID: jobID, settings: settings, identityState: identityState)
+    }
+
+    func resumeSchedule(jobID: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        scheduleAction(type: "resume_schedule", status: "Resuming Schedule", successStatus: "Schedule Resumed", failureStatus: "Schedule Resume Failed", jobID: jobID, settings: settings, identityState: identityState)
+    }
+
+    func triggerSchedule(jobID: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        scheduleAction(type: "trigger_schedule", status: "Running Schedule", successStatus: "Schedule Triggered", failureStatus: "Schedule Trigger Failed", jobID: jobID, settings: settings, identityState: identityState)
+    }
+
+    func removeSchedule(jobID: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        scheduleAction(type: "remove_schedule", status: "Removing Schedule", successStatus: "Schedule Removed", failureStatus: "Schedule Remove Failed", jobID: jobID, settings: settings, identityState: identityState)
+    }
+
+    private func scheduleAction(
+        type: String,
+        status: String,
+        successStatus: String,
+        failureStatus: String,
+        jobID: String,
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        run {
+            self.connectionStatus = status
+            let result: HermesCompanionScheduleOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: type,
+                payload: HermesCompanionScheduleOperationPayload(workspacePath: settings.hermesWorkspacePath, jobID: jobID)
+            )
+            self.applyScheduleOperation(result)
+            self.connectionStatus = result.success ? successStatus : failureStatus
+        }
+    }
+
+    private func applyScheduleOperation(_ result: HermesCompanionScheduleOperationResult) {
+        schedules = result.jobs
+        schedulesFilePath = result.jobsFilePath
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+        if let error = result.error, !error.isEmpty {
+            lastErrorMessage = error
+        }
+    }
+
+    private func applySchedules(_ result: HermesCompanionListSchedulesResult) {
+        schedules = result.jobs
+        schedulesFilePath = result.jobsFilePath
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
     }
 
     private func refreshHermesModelsImmediately(

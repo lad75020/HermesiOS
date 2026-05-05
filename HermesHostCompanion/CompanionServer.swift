@@ -300,6 +300,9 @@ final class CompanionClientSession {
     private let serviceRegistry = CompanionServiceRegistry.shared
     private let toolsetRegistry = CompanionToolsetRegistry.shared
     private let modelRegistry = CompanionModelRegistry.shared
+    private let providerRegistry = CompanionProviderRegistry()
+    private let memoryRegistry = CompanionMemoryRegistry()
+    private let scheduleRegistry = CompanionScheduleRegistry()
 
     init(connection: NWConnection) {
         self.connection = connection
@@ -401,15 +404,37 @@ final class CompanionClientSession {
                         "list_models",
                         "add_model",
                         "update_model",
-                        "remove_model"
+                        "remove_model",
+                        "get_providers_config",
+                        "set_provider_env",
+                        "set_provider_model_config",
+                        "set_credential_pool",
+                        "get_memory_config",
+                        "add_memory_entry",
+                        "update_memory_entry",
+                        "remove_memory_entry",
+                        "write_user_profile",
+                        "set_memory_provider",
+                        "set_memory_env",
+                        "list_schedules",
+                        "create_schedule",
+                        "remove_schedule",
+                        "pause_schedule",
+                        "resume_schedule",
+                        "trigger_schedule"
                     ]
                 )
             )
         case "list_targets":
-            return .success(
-                id: request.id,
-                payload: ListTargetsResult(targets: registry.listTargets())
-            )
+            do {
+                let payload = try request.payload?.decode(ListTargetsPayload.self)
+                return .success(
+                    id: request.id,
+                    payload: ListTargetsResult(targets: try registry.listTargets(workspacePath: payload?.workspacePath))
+                )
+            } catch {
+                return .error(id: request.id, code: "list_targets_failed", message: error.localizedDescription)
+            }
         case "read_target":
             do {
                 guard let payload = request.payload else {
@@ -604,6 +629,168 @@ final class CompanionClientSession {
             } catch {
                 return .error(id: request.id, code: "remove_model_failed", message: error.localizedDescription)
             }
+        case "get_providers_config":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The get_providers_config request requires a payload.")
+                }
+                let configPayload = try payload.decode(ProvidersConfigPayload.self)
+                let result = try providerRegistry.load(workspacePath: configPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "get_providers_config_failed", message: error.localizedDescription)
+            }
+        case "set_provider_env":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The set_provider_env request requires a payload.")
+                }
+                let envPayload = try payload.decode(SetProviderEnvPayload.self)
+                let result = try providerRegistry.setEnv(workspacePath: envPayload.workspacePath, key: envPayload.key, value: envPayload.value)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_provider_env_failed", message: error.localizedDescription)
+            }
+        case "set_provider_model_config":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The set_provider_model_config request requires a payload.")
+                }
+                let modelPayload = try payload.decode(SetProviderModelConfigPayload.self)
+                let result = try providerRegistry.setModelConfig(workspacePath: modelPayload.workspacePath, provider: modelPayload.provider, model: modelPayload.model, baseUrl: modelPayload.baseUrl)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_provider_model_config_failed", message: error.localizedDescription)
+            }
+        case "set_credential_pool":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The set_credential_pool request requires a payload.")
+                }
+                let poolPayload = try payload.decode(SetCredentialPoolPayload.self)
+                let result = try providerRegistry.setCredentialPool(workspacePath: poolPayload.workspacePath, provider: poolPayload.provider, entries: poolPayload.entries)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_credential_pool_failed", message: error.localizedDescription)
+            }
+        case "get_memory_config":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The get_memory_config request requires a payload.")
+                }
+                let memoryPayload = try payload.decode(MemoryConfigPayload.self)
+                let result = try memoryRegistry.load(workspacePath: memoryPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "get_memory_config_failed", message: error.localizedDescription)
+            }
+        case "add_memory_entry":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The add_memory_entry request requires a payload.") }
+                let addPayload = try payload.decode(AddMemoryEntryPayload.self)
+                let result = try memoryRegistry.addEntry(workspacePath: addPayload.workspacePath, content: addPayload.content)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "add_memory_entry_failed", message: error.localizedDescription)
+            }
+        case "update_memory_entry":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The update_memory_entry request requires a payload.") }
+                let updatePayload = try payload.decode(UpdateMemoryEntryPayload.self)
+                let result = try memoryRegistry.updateEntry(workspacePath: updatePayload.workspacePath, index: updatePayload.index, content: updatePayload.content)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "update_memory_entry_failed", message: error.localizedDescription)
+            }
+        case "remove_memory_entry":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The remove_memory_entry request requires a payload.") }
+                let removePayload = try payload.decode(RemoveMemoryEntryPayload.self)
+                let result = try memoryRegistry.removeEntry(workspacePath: removePayload.workspacePath, index: removePayload.index)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "remove_memory_entry_failed", message: error.localizedDescription)
+            }
+        case "write_user_profile":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The write_user_profile request requires a payload.") }
+                let userPayload = try payload.decode(WriteUserProfilePayload.self)
+                let result = try memoryRegistry.writeUserProfile(workspacePath: userPayload.workspacePath, content: userPayload.content)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "write_user_profile_failed", message: error.localizedDescription)
+            }
+        case "set_memory_provider":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_memory_provider request requires a payload.") }
+                let providerPayload = try payload.decode(SetMemoryProviderPayload.self)
+                let result = try memoryRegistry.setProvider(workspacePath: providerPayload.workspacePath, provider: providerPayload.provider)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_memory_provider_failed", message: error.localizedDescription)
+            }
+        case "set_memory_env":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_memory_env request requires a payload.") }
+                let envPayload = try payload.decode(SetMemoryEnvPayload.self)
+                let result = try memoryRegistry.setEnv(workspacePath: envPayload.workspacePath, key: envPayload.key, value: envPayload.value)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_memory_env_failed", message: error.localizedDescription)
+            }
+        case "list_schedules":
+            do {
+                let payload = try request.payload?.decode(ListSchedulesPayload.self) ?? ListSchedulesPayload(workspacePath: NSHomeDirectory() + "/.hermes", includeDisabled: true)
+                let result = try scheduleRegistry.list(workspacePath: payload.workspacePath, includeDisabled: payload.includeDisabled)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "list_schedules_failed", message: error.localizedDescription)
+            }
+        case "create_schedule":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The create_schedule request requires a payload.") }
+                let createPayload = try payload.decode(CreateSchedulePayload.self)
+                let result = try scheduleRegistry.create(workspacePath: createPayload.workspacePath, schedule: createPayload.schedule, prompt: createPayload.prompt, name: createPayload.name, deliver: createPayload.deliver)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "create_schedule_failed", message: error.localizedDescription)
+            }
+        case "remove_schedule":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The remove_schedule request requires a payload.") }
+                let opPayload = try payload.decode(ScheduleOperationPayload.self)
+                let result = try scheduleRegistry.remove(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "remove_schedule_failed", message: error.localizedDescription)
+            }
+        case "pause_schedule":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The pause_schedule request requires a payload.") }
+                let opPayload = try payload.decode(ScheduleOperationPayload.self)
+                let result = try scheduleRegistry.pause(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "pause_schedule_failed", message: error.localizedDescription)
+            }
+        case "resume_schedule":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The resume_schedule request requires a payload.") }
+                let opPayload = try payload.decode(ScheduleOperationPayload.self)
+                let result = try scheduleRegistry.resume(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "resume_schedule_failed", message: error.localizedDescription)
+            }
+        case "trigger_schedule":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The trigger_schedule request requires a payload.") }
+                let opPayload = try payload.decode(ScheduleOperationPayload.self)
+                let result = try scheduleRegistry.trigger(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "trigger_schedule_failed", message: error.localizedDescription)
+            }
         default:
             return .error(
                 id: request.id,
@@ -706,6 +893,7 @@ final class CompanionEnrollmentSession {
                     requiresPairingCode: true
                 )
             )
+
         case "enroll_client":
             do {
                 guard let payload = request.payload else {

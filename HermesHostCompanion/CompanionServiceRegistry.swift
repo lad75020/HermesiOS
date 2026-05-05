@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Darwin
 
 struct CompanionManagedServiceRecord: Codable, Identifiable {
     let id: String
@@ -50,7 +51,11 @@ final class CompanionServiceRegistry {
 
         if let data = try? Data(contentsOf: fileURL),
            let document = try? JSONDecoder().decode(CompanionServiceRegistryDocument.self, from: data) {
-            self.document = document
+            let migrated = Self.migratedDocument(from: document)
+            self.document = migrated
+            if let data = try? JSONEncoder().encode(migrated) {
+                try? data.write(to: fileURL, options: [.atomic])
+            }
         } else {
             let seeded = Self.seededDocument()
             self.document = seeded
@@ -62,7 +67,7 @@ final class CompanionServiceRegistry {
 
     func status(for serviceID: String) throws -> ServiceStatusResult {
         let service = try serviceRecord(for: serviceID)
-        let output = try run(command: service.statusCommand)
+        let output = try runStatus(command: service.statusCommand)
         return ServiceStatusResult(
             serviceID: serviceID,
             status: inferStatus(from: output),
@@ -123,6 +128,39 @@ final class CompanionServiceRegistry {
         return combined.isEmpty ? "Command completed successfully." : combined
     }
 
+    private func runStatus(command: [String]) throws -> String {
+        guard let executable = command.first, !executable.isEmpty else {
+            throw CompanionServiceRegistryError.commandMissing(command.joined(separator: " "))
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = Array(command.dropFirst())
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw CompanionServiceRegistryError.commandFailed(error.localizedDescription)
+        }
+
+        let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let combined = [stdout, stderr]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n")
+
+        if combined.isEmpty, process.terminationStatus != 0 {
+            return "Service status command exited with code \(process.terminationStatus)."
+        }
+        return combined.isEmpty ? "Command completed successfully." : combined
+    }
+
     private func inferStatus(from output: String) -> CompanionManagedServiceStatus {
         let normalized = output.localizedLowercase
         if normalized.contains("running") || normalized.contains("state = running") {
@@ -135,15 +173,31 @@ final class CompanionServiceRegistry {
     }
 
     private static func seededDocument() -> CompanionServiceRegistryDocument {
-        CompanionServiceRegistryDocument(
+        let launchctlService = "gui/\(getuid())/com.nous.hermesd"
+        return CompanionServiceRegistryDocument(
             services: [
                 CompanionManagedServiceRecord(
                     id: "hermesd",
                     displayName: "Hermes Daemon",
-                    statusCommand: ["/bin/launchctl", "print", "gui/501/com.nous.hermesd"],
-                    restartCommand: ["/bin/launchctl", "kickstart", "-k", "gui/501/com.nous.hermesd"]
+                    statusCommand: ["/bin/launchctl", "print", launchctlService],
+                    restartCommand: ["/bin/launchctl", "kickstart", "-k", launchctlService]
                 )
             ]
+        )
+    }
+
+    private static func migratedDocument(from document: CompanionServiceRegistryDocument) -> CompanionServiceRegistryDocument {
+        let launchctlService = "gui/\(getuid())/com.nous.hermesd"
+        return CompanionServiceRegistryDocument(
+            services: document.services.map { service in
+                guard service.id == "hermesd" else { return service }
+                return CompanionManagedServiceRecord(
+                    id: service.id,
+                    displayName: service.displayName,
+                    statusCommand: ["/bin/launchctl", "print", launchctlService],
+                    restartCommand: ["/bin/launchctl", "kickstart", "-k", launchctlService]
+                )
+            }
         )
     }
 }

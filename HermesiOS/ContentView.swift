@@ -838,6 +838,39 @@ private struct HermesAgentConfigView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
 
+    private var providerSummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to edit provider keys and model defaults"
+        }
+        let configuredKeys = companionRuntime.providerEnv.filter { !$0.value.isEmpty }.count
+        let provider = companionRuntime.providerModelConfig.provider
+        let model = companionRuntime.providerModelConfig.model
+        if model.isEmpty {
+            return "\(configuredKeys) environment values, provider \(provider)"
+        }
+        return "\(provider) · \(model) · \(configuredKeys) environment values"
+    }
+
+    private var memorySummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to manage host memory"
+        }
+        if let config = companionRuntime.memoryConfig {
+            let provider = config.provider.isEmpty ? "local" : config.provider
+            return "\(companionRuntime.memoryEntries.count) memories · \(provider) · \(config.stats.totalSessions) sessions"
+        }
+        return "Agent memory, user profile, and memory providers"
+    }
+
+    private var schedulesSummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to manage scheduled jobs"
+        }
+        let active = companionRuntime.schedules.filter { $0.state == "active" }.count
+        let paused = companionRuntime.schedules.filter { $0.state == "paused" }.count
+        return "\(active) active, \(paused) paused, \(companionRuntime.schedules.count) total"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -905,6 +938,7 @@ private struct HermesAgentConfigView: View {
                         Toggle("Persistent shell", isOn: $agentConfiguration.persistentShell)
 
                         TextField("Working directory", text: $agentConfiguration.workingDirectory)
+                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
@@ -923,14 +957,18 @@ private struct HermesAgentConfigView: View {
                 ) {
                     VStack(alignment: .leading, spacing: 14) {
                         TextField("Host", text: $agentConfiguration.sshHost)
+                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         TextField("User", text: $agentConfiguration.sshUser)
+                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         TextField("Port", text: $agentConfiguration.sshPort)
+                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                             .keyboardType(.numberPad)
                         TextField("Private key path", text: $agentConfiguration.sshKeyPath)
+                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
@@ -949,6 +987,61 @@ private struct HermesAgentConfigView: View {
                     )
                 ) {
                     HermesToolsPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+
+                HermesRuntimeAccordionPanel(
+                    title: "Providers",
+                    subtitle: providerSummary,
+                    systemImage: "key.horizontal",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .providers },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .providers : nil
+                        }
+                    )
+                ) {
+                    HermesProvidersPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                HermesRuntimeAccordionPanel(
+                    title: "Memory",
+                    subtitle: memorySummary,
+                    systemImage: "brain.head.profile",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .memory },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .memory : nil
+                        }
+                    )
+                ) {
+                    HermesMemoryPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                HermesRuntimeAccordionPanel(
+                    title: "Schedules",
+                    subtitle: schedulesSummary,
+                    systemImage: "calendar.badge.clock",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .schedules },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .schedules : nil
+                        }
+                    )
+                ) {
+                    HermesSchedulesPanel(
                         companionSettings: companionSettings,
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime
@@ -1003,6 +1096,39 @@ private struct HermesCompanionPanel: View {
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+
+    private var providerSummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to edit provider keys and model defaults"
+        }
+        let configuredKeys = companionRuntime.providerEnv.filter { !$0.value.isEmpty }.count
+        let provider = companionRuntime.providerModelConfig.provider
+        let model = companionRuntime.providerModelConfig.model
+        if model.isEmpty {
+            return "\(configuredKeys) environment values, provider \(provider)"
+        }
+        return "\(provider) · \(model) · \(configuredKeys) environment values"
+    }
+
+    private var memorySummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to manage host memory"
+        }
+        if let config = companionRuntime.memoryConfig {
+            let provider = config.provider.isEmpty ? "local" : config.provider
+            return "\(companionRuntime.memoryEntries.count) memories · \(provider) · \(config.stats.totalSessions) sessions"
+        }
+        return "Agent memory, user profile, and memory providers"
+    }
+
+    private var schedulesSummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to manage scheduled jobs"
+        }
+        let active = companionRuntime.schedules.filter { $0.state == "active" }.count
+        let paused = companionRuntime.schedules.filter { $0.state == "paused" }.count
+        return "\(active) active, \(paused) paused, \(companionRuntime.schedules.count) total"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -1080,6 +1206,7 @@ private struct HermesCompanionPanel: View {
                             }
 
                             TextEditor(text: $companionRuntime.targetContent)
+                                .scrollContentBackground(.hidden)
                                 .font(.system(.body, design: .monospaced))
                                 .frame(minHeight: 240)
 
@@ -1199,6 +1326,39 @@ private struct HermesToolsPanel: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
 
+    private var providerSummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to edit provider keys and model defaults"
+        }
+        let configuredKeys = companionRuntime.providerEnv.filter { !$0.value.isEmpty }.count
+        let provider = companionRuntime.providerModelConfig.provider
+        let model = companionRuntime.providerModelConfig.model
+        if model.isEmpty {
+            return "\(configuredKeys) environment values, provider \(provider)"
+        }
+        return "\(provider) · \(model) · \(configuredKeys) environment values"
+    }
+
+    private var memorySummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to manage host memory"
+        }
+        if let config = companionRuntime.memoryConfig {
+            let provider = config.provider.isEmpty ? "local" : config.provider
+            return "\(companionRuntime.memoryEntries.count) memories · \(provider) · \(config.stats.totalSessions) sessions"
+        }
+        return "Agent memory, user profile, and memory providers"
+    }
+
+    private var schedulesSummary: String {
+        if companionEnrollment.identityState.isEnrolled == false {
+            return "Enroll companion to manage scheduled jobs"
+        }
+        let active = companionRuntime.schedules.filter { $0.state == "active" }.count
+        let paused = companionRuntime.schedules.filter { $0.state == "paused" }.count
+        return "\(active) active, \(paused) paused, \(companionRuntime.schedules.count) total"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             if companionEnrollment.identityState.isEnrolled == false {
@@ -1277,6 +1437,1155 @@ private struct HermesToolsPanel: View {
     }
 }
 
+
+private struct HermesProvidersPanel: View {
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
+
+    @State private var modelProvider = "auto"
+    @State private var modelName = ""
+    @State private var modelBaseURL = ""
+    @State private var savedEnvKey: String?
+    @State private var modelSaved = false
+    @State private var visibleKeys: Set<String> = []
+    @State private var poolProvider = ""
+    @State private var poolNewKey = ""
+    @State private var poolNewLabel = ""
+
+    private var providerOptions: [HermesCompanionProviderOption] {
+        if companionRuntime.providerOptions.isEmpty {
+            return [
+                .init(value: "auto", label: "Auto-detect"),
+                .init(value: "openrouter", label: "OpenRouter"),
+                .init(value: "anthropic", label: "Anthropic"),
+                .init(value: "openai", label: "OpenAI"),
+                .init(value: "google", label: "Google"),
+                .init(value: "xai", label: "xAI"),
+                .init(value: "nous", label: "Nous"),
+                .init(value: "qwen", label: "Qwen"),
+                .init(value: "minimax", label: "MiniMax"),
+                .init(value: "custom", label: "Local / Custom")
+            ]
+        }
+        return companionRuntime.providerOptions
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if companionEnrollment.identityState.isEnrolled == false {
+                ContentUnavailableView(
+                    "Enrollment Required",
+                    systemImage: "person.badge.key",
+                    description: Text("Use Settings → Host Companion to enroll this iOS device before editing Hermes provider keys, default model configuration, or credential pools on the macOS host.")
+                )
+            } else {
+                HermesSectionCard("Provider Model") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Mirrors the desktop Providers screen: edits `provider`, `default`, and `base_url` in the live Hermes `config.yaml`, enables streaming, and saves the model to the workspace inventory.")
+                            .font(.subheadline)
+                            .foregroundStyle(.hermesSecondaryText)
+
+                        companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
+                        companionSummaryRow(label: "Config", value: companionRuntime.providerConfigPath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/config.yaml" : companionRuntime.providerConfigPath)
+
+                        if modelSaved {
+                            Label("Saved", systemImage: "checkmark.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.igOnlineGreen)
+                        }
+
+                        Picker("Provider", selection: $modelProvider) {
+                            ForEach(providerOptions) { option in
+                                Text(option.label).tag(option.value)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: modelProvider) { _, newValue in
+                            if newValue == "custom" && modelBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                modelBaseURL = "http://localhost:1234/v1"
+                            }
+                        }
+
+                        Text(modelProvider == "custom" ? "Use a local or OpenAI-compatible custom provider endpoint." : "Choose which provider Hermes should use by default, or keep auto-detect.")
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+
+                        TextField("Model name, e.g. anthropic/claude-sonnet-4", text: $modelName)
+                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                        if modelProvider == "custom" {
+                            TextField("Base URL, e.g. http://localhost:1234/v1", text: $modelBaseURL)
+                                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+
+                        Button("Save Model Configuration") {
+                            companionRuntime.saveProviderModelConfig(
+                                provider: modelProvider.trimmingCharacters(in: .whitespacesAndNewlines),
+                                model: modelName.trimmingCharacters(in: .whitespacesAndNewlines),
+                                baseUrl: modelBaseURL.trimmingCharacters(in: .whitespacesAndNewlines),
+                                settings: companionSettings,
+                                identityState: companionEnrollment.identityState
+                            )
+                            modelSaved = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { modelSaved = false }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+
+                HermesSectionCard("Credential Pool") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Stores multiple API keys per provider in `auth.json`, matching the desktop credential pool.")
+                            .font(.subheadline)
+                            .foregroundStyle(.hermesSecondaryText)
+                        companionSummaryRow(label: "Auth Store", value: companionRuntime.providerAuthFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/auth.json" : companionRuntime.providerAuthFilePath)
+
+                        Picker("Provider", selection: $poolProvider) {
+                            Text("Provider").tag("")
+                            ForEach(providerOptions.filter { $0.value != "auto" }) { option in
+                                Text(option.label).tag(option.value)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        SecureField("API key", text: $poolNewKey)
+                            .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        TextField("Label (optional)", text: $poolNewLabel)
+                            .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                        Button("Add Pool Key") {
+                            addPoolKey()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(poolProvider.isEmpty || poolNewKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        ForEach(companionRuntime.providerCredentialPool.keys.sorted(), id: \.self) { provider in
+                            if let entries = companionRuntime.providerCredentialPool[provider], entries.isEmpty == false {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(label(for: provider))
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.hermesSecondaryText)
+                                    ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                                        HStack(alignment: .center, spacing: 10) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(entry.label.isEmpty ? "Key \(index + 1)" : entry.label)
+                                                    .font(.subheadline.weight(.semibold))
+                                                Text(masked(entry.key))
+                                                    .font(.caption.monospaced())
+                                                    .foregroundStyle(.hermesSecondaryText)
+                                            }
+                                            Spacer()
+                                            Button(role: .destructive) {
+                                                removePoolKey(provider: provider, index: index)
+                                            } label: {
+                                                Image(systemName: "trash")
+                                            }
+                                            .buttonStyle(.bordered)
+                                        }
+                                        .padding(12)
+                                        .background(Color.hermesSurfaceInput)
+                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HermesSectionCard("Environment") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Edits the same provider and tool API keys as desktop Providers, writing to `.env` on the macOS host via the enrolled WebSocket companion.")
+                            .font(.subheadline)
+                            .foregroundStyle(.hermesSecondaryText)
+                        companionSummaryRow(label: "Env File", value: companionRuntime.providerEnvFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/.env" : companionRuntime.providerEnvFilePath)
+
+                        if !companionRuntime.lastErrorMessage.isEmpty {
+                            Text(companionRuntime.lastErrorMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.igDestructive)
+                        }
+
+                        ForEach(companionRuntime.providerSections) { section in
+                            DisclosureGroup(section.title) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(section.items) { field in
+                                        providerField(field)
+                                    }
+                                }
+                                .padding(.top, 10)
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .tint(.igActionBlue)
+                            .padding(12)
+                            .background(Color.hermesSurfaceInput)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: companionEnrollment.identityState.deviceID) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshProvidersConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+        .task(id: companionSettings.hermesWorkspacePath) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshProvidersConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+        .onChange(of: companionRuntime.providerModelConfig) { _, newValue in
+            syncModelState(newValue)
+        }
+        .onAppear {
+            syncModelState(companionRuntime.providerModelConfig)
+        }
+    }
+
+    @ViewBuilder
+    private func providerField(_ field: HermesCompanionProviderEnvField) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(field.label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+                if savedEnvKey == field.key {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.igOnlineGreen)
+                }
+            }
+
+            HStack(spacing: 8) {
+                let binding = Binding<String>(
+                    get: { companionRuntime.providerEnv[field.key] ?? "" },
+                    set: { companionRuntime.providerEnv[field.key] = $0 }
+                )
+                if field.type == "password" && visibleKeys.contains(field.key) == false {
+                    SecureField(field.label, text: binding)
+                        .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } else {
+                    TextField(field.label, text: binding)
+                        .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                if field.type == "password" {
+                    Button(visibleKeys.contains(field.key) ? "Hide" : "Show") {
+                        if visibleKeys.contains(field.key) { visibleKeys.remove(field.key) } else { visibleKeys.insert(field.key) }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            Text(field.hint)
+                .font(.caption)
+                .foregroundStyle(.hermesSecondaryText)
+
+            Button("Save \(field.label)") {
+                companionRuntime.setProviderEnvValue(
+                    key: field.key,
+                    value: companionRuntime.providerEnv[field.key] ?? "",
+                    settings: companionSettings,
+                    identityState: companionEnrollment.identityState
+                )
+                savedEnvKey = field.key
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedEnvKey = nil }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(12)
+        .background(Color.hermesSurfaceInput)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func syncModelState(_ config: HermesCompanionProviderModelConfig) {
+        modelProvider = config.provider
+        modelName = config.model
+        modelBaseURL = config.baseUrl
+    }
+
+    private func addPoolKey() {
+        let provider = poolProvider.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = poolNewKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !provider.isEmpty, !key.isEmpty else { return }
+        let existing = companionRuntime.providerCredentialPool[provider] ?? []
+        let label = poolNewLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Key \(existing.count + 1)" : poolNewLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        companionRuntime.setProviderCredentialPool(
+            provider: provider,
+            entries: existing + [HermesCompanionProviderCredentialEntry(key: key, label: label)],
+            settings: companionSettings,
+            identityState: companionEnrollment.identityState
+        )
+        poolNewKey = ""
+        poolNewLabel = ""
+    }
+
+    private func removePoolKey(provider: String, index: Int) {
+        var entries = companionRuntime.providerCredentialPool[provider] ?? []
+        guard entries.indices.contains(index) else { return }
+        entries.remove(at: index)
+        companionRuntime.setProviderCredentialPool(
+            provider: provider,
+            entries: entries,
+            settings: companionSettings,
+            identityState: companionEnrollment.identityState
+        )
+    }
+
+    private func label(for provider: String) -> String {
+        providerOptions.first(where: { $0.value == provider })?.label ?? provider
+    }
+
+    private func masked(_ value: String) -> String {
+        guard value.count > 12 else { return value.isEmpty ? "Empty" : "••••" }
+        return "\(value.prefix(8))…\(value.suffix(4))"
+    }
+
+    private func companionSummaryRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .fontWeight(.semibold)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(.hermesSecondaryText)
+                .textSelection(.enabled)
+        }
+        .font(.subheadline)
+    }
+}
+
+
+private enum HermesMemoryTab: String, CaseIterable, Identifiable {
+    case entries = "Agent Memory"
+    case profile = "User Profile"
+    case providers = "Providers"
+
+    var id: String { rawValue }
+}
+
+private struct HermesMemoryPanel: View {
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
+
+    @State private var selectedTab: HermesMemoryTab = .entries
+    @State private var showAddEntry = false
+    @State private var newEntry = ""
+    @State private var editingIndex: Int?
+    @State private var editContent = ""
+    @State private var confirmDeleteIndex: Int?
+    @State private var userDraft = ""
+    @State private var userSaved = false
+    @State private var savedEnvKey: String?
+    @State private var visibleKeys: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if companionEnrollment.identityState.isEnrolled == false {
+                ContentUnavailableView(
+                    "Enrollment Required",
+                    systemImage: "person.badge.key",
+                    description: Text("Use Settings → Host Companion to enroll this iOS device before editing Hermes memory files and provider configuration on the macOS host.")
+                )
+            } else {
+                HermesSectionCard("Memory Overview") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Mirrors the desktop Memory screen: reads and writes `memories/MEMORY.md`, `memories/USER.md`, memory provider config, and memory provider env keys through HermesHostCompanion.")
+                            .font(.subheadline)
+                            .foregroundStyle(.hermesSecondaryText)
+
+                        HermesStatusRow(
+                            items: [
+                                .init(title: "Sessions", value: "\(companionRuntime.memoryConfig?.stats.totalSessions ?? 0)", accent: .igActionBlue),
+                                .init(title: "Messages", value: "\(companionRuntime.memoryConfig?.stats.totalMessages ?? 0)", accent: .igGradPurple),
+                                .init(title: "Memories", value: "\(companionRuntime.memoryEntries.count)", accent: .igOnlineGreen)
+                            ]
+                        )
+
+                        memoryCapacityBar(label: "Agent Memory", used: companionRuntime.memoryConfig?.memory.charCount ?? 0, limit: companionRuntime.memoryConfig?.memory.charLimit ?? 2_200)
+                        memoryCapacityBar(label: "User Profile", used: companionRuntime.memoryConfig?.user.charCount ?? 0, limit: companionRuntime.memoryConfig?.user.charLimit ?? 1_375)
+
+                        companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
+                        companionSummaryRow(label: "Memory File", value: companionRuntime.memoryFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/memories/MEMORY.md" : companionRuntime.memoryFilePath)
+                        companionSummaryRow(label: "User File", value: companionRuntime.memoryUserFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/memories/USER.md" : companionRuntime.memoryUserFilePath)
+
+                        if !companionRuntime.lastErrorMessage.isEmpty {
+                            Text(companionRuntime.lastErrorMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.igDestructive)
+                        }
+
+                        Button("Refresh Memory") {
+                            companionRuntime.refreshMemoryConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
+                Picker("Memory tab", selection: $selectedTab) {
+                    ForEach(HermesMemoryTab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                switch selectedTab {
+                case .entries:
+                    memoryEntriesSection
+                case .profile:
+                    userProfileSection
+                case .providers:
+                    memoryProvidersSection
+                }
+            }
+        }
+        .task(id: companionEnrollment.identityState.deviceID) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshMemoryConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+        .task(id: companionSettings.hermesWorkspacePath) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshMemoryConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
+        }
+        .onChange(of: companionRuntime.memoryUserContent) { _, newValue in
+            userDraft = newValue
+        }
+        .onAppear {
+            userDraft = companionRuntime.memoryUserContent
+        }
+    }
+
+    private var memoryEntriesSection: some View {
+        HermesSectionCard("Agent Memory") {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("\(companionRuntime.memoryEntries.count) entries")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button(showAddEntry ? "Cancel" : "Add Memory") {
+                        showAddEntry.toggle()
+                        if showAddEntry == false { newEntry = "" }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                if showAddEntry {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextEditor(text: $newEntry)
+                            .scrollContentBackground(.hidden)
+                            .frame(minHeight: 92)
+                            .padding(8)
+                            .background(Color.hermesSurfaceInput)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        HStack {
+                            Text("\(newEntry.count) chars")
+                                .font(.caption)
+                                .foregroundStyle(.hermesSecondaryText)
+                            Spacer()
+                            Button("Save") {
+                                let trimmed = newEntry.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard trimmed.isEmpty == false else { return }
+                                companionRuntime.addMemoryEntry(content: trimmed, settings: companionSettings, identityState: companionEnrollment.identityState)
+                                newEntry = ""
+                                showAddEntry = false
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(newEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .padding(12)
+                    .background(Color.hermesSurfaceInput.opacity(0.65))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+
+                if companionRuntime.memoryEntries.isEmpty {
+                    ContentUnavailableView(
+                        "No Memories Yet",
+                        systemImage: "brain",
+                        description: Text("Add stable facts or workflow notes that Hermes should keep across sessions.")
+                    )
+                } else {
+                    ForEach(companionRuntime.memoryEntries) { entry in
+                        memoryEntryRow(entry)
+                    }
+                }
+            }
+        }
+    }
+
+    private var userProfileSection: some View {
+        HermesSectionCard("User Profile") {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Edit the user-level profile exactly as desktop Memory writes `USER.md`.")
+                    .font(.subheadline)
+                    .foregroundStyle(.hermesSecondaryText)
+
+                TextEditor(text: $userDraft)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 180)
+                    .padding(8)
+                    .background(Color.hermesSurfaceInput)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                HStack {
+                    Text("\(userDraft.count) / \(companionRuntime.memoryConfig?.user.charLimit ?? 1_375) chars")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                    Spacer()
+                    if userSaved {
+                        Label("Saved", systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.igOnlineGreen)
+                    }
+                    Button("Save Profile") {
+                        companionRuntime.writeUserProfile(content: userDraft, settings: companionSettings, identityState: companionEnrollment.identityState)
+                        userSaved = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { userSaved = false }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(userDraft.count > (companionRuntime.memoryConfig?.user.charLimit ?? 1_375))
+                }
+            }
+        }
+    }
+
+    private var memoryProvidersSection: some View {
+        HermesSectionCard("Memory Providers") {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(companionRuntime.memoryProvider.isEmpty ? "No external memory provider is active. Hermes will use local memory files." : "Active provider: \(companionRuntime.memoryProvider)")
+                    .font(.subheadline)
+                    .foregroundStyle(.hermesSecondaryText)
+
+                companionSummaryRow(label: "Config", value: companionRuntime.memoryConfigPath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/config.yaml" : companionRuntime.memoryConfigPath)
+                companionSummaryRow(label: "Env File", value: companionRuntime.memoryEnvFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/.env" : companionRuntime.memoryEnvFilePath)
+
+                if companionRuntime.memoryProviders.isEmpty {
+                    Text("Refresh memory to discover memory providers from the host Hermes installation.")
+                        .font(.subheadline)
+                        .foregroundStyle(.hermesSecondaryText)
+                } else {
+                    ForEach(companionRuntime.memoryProviders) { provider in
+                        memoryProviderCard(provider)
+                    }
+                }
+            }
+        }
+    }
+
+    private func memoryEntryRow(_ entry: HermesCompanionMemoryEntry) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if editingIndex == entry.index {
+                TextEditor(text: $editContent)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 92)
+                    .padding(8)
+                    .background(Color.hermesSurfaceInput)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                HStack {
+                    Text("\(editContent.count) chars")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                    Spacer()
+                    Button("Cancel") {
+                        editingIndex = nil
+                        editContent = ""
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Save") {
+                        companionRuntime.updateMemoryEntry(index: entry.index, content: editContent.trimmingCharacters(in: .whitespacesAndNewlines), settings: companionSettings, identityState: companionEnrollment.identityState)
+                        editingIndex = nil
+                        editContent = ""
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            } else {
+                Text(entry.content)
+                    .font(.subheadline)
+                    .textSelection(.enabled)
+                HStack {
+                    Button("Edit") {
+                        editingIndex = entry.index
+                        editContent = entry.content
+                    }
+                    .buttonStyle(.bordered)
+                    Spacer()
+                    if confirmDeleteIndex == entry.index {
+                        Button("Cancel") { confirmDeleteIndex = nil }
+                            .buttonStyle(.bordered)
+                        Button("Delete", role: .destructive) {
+                            companionRuntime.removeMemoryEntry(index: entry.index, settings: companionSettings, identityState: companionEnrollment.identityState)
+                            confirmDeleteIndex = nil
+                        }
+                        .buttonStyle(.bordered)
+                    } else {
+                        Button(role: .destructive) { confirmDeleteIndex = entry.index } label: { Image(systemName: "trash") }
+                            .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.hermesSurfaceInput)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func memoryProviderCard(_ provider: HermesCompanionMemoryProviderInfo) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(provider.name)
+                            .font(.headline)
+                        if provider.active {
+                            Label("Active", systemImage: "checkmark.circle.fill")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.igOnlineGreen)
+                        }
+                        if provider.installed == false {
+                            Text("Not installed")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.hermesSecondaryText)
+                        }
+                    }
+                    Text(provider.description)
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+                Spacer()
+                if provider.active {
+                    Button("Deactivate") {
+                        companionRuntime.setMemoryProvider("", settings: companionSettings, identityState: companionEnrollment.identityState)
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button("Activate") {
+                        companionRuntime.setMemoryProvider(provider.name, settings: companionSettings, identityState: companionEnrollment.identityState)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+
+            if provider.envVars.isEmpty == false {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(provider.envVars, id: \.self) { key in
+                        memoryEnvField(key)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(provider.active ? Color.igActionBlue.opacity(0.10) : Color.hermesSurfaceInput)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(provider.active ? Color.igActionBlue.opacity(0.45) : Color.clear, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func memoryEnvField(_ key: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(key)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+                if savedEnvKey == key {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.igOnlineGreen)
+                }
+            }
+            HStack(spacing: 8) {
+                let binding = Binding<String>(
+                    get: { companionRuntime.memoryEnv[key] ?? "" },
+                    set: { companionRuntime.memoryEnv[key] = $0 }
+                )
+                if key.localizedCaseInsensitiveContains("KEY") && visibleKeys.contains(key) == false {
+                    SecureField(key, text: binding)
+                        .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } else {
+                    TextField(key, text: binding)
+                        .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                if key.localizedCaseInsensitiveContains("KEY") {
+                    Button(visibleKeys.contains(key) ? "Hide" : "Show") {
+                        if visibleKeys.contains(key) { visibleKeys.remove(key) } else { visibleKeys.insert(key) }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            Button("Save \(key)") {
+                companionRuntime.setMemoryEnvValue(key: key, value: companionRuntime.memoryEnv[key] ?? "", settings: companionSettings, identityState: companionEnrollment.identityState)
+                savedEnvKey = key
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedEnvKey = nil }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(12)
+        .background(Color.hermesCanvas.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func memoryCapacityBar(label: String, used: Int, limit: Int) -> some View {
+        let percentage = limit > 0 ? min(1.0, Double(used) / Double(limit)) : 0
+        let tint: Color = percentage > 0.9 ? .igDestructive : (percentage > 0.7 ? .igGradOrange : .igOnlineGreen)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+                Spacer()
+                Text("\(used) / \(limit) chars")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+            GeometryReader { proxy in
+                Capsule()
+                    .fill(Color.hermesSurfaceInput)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(tint)
+                            .frame(width: proxy.size.width * percentage)
+                    }
+            }
+            .frame(height: 8)
+        }
+    }
+
+    private func companionSummaryRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .fontWeight(.semibold)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(.hermesSecondaryText)
+                .textSelection(.enabled)
+        }
+        .font(.subheadline)
+    }
+}
+
+
+private struct HermesSchedulesPanel: View {
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
+
+    @State private var showCreateForm = false
+    @State private var confirmDeleteJobID: String?
+    @State private var newName = ""
+    @State private var newPrompt = ""
+    @State private var newDeliver = "local"
+    @State private var frequency: ScheduleFrequency = .daily
+    @State private var minutesInterval = "30"
+    @State private var hourlyInterval = "1"
+    @State private var dailyTime = "09:00"
+    @State private var weeklyDay = "1"
+    @State private var weeklyTime = "09:00"
+    @State private var customCron = ""
+
+    private let deliverTargets: [(String, String)] = [
+        ("local", "Local"), ("origin", "Origin"), ("telegram", "Telegram"), ("discord", "Discord"),
+        ("slack", "Slack"), ("whatsapp", "WhatsApp"), ("signal", "Signal"), ("matrix", "Matrix"),
+        ("mattermost", "Mattermost"), ("email", "Email"), ("webhook", "Webhook"), ("sms", "SMS"),
+        ("homeassistant", "Home Assistant"), ("dingtalk", "DingTalk"), ("feishu", "Feishu"), ("wecom", "WeCom")
+    ]
+
+    private var builtSchedule: String {
+        switch frequency {
+        case .minutes:
+            return "\(minutesInterval)m"
+        case .hourly:
+            return "\(hourlyInterval)h"
+        case .daily:
+            let parts = dailyTime.split(separator: ":")
+            let hour = parts.first.map(String.init) ?? "09"
+            let minute = parts.dropFirst().first.map(String.init) ?? "00"
+            return "\(minute) \(hour) * * *"
+        case .weekly:
+            let parts = weeklyTime.split(separator: ":")
+            let hour = parts.first.map(String.init) ?? "09"
+            let minute = parts.dropFirst().first.map(String.init) ?? "00"
+            return "\(minute) \(hour) * * \(weeklyDay)"
+        case .custom:
+            return customCron.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private var isScheduleValid: Bool {
+        switch frequency {
+        case .custom:
+            return customCron.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        case .minutes:
+            return (Int(minutesInterval) ?? 0) > 0
+        case .hourly:
+            return (Int(hourlyInterval) ?? 0) > 0
+        default:
+            return true
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if companionEnrollment.identityState.isEnrolled == false {
+                ContentUnavailableView(
+                    "Enrollment Required",
+                    systemImage: "person.badge.key",
+                    description: Text("Enroll this iOS device with HermesHostCompanion before listing or editing scheduled jobs on the macOS host.")
+                )
+            } else {
+                HermesStatusRow(items: [
+                    .init(title: "Jobs", value: "\(companionRuntime.schedules.count)", accent: .igActionBlue),
+                    .init(title: "Active", value: "\(companionRuntime.schedules.filter { $0.state == "active" }.count)", accent: .igOnlineGreen),
+                    .init(title: "Paused", value: "\(companionRuntime.schedules.filter { $0.state == "paused" }.count)", accent: .igGradOrange)
+                ])
+
+                if !companionRuntime.lastErrorMessage.isEmpty {
+                    Text(companionRuntime.lastErrorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.igDestructive)
+                }
+
+                HermesSectionCard("Schedule Controls") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Create, pause, resume, trigger, and delete Hermes cron jobs stored on the macOS host.")
+                            .font(.subheadline)
+                            .foregroundStyle(.hermesSecondaryText)
+                        if !companionRuntime.schedulesFilePath.isEmpty {
+                            Text(companionRuntime.schedulesFilePath)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.hermesSecondaryText)
+                                .textSelection(.enabled)
+                        }
+                        HStack {
+                            Button {
+                                companionRuntime.refreshSchedules(settings: companionSettings, identityState: companionEnrollment.identityState)
+                            } label: {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Button {
+                                showCreateForm.toggle()
+                            } label: {
+                                Label(showCreateForm ? "Hide Form" : "New Task", systemImage: showCreateForm ? "xmark" : "plus")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+
+                if showCreateForm {
+                    HermesSectionCard("New Scheduled Task") {
+                        createForm
+                    }
+                }
+
+                HermesSectionCard("Scheduled Jobs") {
+                    if companionRuntime.schedules.isEmpty {
+                        ContentUnavailableView(
+                            "No Scheduled Jobs",
+                            systemImage: "calendar.badge.plus",
+                            description: Text("Create the first task or refresh from the host cron registry.")
+                        )
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(companionRuntime.schedules) { job in
+                                scheduleCard(job)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if companionEnrollment.identityState.isEnrolled, companionRuntime.schedules.isEmpty {
+                companionRuntime.refreshSchedules(settings: companionSettings, identityState: companionEnrollment.identityState)
+            }
+        }
+    }
+
+    private var createForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            TextField("Name", text: $newName)
+                .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
+                .textInputAutocapitalization(.sentences)
+            Picker("Frequency", selection: $frequency) {
+                ForEach(ScheduleFrequency.allCases) { item in
+                    Text(item.label).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Group {
+                switch frequency {
+                case .minutes:
+                    Picker("Interval", selection: $minutesInterval) {
+                        ForEach(["5", "10", "15", "30", "45"], id: \.self) { value in
+                            Text("Every \(value) minutes").tag(value)
+                        }
+                    }
+                case .hourly:
+                    Picker("Interval", selection: $hourlyInterval) {
+                        ForEach(["1", "2", "3", "4", "6", "8", "12"], id: \.self) { value in
+                            Text("Every \(value) hour\(value == "1" ? "" : "s")").tag(value)
+                        }
+                    }
+                case .daily:
+                    TextField("Execution time (HH:mm)", text: $dailyTime)
+                        .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                case .weekly:
+                    Picker("Weekday", selection: $weeklyDay) {
+                        Text("Monday").tag("1")
+                        Text("Tuesday").tag("2")
+                        Text("Wednesday").tag("3")
+                        Text("Thursday").tag("4")
+                        Text("Friday").tag("5")
+                        Text("Saturday").tag("6")
+                        Text("Sunday").tag("0")
+                    }
+                    TextField("Execution time (HH:mm)", text: $weeklyTime)
+                        .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                case .custom:
+                    TextField("Cron expression, e.g. 0 9 * * *", text: $customCron)
+                        .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Text("Use 5-field cron syntax, or Hermes expressions like 30m / 2h when supported by the CLI.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+            }
+
+            Text("Schedule: \(builtSchedule.isEmpty ? "—" : builtSchedule)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.hermesSecondaryText)
+                .textSelection(.enabled)
+
+            TextEditor(text: $newPrompt)
+                .frame(minHeight: 92)
+                .scrollContentBackground(.hidden)
+                .background(Color.hermesSurfaceInput)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+            Text("Prompt to run when this schedule fires.")
+                .font(.caption)
+                .foregroundStyle(.hermesSecondaryText)
+
+            Picker("Deliver to", selection: $newDeliver) {
+                ForEach(deliverTargets, id: \.0) { target in
+                    Text(target.1).tag(target.0)
+                }
+            }
+            .pickerStyle(.menu)
+
+            HStack {
+                Button {
+                    let prompt = newPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    companionRuntime.createSchedule(
+                        schedule: builtSchedule,
+                        prompt: prompt.isEmpty ? nil : prompt,
+                        name: name.isEmpty ? nil : name,
+                        deliver: newDeliver == "local" ? nil : newDeliver,
+                        settings: companionSettings,
+                        identityState: companionEnrollment.identityState
+                    )
+                    resetForm()
+                    showCreateForm = false
+                } label: {
+                    Label("Create", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isScheduleValid)
+
+                Button("Reset") { resetForm() }
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private func scheduleCard(_ job: HermesCompanionScheduleCronJob) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(job.name)
+                        .font(.headline)
+                    Text(job.schedule)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.hermesSecondaryText)
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                Text(job.state.capitalized)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(statusColor(for: job).opacity(0.18))
+                    .foregroundStyle(statusColor(for: job))
+                    .clipShape(Capsule())
+            }
+
+            if !job.prompt.isEmpty {
+                Text(job.prompt)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.hermesSurfaceInput)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Next: \(formatScheduleTime(job.nextRunAt))", systemImage: "calendar.badge.clock")
+                if let lastRunAt = job.lastRunAt {
+                    Label("Last: \(formatScheduleTime(lastRunAt))", systemImage: "clock.arrow.circlepath")
+                }
+                if let repeatInfo = job.repeatInfo, let times = repeatInfo.times {
+                    Label("Runs: \(repeatInfo.completed)/\(times)", systemImage: "repeat")
+                }
+                if job.deliver.isEmpty == false && !(job.deliver.count == 1 && job.deliver[0] == "local") {
+                    Label("Deliver: \(job.deliver.joined(separator: ", "))", systemImage: "paperplane")
+                }
+                if job.skills.isEmpty == false {
+                    Label("Skills: \(job.skills.joined(separator: ", "))", systemImage: "square.stack.3d.up")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.hermesSecondaryText)
+
+            if let lastError = job.lastError, !lastError.isEmpty {
+                Text(lastError)
+                    .font(.caption)
+                    .foregroundStyle(.igDestructive)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.igDestructive.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            HStack {
+                if job.state != "completed" {
+                    Button {
+                        if job.state == "paused" {
+                            companionRuntime.resumeSchedule(jobID: job.id, settings: companionSettings, identityState: companionEnrollment.identityState)
+                        } else {
+                            companionRuntime.pauseSchedule(jobID: job.id, settings: companionSettings, identityState: companionEnrollment.identityState)
+                        }
+                    } label: {
+                        Label(job.state == "paused" ? "Resume" : "Pause", systemImage: job.state == "paused" ? "play.fill" : "pause.fill")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if job.state == "active" {
+                    Button {
+                        companionRuntime.triggerSchedule(jobID: job.id, settings: companionSettings, identityState: companionEnrollment.identityState)
+                    } label: {
+                        Label("Run Now", systemImage: "bolt.fill")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    confirmDeleteJobID = job.id
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(14)
+        .background(Color.hermesSurfaceInput)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .confirmationDialog("Delete scheduled task?", isPresented: Binding(get: { confirmDeleteJobID == job.id }, set: { if !$0 { confirmDeleteJobID = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                companionRuntime.removeSchedule(jobID: job.id, settings: companionSettings, identityState: companionEnrollment.identityState)
+                confirmDeleteJobID = nil
+            }
+            Button("Cancel", role: .cancel) { confirmDeleteJobID = nil }
+        } message: {
+            Text("This removes the cron job from the host Hermes scheduler.")
+        }
+    }
+
+    private func statusColor(for job: HermesCompanionScheduleCronJob) -> Color {
+        switch job.state {
+        case "active": return .igOnlineGreen
+        case "paused": return .igGradOrange
+        case "completed": return .hermesSecondaryText
+        default: return .igActionBlue
+        }
+    }
+
+    private func formatScheduleTime(_ value: String?) -> String {
+        guard let value, value.isEmpty == false else { return "—" }
+        let formatter = ISO8601DateFormatter()
+        if let date = formatter.date(from: value) {
+            return date.formatted(date: .abbreviated, time: .shortened)
+        }
+        return value
+    }
+
+    private func resetForm() {
+        newName = ""
+        newPrompt = ""
+        newDeliver = "local"
+        frequency = .daily
+        minutesInterval = "30"
+        hourlyInterval = "1"
+        dailyTime = "09:00"
+        weeklyDay = "1"
+        weeklyTime = "09:00"
+        customCron = ""
+    }
+
+    private enum ScheduleFrequency: String, CaseIterable, Identifiable {
+        case minutes
+        case hourly
+        case daily
+        case weekly
+        case custom
+
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .minutes: return "Minutes"
+            case .hourly: return "Hourly"
+            case .daily: return "Daily"
+            case .weekly: return "Weekly"
+            case .custom: return "Custom"
+            }
+        }
+    }
+}
+
 private struct HermesModelsPanel: View {
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
@@ -1313,13 +2622,17 @@ private struct HermesModelsPanel: View {
                         HermesSectionCard("Add Model") {
                             VStack(alignment: .leading, spacing: 12) {
                                 TextField("Display name", text: $newModelName)
+                                    .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
                                 TextField("Provider", text: $newModelProvider)
+                                    .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                                 TextField("Model ID", text: $newModelID)
+                                    .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
                                 TextField("Base URL", text: $newModelBaseURL)
+                                    .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
 
@@ -1438,6 +2751,7 @@ private struct HermesSkillsPanel: View {
             }
 
             TextField("Start with", text: $agentConfiguration.skillSearchQuery)
+                .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
 
@@ -1677,13 +2991,17 @@ private struct HermesSavedModelEditorCard: View {
                 .foregroundStyle(.hermesSecondaryText)
 
             TextField("Display name", text: $name)
+                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
             TextField("Provider", text: $provider)
+                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             TextField("Model ID", text: $modelID)
+                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             TextField("Base URL", text: $baseURL)
+                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
 
@@ -1992,9 +3310,11 @@ private enum HermesRuntimePanelKind: String, Identifiable {
     case profiles
     case permissions
     case tools
+    case providers
     case models
     case sandbox
     case memory
+    case schedules
     case observability
 
     var id: String { rawValue }
@@ -2013,7 +3333,6 @@ private struct HermesRuntimePanel: Identifiable {
         .init(kind: .profiles, title: "Profiles", subtitle: "Switch between runtime profiles and targets", systemImage: "person.crop.rectangle.stack", placeholder: "Profile routing, per-target overrides, and environment inheritance will live here."),
         .init(kind: .permissions, title: "Permissions", subtitle: "Approval policy and privileged operations", systemImage: "checkmark.shield", placeholder: "Approval policy, escalations, and audit-friendly permission controls can expand here."),
         .init(kind: .sandbox, title: "Sandbox", subtitle: "Filesystem and network boundaries", systemImage: "lock.square.stack", placeholder: "Workspace-write, read-only, and network isolation controls can be configured here."),
-        .init(kind: .memory, title: "Memory", subtitle: "Persistent context and workspace notes", systemImage: "brain.head.profile", placeholder: "Persistent notes, workspace memory, and user-level memory toggles fit naturally in this section."),
         .init(kind: .observability, title: "Observability", subtitle: "Logs, traces, and runtime diagnostics", systemImage: "waveform.and.magnifyingglass", placeholder: "Runtime logs, traces, and environment diagnostics can be collected and displayed here.")
     ]
 }
@@ -2042,4 +3361,25 @@ private struct HermesAgentConfiguration {
 
 #Preview("Default") {
     ContentView()
+}
+
+private extension View {
+    func hermesRuntimeInput(
+        background: Color = Color.igActionBlue.opacity(0.08),
+        border: Color = Color.igActionBlue.opacity(0.28)
+    ) -> some View {
+        self
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(background)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(border, lineWidth: 1)
+            )
+            .shadow(color: border.opacity(0.18), radius: 8, y: 3)
+    }
 }

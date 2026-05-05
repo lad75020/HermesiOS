@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Darwin
 
 struct CompanionManagedServiceRecord: Codable, Identifiable {
     let id: String
@@ -100,6 +99,7 @@ final class CompanionServiceRegistry {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = Array(command.dropFirst())
+        process.environment = Self.commandEnvironment()
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -136,6 +136,7 @@ final class CompanionServiceRegistry {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = Array(command.dropFirst())
+        process.environment = Self.commandEnvironment()
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -161,9 +162,32 @@ final class CompanionServiceRegistry {
         return combined.isEmpty ? "Command completed successfully." : combined
     }
 
+    private static func commandEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser.path
+        let supplementalPaths = [
+            "\(homeDirectory)/.local/bin",
+            "\(homeDirectory)/.hermes/hermes-agent/venv/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ]
+        let existingPath = environment["PATH"] ?? ""
+        environment["PATH"] = (supplementalPaths + [existingPath])
+            .filter { !$0.isEmpty }
+            .joined(separator: ":")
+        return environment
+    }
+
     private func inferStatus(from output: String) -> CompanionManagedServiceStatus {
         let normalized = output.localizedLowercase
-        if normalized.contains("running") || normalized.contains("state = running") {
+        if normalized.contains("running")
+            || normalized.contains("state = running")
+            || normalized.contains("gateway service is loaded")
+            || normalized.contains("pid") {
             return .running
         }
         if normalized.contains("stopped") || normalized.contains("could not find service") || normalized.contains("not running") {
@@ -173,29 +197,27 @@ final class CompanionServiceRegistry {
     }
 
     private static func seededDocument() -> CompanionServiceRegistryDocument {
-        let launchctlService = "gui/\(getuid())/com.nous.hermesd"
         return CompanionServiceRegistryDocument(
             services: [
                 CompanionManagedServiceRecord(
                     id: "hermesd",
-                    displayName: "Hermes Daemon",
-                    statusCommand: ["/bin/launchctl", "print", launchctlService],
-                    restartCommand: ["/bin/launchctl", "kickstart", "-k", launchctlService]
+                    displayName: "Hermes Gateway / API Server",
+                    statusCommand: ["/usr/bin/env", "hermes", "gateway", "status"],
+                    restartCommand: ["/usr/bin/env", "hermes", "gateway", "restart"]
                 )
             ]
         )
     }
 
     private static func migratedDocument(from document: CompanionServiceRegistryDocument) -> CompanionServiceRegistryDocument {
-        let launchctlService = "gui/\(getuid())/com.nous.hermesd"
         return CompanionServiceRegistryDocument(
             services: document.services.map { service in
                 guard service.id == "hermesd" else { return service }
                 return CompanionManagedServiceRecord(
                     id: service.id,
-                    displayName: service.displayName,
-                    statusCommand: ["/bin/launchctl", "print", launchctlService],
-                    restartCommand: ["/bin/launchctl", "kickstart", "-k", launchctlService]
+                    displayName: "Hermes Gateway / API Server",
+                    statusCommand: ["/usr/bin/env", "hermes", "gateway", "status"],
+                    restartCommand: ["/usr/bin/env", "hermes", "gateway", "restart"]
                 )
             }
         )

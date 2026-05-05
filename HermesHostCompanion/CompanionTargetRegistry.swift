@@ -620,14 +620,7 @@ final class CompanionTargetRegistry {
             if format != .yaml {
                 return []
             }
-            return [
-                CompanionValidationDiagnostic(
-                    id: UUID(),
-                    severity: .warning,
-                    message: CompanionValidationError.yamlValidationUnavailable.localizedDescription,
-                    validator: "yamlParse"
-                )
-            ]
+            return validateYAML(content)
         case .command(let command):
             return [
                 CompanionValidationDiagnostic(
@@ -638,6 +631,205 @@ final class CompanionTargetRegistry {
                 )
             ]
         }
+    }
+
+    private func validateYAML(_ content: String) -> [CompanionValidationDiagnostic] {
+        var diagnostics: [CompanionValidationDiagnostic] = []
+        var blockScalarIndent: Int?
+
+        for (lineIndex, rawLine) in content.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            let lineNumber = lineIndex + 1
+            let line = String(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            guard trimmed.isEmpty == false, trimmed.hasPrefix("#") == false else { continue }
+
+            let leadingWhitespace = line.prefix { $0 == " " || $0 == "\t" }
+            if leadingWhitespace.contains("\t") {
+                diagnostics.append(yamlDiagnostic(lineNumber, "Tabs are not valid YAML indentation. Use spaces instead."))
+                continue
+            }
+
+            let indent = leadingWhitespace.count
+            if let scalarIndent = blockScalarIndent {
+                if indent > scalarIndent {
+                    continue
+                }
+                blockScalarIndent = nil
+            }
+
+            if trimmed == "---" || trimmed == "..." || trimmed.hasPrefix("%") {
+                continue
+            }
+
+            let uncommented = stripYAMLComment(from: trimmed).trimmingCharacters(in: .whitespaces)
+            guard uncommented.isEmpty == false else { continue }
+
+            if uncommented.hasPrefix("- ") || uncommented == "-" {
+                let item = uncommented == "-" ? "" : String(uncommented.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                if item.isEmpty { continue }
+                if let colonIndex = firstUnquotedColon(in: item) {
+                    let key = item[..<colonIndex].trimmingCharacters(in: .whitespaces)
+                    let value = item[item.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)
+                    if key.isEmpty {
+                        diagnostics.append(yamlDiagnostic(lineNumber, "List item mapping has an empty key."))
+                    }
+                    appendYAMLValueDiagnostics(value, lineNumber: lineNumber, diagnostics: &diagnostics)
+                    if value == "|" || value == ">" || value.hasPrefix("|+") || value.hasPrefix("|-") || value.hasPrefix(">+") || value.hasPrefix(">-") {
+                        blockScalarIndent = indent
+                    }
+                } else {
+                    appendYAMLValueDiagnostics(item, lineNumber: lineNumber, diagnostics: &diagnostics)
+                }
+                continue
+            }
+
+            if let colonIndex = firstUnquotedColon(in: uncommented) {
+                let key = uncommented[..<colonIndex].trimmingCharacters(in: .whitespaces)
+                let value = uncommented[uncommented.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)
+                if key.isEmpty {
+                    diagnostics.append(yamlDiagnostic(lineNumber, "Mapping entry has an empty key."))
+                }
+                appendYAMLValueDiagnostics(value, lineNumber: lineNumber, diagnostics: &diagnostics)
+                if value == "|" || value == ">" || value.hasPrefix("|+") || value.hasPrefix("|-") || value.hasPrefix(">+") || value.hasPrefix(">-") {
+                    blockScalarIndent = indent
+                }
+            } else {
+                appendYAMLValueDiagnostics(uncommented, lineNumber: lineNumber, diagnostics: &diagnostics)
+            }
+        }
+
+        return diagnostics
+    }
+
+    private func appendYAMLValueDiagnostics(
+        _ value: String,
+        lineNumber: Int,
+        diagnostics: inout [CompanionValidationDiagnostic]
+    ) {
+        guard value.isEmpty == false else { return }
+
+        var stack: [Character] = []
+        var quote: Character?
+        var escaped = false
+
+        for character in value {
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                    continue
+                }
+                if character == "\\" && activeQuote == "\"" {
+                    escaped = true
+                    continue
+                }
+                if character == activeQuote {
+                    quote = nil
+                }
+                continue
+            }
+
+            if character == "\"" || character == "'" {
+                quote = character
+                continue
+            }
+
+            switch character {
+            case "[":
+                stack.append("]")
+            case "{":
+                stack.append("}")
+            case "]", "}":
+                if stack.popLast() != character {
+                    diagnostics.append(yamlDiagnostic(lineNumber, "Unbalanced inline collection delimiter '\(character)' in YAML value."))
+                    return
+                }
+            default:
+                continue
+            }
+        }
+
+        if quote != nil {
+            diagnostics.append(yamlDiagnostic(lineNumber, "Unterminated quoted YAML scalar."))
+        }
+        if let expected = stack.last {
+            diagnostics.append(yamlDiagnostic(lineNumber, "Unclosed inline YAML collection. Expected '\(expected)'."))
+        }
+    }
+
+    private func firstUnquotedColon(in text: String) -> String.Index? {
+        var quote: Character?
+        var escaped = false
+
+        for index in text.indices {
+            let character = text[index]
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                    continue
+                }
+                if character == "\\" && activeQuote == "\"" {
+                    escaped = true
+                    continue
+                }
+                if character == activeQuote {
+                    quote = nil
+                }
+                continue
+            }
+
+            if character == "\"" || character == "'" {
+                quote = character
+                continue
+            }
+            if character == ":" {
+                let nextIndex = text.index(after: index)
+                if nextIndex == text.endIndex || text[nextIndex].isWhitespace {
+                    return index
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func stripYAMLComment(from text: String) -> String {
+        var quote: Character?
+        var escaped = false
+        var previous: Character?
+
+        for index in text.indices {
+            let character = text[index]
+            if let activeQuote = quote {
+                if escaped {
+                    escaped = false
+                } else if character == "\\" && activeQuote == "\"" {
+                    escaped = true
+                } else if character == activeQuote {
+                    quote = nil
+                }
+                previous = character
+                continue
+            }
+
+            if character == "\"" || character == "'" {
+                quote = character
+            } else if character == "#", previous == nil || previous?.isWhitespace == true {
+                return String(text[..<index])
+            }
+            previous = character
+        }
+
+        return text
+    }
+
+    private func yamlDiagnostic(_ lineNumber: Int, _ message: String) -> CompanionValidationDiagnostic {
+        CompanionValidationDiagnostic(
+            id: UUID(),
+            severity: .error,
+            message: "Line \(lineNumber): \(message)",
+            validator: "yamlParse"
+        )
     }
 
     private func validateJSON(_ content: String) -> [CompanionValidationDiagnostic] {

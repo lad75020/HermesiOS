@@ -8,6 +8,7 @@
 import Observation
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 import Vision
 import VisionKit
 
@@ -108,7 +109,8 @@ struct ContentView: View {
                     companionSettings: $companionSettings,
                     responsesDraft: $responsesDraft,
                     chatDraft: $chatDraft,
-                    companionEnrollment: companionEnrollment
+                    companionEnrollment: companionEnrollment,
+                    companionRuntime: companionRuntime
                 )
             }
             .tabItem {
@@ -154,7 +156,8 @@ struct ContentView: View {
                 companionSettings: $companionSettings,
                 responsesDraft: $responsesDraft,
                 chatDraft: $chatDraft,
-                companionEnrollment: companionEnrollment
+                companionEnrollment: companionEnrollment,
+                companionRuntime: companionRuntime
             )
         case .runtime:
             HermesAgentConfigView(
@@ -506,6 +509,7 @@ private struct HermesSettingsView: View {
     @Binding var responsesDraft: HermesRequestDraft
     @Binding var chatDraft: HermesChatDraft
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @State private var isPairingScannerPresented = false
     @State private var selectedPairingQRImage: PhotosPickerItem?
 
@@ -522,6 +526,34 @@ private struct HermesSettingsView: View {
 
                 settingsRow(label: "Responses URL", value: HermesAPISettings.responseURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
                 settingsRow(label: "Chat URL", value: HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        companionRuntime.restartAPIService(
+                            settings: companionSettings,
+                            identityState: companionEnrollment.identityState
+                        )
+                    } label: {
+                        Label("Restart API Server", systemImage: "arrow.clockwise.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isBusy)
+
+                    Text(companionEnrollment.identityState.isEnrolled ? "Uses the enrolled Host Companion to restart the host-side Hermes API server service." : "Enroll Host Companion before restarting the API server from iOS.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    if companionRuntime.connectionStatus != "Idle" {
+                        settingsRow(label: "Restart Status", value: companionRuntime.connectionStatus)
+                    }
+
+                    if !companionRuntime.lastErrorMessage.isEmpty {
+                        Text(companionRuntime.lastErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.igDestructive)
+                    }
+                }
+                .padding(.vertical, 4)
             }
 
             Section("Host Companion") {
@@ -837,6 +869,8 @@ private struct HermesAgentConfigView: View {
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    @State private var isSSHPrivateKeyImporterPresented = false
+    @State private var sshPrivateKeyPickerError: String?
 
     private var providerSummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
@@ -919,7 +953,7 @@ private struct HermesAgentConfigView: View {
 
                 HermesRuntimeAccordionPanel(
                     title: "Backend",
-                    subtitle: agentConfiguration.backend.displayName,
+                    subtitle: agentConfiguration.backend == .ssh ? "SSH remote host configuration" : agentConfiguration.backend.displayName,
                     systemImage: agentConfiguration.backend.systemImage,
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .backend },
@@ -941,38 +975,65 @@ private struct HermesAgentConfigView: View {
                             .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                    }
-                }
 
-                HermesRuntimeAccordionPanel(
-                    title: "SSH",
-                    subtitle: agentConfiguration.backend == .ssh ? "Remote host configuration" : "Hidden while local backend is active",
-                    systemImage: "network.badge.shield.half.filled",
-                    isExpanded: Binding(
-                        get: { agentConfiguration.activeRuntimePanel == .ssh },
-                        set: { isExpanded in
-                            agentConfiguration.activeRuntimePanel = isExpanded ? .ssh : nil
+                        if agentConfiguration.backend == .ssh {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("SSH")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+
+                                TextField("Host", text: $agentConfiguration.sshHost)
+                                    .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                TextField("User", text: $agentConfiguration.sshUser)
+                                    .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                TextField("Port", text: $agentConfiguration.sshPort)
+                                    .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                                    .keyboardType(.numberPad)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Private key")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+
+                                    HStack(spacing: 10) {
+                                        Text(agentConfiguration.sshKeyPath.isEmpty ? "No private key selected" : agentConfiguration.sshKeyPath)
+                                            .font(.system(.footnote, design: .monospaced))
+                                            .foregroundStyle(agentConfiguration.sshKeyPath.isEmpty ? .secondary : .primary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                                        Button("Choose…") {
+                                            sshPrivateKeyPickerError = nil
+                                            isSSHPrivateKeyImporterPresented = true
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(Color.igActionBlue.opacity(0.08))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .strokeBorder(Color.igActionBlue.opacity(0.28), lineWidth: 1)
+                                    )
+                                    .shadow(color: Color.igActionBlue.opacity(0.05), radius: 8, y: 3)
+
+                                    if let sshPrivateKeyPickerError {
+                                        Text(sshPrivateKeyPickerError)
+                                            .font(.caption)
+                                            .foregroundStyle(Color.igDestructive)
+                                    }
+                                }
+                            }
+                            .padding(.top, 4)
                         }
-                    )
-                ) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        TextField("Host", text: $agentConfiguration.sshHost)
-                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        TextField("User", text: $agentConfiguration.sshUser)
-                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        TextField("Port", text: $agentConfiguration.sshPort)
-                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                            .keyboardType(.numberPad)
-                        TextField("Private key path", text: $agentConfiguration.sshKeyPath)
-                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
                     }
-                    .opacity(agentConfiguration.backend == .ssh ? 1 : 0.45)
                 }
 
                 HermesRuntimeAccordionPanel(
@@ -1089,6 +1150,26 @@ private struct HermesAgentConfigView: View {
         }
         .navigationTitle("Agent Runtime")
         .background(Color.hermesCanvas)
+        .fileImporter(
+            isPresented: $isSSHPrivateKeyImporterPresented,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                let didAccessSecurityScopedResource = url.startAccessingSecurityScopedResource()
+                defer {
+                    if didAccessSecurityScopedResource {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                agentConfiguration.sshKeyPath = url.path
+                sshPrivateKeyPickerError = nil
+            case .failure(let error):
+                sshPrivateKeyPickerError = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -1208,7 +1289,7 @@ private struct HermesCompanionPanel: View {
                             TextEditor(text: $companionRuntime.targetContent)
                                 .scrollContentBackground(.hidden)
                                 .font(.system(.body, design: .monospaced))
-                                .frame(minHeight: 240)
+                                .frame(minHeight: 220, idealHeight: 220, maxHeight: 220)
 
                             HStack {
                                 Button("Validate") {
@@ -3306,7 +3387,6 @@ private enum HermesRuntimePanelKind: String, Identifiable {
     case skills
     case companion
     case backend
-    case ssh
     case profiles
     case permissions
     case tools

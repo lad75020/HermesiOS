@@ -898,6 +898,21 @@ final class HermesCompanionRuntimeSession {
         }
     }
 
+    func restartAPIService(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Restarting API Server"
+            let result: HermesCompanionServiceRestartResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "service_restart",
+                payload: HermesCompanionServiceRestartPayload(serviceID: "hermesd")
+            )
+            self.linkedServiceStatus = result.status.rawValue.capitalized
+            self.linkedServiceOutput = result.output
+            self.connectionStatus = "API Server Restarted"
+        }
+    }
+
     private func loadSelectedTarget(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
         guard let selectedTarget else { return }
         connectionStatus = "Reading \(selectedTarget.displayName)"

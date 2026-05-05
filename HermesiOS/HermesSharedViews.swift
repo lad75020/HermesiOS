@@ -12,37 +12,51 @@ struct HermesHeroCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            LinearGradient.instagramBrandShort
+            LinearGradient(
+                colors: [
+                    Color.hermesElevated.opacity(0.72),
+                    Color.hermesSurfaceInput.opacity(0.42),
+                    Color.igActionBlue.opacity(0.10)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
 
-            Circle()
-                .fill(.white.opacity(0.12))
-                .frame(width: 78, height: 78)
-                .offset(x: 230, y: -28)
+            RoundedRectangle(cornerRadius: 54, style: .continuous)
+                .fill(.white.opacity(0.10))
+                .frame(width: 140, height: 44)
+                .blur(radius: 18)
+                .offset(x: 205, y: -22)
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .center, spacing: 8) {
-                    StoryRing(systemImage: systemImage, isActive: true, size: 32, tint: .white)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.igActionBlue)
+                        .frame(width: 30, height: 30)
+                        .hermesLiquidGlass(cornerRadius: 10, tint: .igActionBlue.opacity(0.18), interactive: true)
+
                     Text(title)
                         .font(.igUsername)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                 }
 
                 Text(detail)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.88))
-                    .lineLimit(2)
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .frame(maxWidth: .infinity, minHeight: 82, alignment: .bottomLeading)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .bottomLeading)
+        .hermesLiquidGlass(cornerRadius: 20, tint: .igActionBlue.opacity(0.08), interactive: true)
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
         )
-        .shadow(color: Color.igGradPurple.opacity(0.10), radius: 8, y: 4)
+        .shadow(color: Color.black.opacity(0.08), radius: 18, y: 10)
     }
 }
 
@@ -76,11 +90,10 @@ struct HermesSectionCard<Content: View>: View {
             .padding(16)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.hermesElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .hermesLiquidGlass(cornerRadius: 18, tint: .white.opacity(0.06), interactive: false)
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.hermesDivider.opacity(0.65), lineWidth: 0.5)
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7)
         )
     }
 }
@@ -110,9 +123,9 @@ struct HermesStatusPill: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Circle()
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(item.accent)
-                .frame(width: 8, height: 8)
+                .frame(width: 4, height: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title.uppercased())
                     .font(.igBadge)
@@ -127,7 +140,7 @@ struct HermesStatusPill: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Capsule().fill(Color.hermesSurfaceInput))
+        .hermesLiquidGlass(cornerRadius: 18, tint: item.accent.opacity(0.08), interactive: false)
     }
 }
 

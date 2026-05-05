@@ -125,7 +125,7 @@ struct HermesStatusBand: View {
     var companionChannelActive = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             HermesStatusLED(
                 label: "API",
                 status: statusMonitor.apiServerStatus,
@@ -143,7 +143,7 @@ struct HermesStatusBand: View {
         .background(.ultraThinMaterial)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.hermesDivider.opacity(0.6))
+                .fill(Color.hermesDivider.opacity(0.32))
                 .frame(height: 0.5)
         }
     }
@@ -160,20 +160,19 @@ private struct HermesStatusLED: View {
             let activeColor = flashOn ? Color.igOnlineGreen : Color.igOnlineGreen.opacity(0.38)
             let ledColor = isActive ? activeColor : status.color
 
-            HStack(spacing: 5) {
-                Circle()
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(ledColor)
-                    .frame(width: 9, height: 9)
-                    .shadow(color: ledColor.opacity(isActive ? 0.75 : 0.45), radius: isActive ? 5 : 3)
-                    .overlay {
-                        Circle()
-                            .stroke(Color.white.opacity(isActive && flashOn ? 0.65 : 0.2), lineWidth: 0.6)
-                    }
+                    .frame(width: 3, height: 14)
+                    .shadow(color: ledColor.opacity(isActive ? 0.45 : 0.22), radius: isActive ? 4 : 2)
 
                 Text(label)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.hermesSecondaryText)
             }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .hermesLiquidGlass(cornerRadius: 12, tint: ledColor.opacity(0.08), interactive: false)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label) status \(isActive ? "active" : status.accessibilityLabel)")

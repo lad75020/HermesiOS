@@ -634,72 +634,126 @@ final class CompanionTargetRegistry {
     }
 
     private func validateYAML(_ content: String) -> [CompanionValidationDiagnostic] {
-        var diagnostics: [CompanionValidationDiagnostic] = []
-        var blockScalarIndent: Int?
+        validateYAMLWithPython(content)
+    }
 
-        for (lineIndex, rawLine) in content.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-            let lineNumber = lineIndex + 1
-            let line = String(rawLine)
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+    private func validateYAMLWithPython(_ content: String) -> [CompanionValidationDiagnostic] {
+        let script = """
+        import json
+        import sys
 
-            guard trimmed.isEmpty == false, trimmed.hasPrefix("#") == false else { continue }
+        try:
+            import yaml
+        except Exception as exc:
+            print(json.dumps({"ok": False, "parser_unavailable": True, "message": str(exc)}))
+            sys.exit(0)
 
-            let leadingWhitespace = line.prefix { $0 == " " || $0 == "\t" }
-            if leadingWhitespace.contains("\t") {
-                diagnostics.append(yamlDiagnostic(lineNumber, "Tabs are not valid YAML indentation. Use spaces instead."))
-                continue
-            }
+        content = sys.stdin.read()
+        try:
+            yaml.safe_load(content)
+            print(json.dumps({"ok": True}))
+        except yaml.YAMLError as exc:
+            mark = getattr(exc, 'problem_mark', None)
+            message = getattr(exc, 'problem', None) or str(exc)
+            payload = {"ok": False, "message": message}
+            if mark is not None:
+                payload["line"] = int(mark.line) + 1
+                payload["column"] = int(mark.column) + 1
+            print(json.dumps(payload))
+        """
 
-            let indent = leadingWhitespace.count
-            if let scalarIndent = blockScalarIndent {
-                if indent > scalarIndent {
-                    continue
-                }
-                blockScalarIndent = nil
-            }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["python3", "-c", script]
 
-            if trimmed == "---" || trimmed == "..." || trimmed.hasPrefix("%") {
-                continue
-            }
+        let inputPipe = Pipe()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardInput = inputPipe
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
 
-            let uncommented = stripYAMLComment(from: trimmed).trimmingCharacters(in: .whitespaces)
-            guard uncommented.isEmpty == false else { continue }
-
-            if uncommented.hasPrefix("- ") || uncommented == "-" {
-                let item = uncommented == "-" ? "" : String(uncommented.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                if item.isEmpty { continue }
-                if let colonIndex = firstUnquotedColon(in: item) {
-                    let key = item[..<colonIndex].trimmingCharacters(in: .whitespaces)
-                    let value = item[item.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)
-                    if key.isEmpty {
-                        diagnostics.append(yamlDiagnostic(lineNumber, "List item mapping has an empty key."))
-                    }
-                    appendYAMLValueDiagnostics(value, lineNumber: lineNumber, diagnostics: &diagnostics)
-                    if value == "|" || value == ">" || value.hasPrefix("|+") || value.hasPrefix("|-") || value.hasPrefix(">+") || value.hasPrefix(">-") {
-                        blockScalarIndent = indent
-                    }
-                } else {
-                    appendYAMLValueDiagnostics(item, lineNumber: lineNumber, diagnostics: &diagnostics)
-                }
-                continue
-            }
-
-            if let colonIndex = firstUnquotedColon(in: uncommented) {
-                let key = uncommented[..<colonIndex].trimmingCharacters(in: .whitespaces)
-                let value = uncommented[uncommented.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)
-                if key.isEmpty {
-                    diagnostics.append(yamlDiagnostic(lineNumber, "Mapping entry has an empty key."))
-                }
-                appendYAMLValueDiagnostics(value, lineNumber: lineNumber, diagnostics: &diagnostics)
-                if value == "|" || value == ">" || value.hasPrefix("|+") || value.hasPrefix("|-") || value.hasPrefix(">+") || value.hasPrefix(">-") {
-                    blockScalarIndent = indent
-                }
-            } else {
-                appendYAMLValueDiagnostics(uncommented, lineNumber: lineNumber, diagnostics: &diagnostics)
-            }
+        do {
+            try process.run()
+            inputPipe.fileHandleForWriting.write(Data(content.utf8))
+            try? inputPipe.fileHandleForWriting.close()
+            process.waitUntilExit()
+        } catch {
+            return [
+                CompanionValidationDiagnostic(
+                    id: UUID(),
+                    severity: .warning,
+                    message: "YAML parser unavailable: \(error.localizedDescription)",
+                    validator: "yamlParse"
+                )
+            ]
         }
 
-        return diagnostics
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+        guard process.terminationStatus == 0 else {
+            let stderr = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return [
+                CompanionValidationDiagnostic(
+                    id: UUID(),
+                    severity: .error,
+                    message: stderr?.isEmpty == false ? stderr! : "YAML parser failed with exit code \(process.terminationStatus).",
+                    validator: "yamlParse"
+                )
+            ]
+        }
+
+        guard
+            let object = try? JSONSerialization.jsonObject(with: outputData) as? [String: Any],
+            let ok = object["ok"] as? Bool
+        else {
+            return [
+                CompanionValidationDiagnostic(
+                    id: UUID(),
+                    severity: .warning,
+                    message: "YAML parser returned an unreadable response; skipping strict YAML validation.",
+                    validator: "yamlParse"
+                )
+            ]
+        }
+
+        if ok {
+            return []
+        }
+
+        if object["parser_unavailable"] as? Bool == true {
+            let message = object["message"] as? String ?? "PyYAML is not available to the host companion."
+            return [
+                CompanionValidationDiagnostic(
+                    id: UUID(),
+                    severity: .warning,
+                    message: "YAML parser unavailable: \(message)",
+                    validator: "yamlParse"
+                )
+            ]
+        }
+
+        let rawMessage = object["message"] as? String ?? "Invalid YAML."
+        let line = object["line"] as? Int
+        let column = object["column"] as? Int
+        let location: String
+        if let line, let column {
+            location = "Line \(line), column \(column): "
+        } else if let line {
+            location = "Line \(line): "
+        } else {
+            location = ""
+        }
+
+        return [
+            CompanionValidationDiagnostic(
+                id: UUID(),
+                severity: .error,
+                message: "\(location)\(rawMessage)",
+                validator: "yamlParse"
+            )
+        ]
     }
 
     private func appendYAMLValueDiagnostics(

@@ -107,6 +107,49 @@ extension AngularGradient {
     )
 }
 
+// MARK: - Liquid Glass helpers
+
+extension View {
+    @ViewBuilder
+    func hermesLiquidGlass(cornerRadius: CGFloat = 18, tint: Color? = nil, interactive: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            let glass: Glass = {
+                var configured = Glass.regular
+                if let tint {
+                    configured = configured.tint(tint)
+                }
+                if interactive {
+                    configured = configured.interactive()
+                }
+                return configured
+            }()
+
+            self
+                .glassEffect(glass, in: shape)
+        } else {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            self
+                .background(.ultraThinMaterial, in: shape)
+                .overlay {
+                    shape
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
+                }
+        }
+    }
+}
+
+struct HermesLiquidGlassBackground: View {
+    var cornerRadius: CGFloat = 18
+    var tint: Color? = nil
+    var interactive: Bool = false
+
+    var body: some View {
+        Color.white.opacity(0.001)
+            .hermesLiquidGlass(cornerRadius: cornerRadius, tint: tint, interactive: interactive)
+    }
+}
+
 // MARK: - Typography
 
 extension Font {
@@ -313,9 +356,9 @@ struct IGStatusPill: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(tint)
-                .frame(width: 8, height: 8)
+                .frame(width: 4, height: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
                     .font(.igBadge)
@@ -329,9 +372,7 @@ struct IGStatusPill: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            Capsule().fill(Color.hermesSurfaceInput)
-        )
+        .hermesLiquidGlass(cornerRadius: 16, tint: tint.opacity(0.08), interactive: false)
     }
 }
 
@@ -384,8 +425,8 @@ struct IGBrandHero: View {
                     Image(systemName: systemImage)
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding(10)
-                        .background(Circle().fill(.white.opacity(0.18)))
+                        .frame(width: 38, height: 38)
+                        .hermesLiquidGlass(cornerRadius: 12, tint: .white.opacity(0.16), interactive: true)
                     Text(title)
                         .font(.igUsernameLarge)
                         .foregroundStyle(.white)
@@ -427,18 +468,21 @@ struct IGIconButton: View {
 
 enum HermesAppearance {
     static func configureGlobalAppearance() {
-        // Tab bar — translucent with hairline divider
+        // Tab bar — liquid-glass inspired translucency with a soft separator.
         let tab = UITabBarAppearance()
-        tab.configureWithDefaultBackground()
-        tab.backgroundEffect = UIBlurEffect(style: .systemMaterial)
-        tab.shadowColor = UIColor.separator
+        tab.configureWithTransparentBackground()
+        tab.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+        tab.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.34)
+        tab.shadowColor = UIColor.separator.withAlphaComponent(0.28)
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
 
-        // Nav bar — large title disabled, clean type
+        // Nav bar — translucent, modern, and visually aligned with the tab bar.
         let nav = UINavigationBarAppearance()
-        nav.configureWithDefaultBackground()
-        nav.shadowColor = UIColor.separator
+        nav.configureWithTransparentBackground()
+        nav.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+        nav.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.28)
+        nav.shadowColor = UIColor.separator.withAlphaComponent(0.22)
         nav.titleTextAttributes = [
             .font: UIFont.systemFont(ofSize: 16, weight: .semibold)
         ]

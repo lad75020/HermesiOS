@@ -152,37 +152,9 @@ struct HermesToolsetToggleRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
-
-
-enum HermesTerminalBackend: String, CaseIterable, Identifiable {
-    case local
-    case ssh
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .local:
-            "Local"
-        case .ssh:
-            "SSH"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .local:
-            "laptopcomputer"
-        case .ssh:
-            "network.badge.shield.half.filled"
-        }
-    }
-}
-
 enum HermesRuntimePanelKind: String, Identifiable {
     case skills
     case companion
-    case backend
     case profiles
     case permissions
     case tools
@@ -215,25 +187,8 @@ struct HermesRuntimePanel: Identifiable {
 }
 
 struct HermesAgentConfiguration {
-    var backend: HermesTerminalBackend = .local
-    var persistentShell = true
-    var workingDirectory = "."
-    var sshHost = ""
-    var sshUser = ""
-    var sshPort = "22"
-    var sshKeyPath = "~/.ssh/id_rsa"
     var activeRuntimePanel: HermesRuntimePanelKind? = .companion
     var skillSearchQuery = ""
-
-    var backendSummary: String {
-        switch backend {
-        case .local:
-            "Commands execute directly on the device host running Hermes. This is the fastest path for initial gateway integration."
-        case .ssh:
-            "Commands execute on a remote server over SSH with a persistent shell, which is the right fit once the app starts managing remote agents."
-        }
-    }
-
 }
 
 #Preview("Default") {

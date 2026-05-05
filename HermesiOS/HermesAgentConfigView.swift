@@ -5,15 +5,12 @@
 
 import Observation
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct HermesAgentConfigView: View {
     @Binding var agentConfiguration: HermesAgentConfiguration
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
-    @State private var isSSHPrivateKeyImporterPresented = false
-    @State private var sshPrivateKeyPickerError: String?
 
     private var providerSummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
@@ -102,91 +99,6 @@ struct HermesAgentConfigView: View {
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime
                     )
-                }
-
-                HermesRuntimeAccordionPanel(
-                    title: "Backend",
-                    subtitle: agentConfiguration.backend == .ssh ? "SSH remote host configuration" : agentConfiguration.backend.displayName,
-                    systemImage: agentConfiguration.backend.systemImage,
-                    isExpanded: Binding(
-                        get: { agentConfiguration.activeRuntimePanel == .backend },
-                        set: { isExpanded in
-                            agentConfiguration.activeRuntimePanel = isExpanded ? .backend : nil
-                        }
-                    )
-                ) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Picker("Terminal backend", selection: $agentConfiguration.backend) {
-                            ForEach(HermesTerminalBackend.allCases) { backend in
-                                Text(backend.displayName).tag(backend)
-                            }
-                        }
-
-                        Toggle("Persistent shell", isOn: $agentConfiguration.persistentShell)
-
-                        TextField("Working directory", text: $agentConfiguration.workingDirectory)
-                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-
-                        if agentConfiguration.backend == .ssh {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("SSH")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-
-                                TextField("Host", text: $agentConfiguration.sshHost)
-                                    .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                TextField("User", text: $agentConfiguration.sshUser)
-                                    .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                TextField("Port", text: $agentConfiguration.sshPort)
-                                    .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                                    .keyboardType(.numberPad)
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Private key")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-
-                                    HStack(spacing: 10) {
-                                        Text(agentConfiguration.sshKeyPath.isEmpty ? "No private key selected" : agentConfiguration.sshKeyPath)
-                                            .font(.system(.footnote, design: .monospaced))
-                                            .foregroundStyle(agentConfiguration.sshKeyPath.isEmpty ? .secondary : .primary)
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                                        Button("Choose…") {
-                                            sshPrivateKeyPickerError = nil
-                                            isSSHPrivateKeyImporterPresented = true
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 10)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .fill(Color.igActionBlue.opacity(0.08))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .strokeBorder(Color.igActionBlue.opacity(0.28), lineWidth: 1)
-                                    )
-                                    .shadow(color: Color.igActionBlue.opacity(0.05), radius: 8, y: 3)
-
-                                    if let sshPrivateKeyPickerError {
-                                        Text(sshPrivateKeyPickerError)
-                                            .font(.caption)
-                                            .foregroundStyle(Color.igDestructive)
-                                    }
-                                }
-                            }
-                            .padding(.top, 4)
-                        }
-                    }
                 }
 
                 HermesRuntimeAccordionPanel(
@@ -321,25 +233,5 @@ struct HermesAgentConfigView: View {
         }
         .navigationTitle("Agent Runtime")
         .background(Color.hermesCanvas)
-        .fileImporter(
-            isPresented: $isSSHPrivateKeyImporterPresented,
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                let didAccessSecurityScopedResource = url.startAccessingSecurityScopedResource()
-                defer {
-                    if didAccessSecurityScopedResource {
-                        url.stopAccessingSecurityScopedResource()
-                    }
-                }
-                agentConfiguration.sshKeyPath = url.path
-                sshPrivateKeyPickerError = nil
-            case .failure(let error):
-                sshPrivateKeyPickerError = error.localizedDescription
-            }
-        }
     }
 }

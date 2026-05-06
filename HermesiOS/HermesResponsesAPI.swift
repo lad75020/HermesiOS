@@ -60,6 +60,10 @@ final class HermesResponsesSession {
     var latestMessageType = ""
     var eventCount = 0
 
+    var hasActiveConversation: Bool {
+        !previousResponseID.isEmpty || !latestResponseID.isEmpty || !entries.isEmpty || isSending
+    }
+
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
 
@@ -90,6 +94,42 @@ final class HermesResponsesSession {
         lastErrorMessage = ""
         latestMessageType = ""
         eventCount = 0
+    }
+
+    func terminateAndStartNewSession() {
+        resetConversation()
+        connectionStatus = "New session ready"
+    }
+
+    func resumeConversation(from result: HermesDashboardConversationResult) {
+        requestTask?.cancel()
+        requestTask = nil
+        streamedText = ""
+        activeAssistantEntryID = nil
+        isSending = false
+        latestResponseID = ""
+        let continuationID = result.sessionID.isEmpty ? result.session.id : result.sessionID
+        previousResponseID = continuationID
+        lastErrorMessage = ""
+        latestMessageType = "resumed session"
+        eventCount = 0
+
+        let restoredEntries = result.messages
+            .filter { message in
+                let role = message.role.lowercased()
+                return (role == "user" || role == "assistant") && !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            .map { message in
+                HermesResponseMessage(role: message.role.lowercased(), content: message.content)
+            }
+
+        let trimmedTitle = result.session.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let displayTitle = trimmedTitle.isEmpty ? continuationID : trimmedTitle
+
+        entries = restoredEntries.isEmpty
+            ? [HermesResponseMessage(role: "assistant", content: "Resumed session \(displayTitle). Send a new prompt to continue it.")]
+            : restoredEntries
+        connectionStatus = "Resumed session"
     }
 
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft) async {

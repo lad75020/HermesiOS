@@ -80,9 +80,11 @@ struct HermesResponsesConsoleView: View {
 
                 Spacer()
 
-                if !responseSession.previousResponseID.isEmpty && !responseSession.isSending {
-                    Button("New Thread") {
-                        responseSession.resetConversation()
+                if responseSession.hasActiveConversation {
+                    Button {
+                        responseSession.terminateAndStartNewSession()
+                    } label: {
+                        Label("End Session", systemImage: "xmark.circle")
                     }
                     .hermesGlassButton()
                 }

@@ -18,6 +18,7 @@ struct ContentView: View {
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
+    @State private var selectedPhoneSection: WorkspaceSection = .responses
     @State private var apiSettings: HermesAPISettings
     @State private var companionSettings: HermesCompanionSettings
     @State private var agentConfiguration = HermesAgentConfiguration()
@@ -139,7 +140,7 @@ struct ContentView: View {
                 dashboardChannelActive: dashboardChannelActive
             )
 
-            TabView {
+            TabView(selection: $selectedPhoneSection) {
                 NavigationStack {
                     HermesResponsesConsoleView(
                         apiSettings: $apiSettings,
@@ -150,6 +151,7 @@ struct ContentView: View {
                 .tabItem {
                     Label("Responses", systemImage: "dot.radiowaves.left.and.right")
                 }
+                .tag(WorkspaceSection.responses)
 
                 NavigationStack {
                     HermesChatConsoleView(
@@ -161,13 +163,19 @@ struct ContentView: View {
                 .tabItem {
                     Label("Chat", systemImage: "text.bubble")
                 }
+                .tag(WorkspaceSection.chat)
 
                 NavigationStack {
-                    HermesHistoryView(apiSettings: $apiSettings, searchSession: dashboardHistorySearchSession)
+                    HermesHistoryView(
+                        apiSettings: $apiSettings,
+                        searchSession: dashboardHistorySearchSession,
+                        onResumeConversation: resumeConversationInResponses
+                    )
                 }
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
+                .tag(WorkspaceSection.history)
 
                 NavigationStack {
                     HermesSettingsView(
@@ -183,6 +191,7 @@ struct ContentView: View {
                 .tabItem {
                     Label("Settings", systemImage: "slider.horizontal.3")
                 }
+                .tag(WorkspaceSection.settings)
 
                 NavigationStack {
                     HermesAgentConfigView(
@@ -195,6 +204,7 @@ struct ContentView: View {
                 .tabItem {
                     Label("Runtime", systemImage: "server.rack")
                 }
+                .tag(WorkspaceSection.runtime)
             }
         }
     }
@@ -215,7 +225,11 @@ struct ContentView: View {
                 chatSession: chatSession
             )
         case .history:
-            HermesHistoryView(apiSettings: $apiSettings, searchSession: dashboardHistorySearchSession)
+            HermesHistoryView(
+                apiSettings: $apiSettings,
+                searchSession: dashboardHistorySearchSession,
+                onResumeConversation: resumeConversationInResponses
+            )
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,
@@ -234,5 +248,11 @@ struct ContentView: View {
                 companionRuntime: companionRuntime
             )
         }
+    }
+
+    private func resumeConversationInResponses(_ result: HermesDashboardConversationResult) {
+        responseSession.resumeConversation(from: result)
+        selectedWorkspace = .responses
+        selectedPhoneSection = .responses
     }
 }

@@ -9,6 +9,7 @@ import SwiftUI
 struct HermesHistoryView: View {
     @Binding var apiSettings: HermesAPISettings
     @Bindable var searchSession: HermesDashboardHistorySearchSession
+    let onResumeConversation: (HermesDashboardConversationResult) -> Void
 
     @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
     @State private var expandedConversationIDs: Set<String> = []
@@ -124,7 +125,8 @@ struct HermesHistoryView: View {
                 ForEach(searchSession.results) { result in
                     HermesDashboardConversationDisclosure(
                         result: result,
-                        isExpanded: bindingForConversation(result.id)
+                        isExpanded: bindingForConversation(result.id),
+                        onResume: onResumeConversation
                     )
                 }
             }
@@ -162,17 +164,39 @@ private extension HermesDashboardHistorySearchSession {
 private struct HermesDashboardConversationDisclosure: View {
     let result: HermesDashboardConversationResult
     @Binding var isExpanded: Bool
+    let onResume: (HermesDashboardConversationResult) -> Void
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    onResume(result)
+                } label: {
+                    Label("Resume in Responses", systemImage: "arrow.uturn.forward.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.igActionBlue)
+
                 ForEach(result.displayMessages) { message in
                     HermesDashboardConversationMessageRow(message: message)
                 }
             }
             .padding(.top, 10)
         } label: {
-            HermesDashboardConversationSummary(result: result)
+            HStack(alignment: .center, spacing: 12) {
+                HermesDashboardConversationSummary(result: result)
+
+                Spacer(minLength: 8)
+
+                Button {
+                    onResume(result)
+                } label: {
+                    Label("Resume", systemImage: "arrow.uturn.forward")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         }
     }
 }

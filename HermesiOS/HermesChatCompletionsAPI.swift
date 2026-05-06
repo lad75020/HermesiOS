@@ -17,14 +17,13 @@ final class HermesChatSession {
     var connectionStatus = "Idle"
     var lastErrorMessage = ""
     var eventCount = 0
-    var historySessionID = UUID().uuidString
 
     private var requestTask: Task<Void, Never>?
 
-    func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft, historyStore: HermesHistoryStore? = nil) {
+    func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft) {
         requestTask?.cancel()
         requestTask = Task {
-            await runRequest(apiSettings: apiSettings, draft: draft, historyStore: historyStore)
+            await runRequest(apiSettings: apiSettings, draft: draft)
         }
     }
 
@@ -44,12 +43,10 @@ final class HermesChatSession {
         connectionStatus = "Idle"
         lastErrorMessage = ""
         eventCount = 0
-        historySessionID = UUID().uuidString
     }
 
-    private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft, historyStore: HermesHistoryStore?) async {
+    private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft) async {
         let history = entries
-        let requestText = draft.userPrompt
         resetForRequest()
         isSending = true
         connectionStatus = draft.stream ? "Connecting to chat stream" : "Sending chat request"
@@ -68,12 +65,6 @@ final class HermesChatSession {
             if !streamedText.isEmpty {
                 entries.append(.init(role: "assistant", content: streamedText))
             }
-            historyStore?.recordExchange(
-                kind: .chat,
-                sessionID: historySessionID,
-                requestText: requestText,
-                responseText: streamedText
-            )
 
             if !Task.isCancelled {
                 connectionStatus = "Completed"

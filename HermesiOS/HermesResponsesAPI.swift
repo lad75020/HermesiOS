@@ -50,22 +50,21 @@ enum HermesNetworkSessionFactory {
 @MainActor
 @Observable
 final class HermesResponsesSession {
-    var entries: [HermesResponseEntry] = []
     var streamedText = ""
     var isSending = false
     var connectionStatus = "Idle"
     var latestResponseID = ""
     var previousResponseID = ""
-    var historySessionID = ""
     var lastErrorMessage = ""
+    var latestMessageType = ""
     var eventCount = 0
 
     private var requestTask: Task<Void, Never>?
 
-    func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, historyStore: HermesHistoryStore? = nil) {
+    func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft) {
         requestTask?.cancel()
         requestTask = Task {
-            await runRequest(apiSettings: apiSettings, draft: draft, historyStore: historyStore)
+            await runRequest(apiSettings: apiSettings, draft: draft)
         }
     }
 
@@ -79,20 +78,18 @@ final class HermesResponsesSession {
     func resetConversation() {
         requestTask?.cancel()
         requestTask = nil
-        entries = []
         streamedText = ""
         isSending = false
         connectionStatus = "Idle"
         latestResponseID = ""
         previousResponseID = ""
-        historySessionID = ""
         lastErrorMessage = ""
+        latestMessageType = ""
         eventCount = 0
     }
 
-    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, historyStore: HermesHistoryStore?) async {
+    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft) async {
         let continuationID = previousResponseID
-        let requestText = draft.userPrompt
         resetForRequest()
         isSending = true
         connectionStatus = continuationID.isEmpty
@@ -108,15 +105,6 @@ final class HermesResponsesSession {
             if !latestResponseID.isEmpty {
                 previousResponseID = latestResponseID
             }
-            if historySessionID.isEmpty {
-                historySessionID = latestResponseID.isEmpty ? UUID().uuidString : latestResponseID
-            }
-            historyStore?.recordExchange(
-                kind: .responses,
-                sessionID: historySessionID,
-                requestText: requestText,
-                responseText: streamedText
-            )
             if !Task.isCancelled {
                 connectionStatus = "Completed"
             }
@@ -125,25 +113,16 @@ final class HermesResponsesSession {
         } catch {
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Failed"
-            entries.insert(
-                HermesResponseEntry(
-                    title: "Request Error",
-                    status: "Failed",
-                    summary: error.localizedDescription,
-                    metadata: []
-                ),
-                at: 0
-            )
         }
 
         isSending = false
     }
 
     private func resetForRequest() {
-        entries = []
         streamedText = ""
         latestResponseID = ""
         lastErrorMessage = ""
+        latestMessageType = ""
         eventCount = 0
     }
 
@@ -185,19 +164,8 @@ final class HermesResponsesSession {
         let envelope = try JSONDecoder().decode(HermesResponseEnvelope.self, from: data)
         latestResponseID = envelope.id ?? ""
         streamedText = envelope.assistantText
+        latestMessageType = envelope.outputMessageType
         eventCount = 1
-        entries = [
-            HermesResponseEntry(
-                title: "response.completed",
-                status: envelope.status?.capitalized ?? "Completed",
-                summary: envelope.assistantText.isEmpty ? "No assistant text returned." : envelope.assistantText,
-                metadata: compactMetadata([
-                    envelope.id.map { "Response ID: \($0)" },
-                    previousResponseID.isEmpty ? nil : "Previous Response ID: \(previousResponseID)",
-                    "Mode: Non-streaming"
-                ])
-            )
-        ]
     }
 
     private func buildRequest(
@@ -255,6 +223,7 @@ final class HermesResponsesSession {
 
         eventCount += 1
         let summary = HermesEventSummaryBuilder.summary(for: event)
+        latestMessageType = summary.messageType
 
         if let responseID = summary.responseID, !responseID.isEmpty {
             latestResponseID = responseID
@@ -275,33 +244,8 @@ final class HermesResponsesSession {
             connectionStatus = "Processing \(summary.title)"
         }
 
-        guard summary.includeInTimeline else { return }
-
-        entries.insert(
-            HermesResponseEntry(
-                title: summary.title,
-                status: summary.status,
-                summary: summary.detail,
-                metadata: summary.metadata
-            ),
-            at: 0
-        )
     }
 
-    private func compactMetadata(_ values: [String?]) -> [String] {
-        values.compactMap { value in
-            guard let value, !value.isEmpty else { return nil }
-            return value
-        }
-    }
-}
-
-struct HermesResponseEntry: Identifiable {
-    let id = UUID()
-    let title: String
-    let status: String
-    let summary: String
-    let metadata: [String]
 }
 
 struct HermesAPISettings: Codable, Equatable {
@@ -367,6 +311,13 @@ private struct HermesResponseEnvelope: Decodable {
         guard let output else { return "" }
         return output.compactMap(\.assistantText).joined(separator: "\n\n")
     }
+
+    var outputMessageType: String {
+        guard let output, let item = output.first(where: { $0.assistantText?.isEmpty == false }) else {
+            return "message"
+        }
+        return item.type
+    }
 }
 
 private struct HermesResponseOutputItem: Decodable {
@@ -375,7 +326,11 @@ private struct HermesResponseOutputItem: Decodable {
     let output: [HermesResponseContent]?
 
     var assistantText: String? {
-        let text = (content ?? output ?? []).compactMap(\.text).joined()
+        guard type == "message" else { return nil }
+        let text = (content ?? output ?? [])
+            .filter { $0.type == "output_text" || $0.type == "text" || $0.type == "message" }
+            .compactMap(\.text)
+            .joined()
         return text.isEmpty ? nil : text
     }
 }
@@ -430,6 +385,7 @@ private struct HermesSSEParser {
 
 private struct HermesEventSummary {
     let title: String
+    let messageType: String
     let status: String
     let detail: String
     let metadata: [String]
@@ -449,6 +405,7 @@ private enum HermesEventSummaryBuilder {
             let status = payload.string(at: ["response", "status"]) ?? payload.string(at: ["status"]) ?? "Created"
             return HermesEventSummary(
                 title: title,
+                messageType: "response",
                 status: status.capitalized,
                 detail: responseID.map { "Started response \($0)." } ?? "Response created.",
                 metadata: compactMetadata([
@@ -463,6 +420,7 @@ private enum HermesEventSummaryBuilder {
             let delta = payload.string(at: ["delta"]) ?? ""
             return HermesEventSummary(
                 title: title,
+                messageType: "message",
                 status: "Streaming",
                 detail: delta.isEmpty ? "Received output delta." : delta,
                 metadata: compactMetadata([
@@ -478,6 +436,7 @@ private enum HermesEventSummaryBuilder {
             let text = payload.string(at: ["text"]) ?? ""
             return HermesEventSummary(
                 title: title,
+                messageType: "message",
                 status: "Completed",
                 detail: text.isEmpty ? "Received finalized output text." : text,
                 metadata: compactMetadata([
@@ -495,6 +454,7 @@ private enum HermesEventSummaryBuilder {
             let detail = name.map { "\(itemType) \($0)" } ?? "Received \(itemType)."
             return HermesEventSummary(
                 title: title,
+                messageType: itemType,
                 status: title.hasSuffix("done") ? "Done" : "Update",
                 detail: detail,
                 metadata: compactMetadata([
@@ -509,9 +469,10 @@ private enum HermesEventSummaryBuilder {
         case "response.completed":
             let responseID = payload.string(at: ["response", "id"]) ?? payload.string(at: ["id"])
             let status = payload.string(at: ["response", "status"]) ?? payload.string(at: ["status"]) ?? "Completed"
-            let outputText = payload.texts(at: ["response", "output"]).joined(separator: "\n\n")
+            let outputText = payload.messageOutputTexts(at: ["response", "output"]).joined(separator: "\n\n")
             return HermesEventSummary(
                 title: title,
+                messageType: "response",
                 status: status.capitalized,
                 detail: outputText.isEmpty ? "Hermes finished the streamed response." : outputText,
                 metadata: compactMetadata([
@@ -525,6 +486,7 @@ private enum HermesEventSummaryBuilder {
         default:
             return HermesEventSummary(
                 title: title,
+                messageType: title,
                 status: "Event",
                 detail: payload.primaryDescription ?? event.data,
                 metadata: [],
@@ -576,6 +538,11 @@ struct HermesLooseJSON {
         return extractTexts(from: value)
     }
 
+    func messageOutputTexts(at path: [String]) -> [String] {
+        guard let value = value(at: path) else { return [] }
+        return extractMessageOutputTexts(from: value)
+    }
+
     var primaryDescription: String? {
         if let message = string(at: ["message"]) {
             return message
@@ -603,6 +570,24 @@ struct HermesLooseJSON {
         }
 
         return current
+    }
+
+    private func extractMessageOutputTexts(from value: Any) -> [String] {
+        if let array = value as? [Any] {
+            return array.flatMap(extractMessageOutputTexts)
+        }
+
+        guard let dictionary = value as? [String: Any] else { return [] }
+
+        if let type = dictionary["type"] as? String, type != "message" {
+            return []
+        }
+
+        if let content = dictionary["content"] ?? dictionary["output"] {
+            return extractTexts(from: content)
+        }
+
+        return extractTexts(from: dictionary)
     }
 
     private func extractTexts(from value: Any) -> [String] {

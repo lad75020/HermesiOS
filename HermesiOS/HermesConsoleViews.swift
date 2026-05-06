@@ -10,7 +10,6 @@ struct HermesResponsesConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
     @Binding var requestDraft: HermesRequestDraft
     @Bindable var responseSession: HermesResponsesSession
-    @Bindable var historyStore: HermesHistoryStore
 
     var body: some View {
         ScrollView {
@@ -74,7 +73,7 @@ struct HermesResponsesConsoleView: View {
                             }
 
                             Button("Send Request") {
-                                responseSession.submit(apiSettings: apiSettings, draft: requestDraft, historyStore: historyStore)
+                                responseSession.submit(apiSettings: apiSettings, draft: requestDraft)
                             }
                             .hermesGlassProminentButton()
                             .disabled(requestDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -102,6 +101,10 @@ struct HermesResponsesConsoleView: View {
                                 .foregroundStyle(.igDestructive)
                         }
 
+                        Label("Message type: \(responseSession.latestMessageType.isEmpty ? "waiting" : responseSession.latestMessageType)", systemImage: "tag")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.hermesSecondaryText)
+
                         Group {
                             if responseSession.streamedText.isEmpty {
                                 Text("Send a `/v1/responses` request to populate streamed assistant output here.")
@@ -116,25 +119,6 @@ struct HermesResponsesConsoleView: View {
                     }
                 }
 
-                HermesSectionCard("Event Timeline") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("\(responseSession.eventCount) events received", systemImage: "timeline.selection")
-                            .font(.caption)
-                            .foregroundStyle(.hermesSecondaryText)
-
-                        if responseSession.entries.isEmpty {
-                            Text("The SSE event stream will appear here, including `response.created`, text deltas, tool events, and completion.")
-                                .font(.subheadline)
-                                .foregroundStyle(.hermesSecondaryText)
-                        } else {
-                            LazyVStack(spacing: 12) {
-                                ForEach(responseSession.entries) { response in
-                                    HermesResponseCard(response: response)
-                                }
-                            }
-                        }
-                    }
-                }
                 }
                 .padding()
             }
@@ -148,7 +132,6 @@ struct HermesChatConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
     @Binding var chatDraft: HermesChatDraft
     @Bindable var chatSession: HermesChatSession
-    @Bindable var historyStore: HermesHistoryStore
 
     var body: some View {
         ScrollView {
@@ -200,7 +183,7 @@ struct HermesChatConsoleView: View {
                             }
 
                             Button("Send Message") {
-                                chatSession.submit(apiSettings: apiSettings, draft: chatDraft, historyStore: historyStore)
+                                chatSession.submit(apiSettings: apiSettings, draft: chatDraft)
                             }
                             .hermesGlassProminentButton()
                             .disabled(chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

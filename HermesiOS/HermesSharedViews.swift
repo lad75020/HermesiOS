@@ -171,51 +171,6 @@ struct HermesStatusPill: View {
     }
 }
 
-struct HermesResponseCard: View {
-    let response: HermesResponseEntry
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(response.title)
-                    .font(.headline)
-                Spacer()
-                Text(response.status)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(statusColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .hermesLiquidGlass(cornerRadius: 999, tint: statusColor.opacity(0.18))
-            }
-
-            Text(response.summary)
-                .font(.subheadline)
-                .foregroundStyle(.hermesSecondaryText)
-
-            ForEach(response.metadata, id: \.self) { line in
-                Label(line, systemImage: "circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.hermesSecondaryText)
-            }
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .hermesLiquidGlass(cornerRadius: 20, tint: statusColor.opacity(0.06))
-    }
-
-    private var statusColor: Color {
-        switch response.status.lowercased() {
-        case "failed":
-            .igDestructive
-        case "streaming", "update":
-            .igActionBlue
-        case "done", "completed":
-            .igOnlineGreen
-        default:
-            .igGradOrange
-        }
-    }
-}
 
 struct HermesChatMessageCard: View {
     let message: HermesChatMessage
@@ -249,37 +204,6 @@ struct HermesChatMessageCard: View {
     }
 }
 
-struct HermesHistoryExchangeCard: View {
-    let exchange: HermesHistoryExchange
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(exchange.completedAt.formatted(date: .abbreviated, time: .shortened))
-                .font(.caption)
-                .foregroundStyle(.hermesSecondaryText)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Request")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.hermesSecondaryText)
-                Text(exchange.requestText)
-                    .font(.subheadline)
-                    .textSelection(.enabled)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Final Response")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.hermesSecondaryText)
-                Text(exchange.responseText)
-                    .font(.subheadline)
-                    .foregroundStyle(.hermesSecondaryText)
-                    .textSelection(.enabled)
-            }
-        }
-        .padding(.vertical, 6)
-    }
-}
 
 struct HermesStatusItem: Identifiable {
     let id = UUID()

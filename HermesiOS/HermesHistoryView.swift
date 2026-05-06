@@ -7,7 +7,6 @@ import Observation
 import SwiftUI
 
 struct HermesHistoryView: View {
-    @Bindable var historyStore: HermesHistoryStore
     @Binding var apiSettings: HermesAPISettings
 
     @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
@@ -26,7 +25,11 @@ struct HermesHistoryView: View {
                 if searchSession.hasActiveSearch {
                     dashboardSearchResultsSection
                 } else {
-                    localHistorySection
+                    ContentUnavailableView(
+                        "Search Hermes History",
+                        systemImage: "text.magnifyingglass",
+                        description: Text("Search the Mac dashboard history to query conversations across all Hermes channels.")
+                    )
                 }
             }
             .scrollContentBackground(.hidden)
@@ -136,55 +139,6 @@ struct HermesHistoryView: View {
         }
     }
 
-    private var localHistorySection: some View {
-        Group {
-            if historyStore.sessions.isEmpty {
-                ContentUnavailableView(
-                    "No History Yet",
-                    systemImage: "clock.arrow.circlepath",
-                    description: Text("Completed Responses and Chat exchanges will be stored here by session ID. Use full-text search above to query the Mac dashboard history across all channels.")
-                )
-            } else {
-                ForEach(historyStore.sessions) { session in
-                    Section {
-                        ForEach(session.exchanges) { exchange in
-                            HermesHistoryExchangeCard(exchange: exchange)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        historyStore.deleteExchange(
-                                            sessionID: session.id,
-                                            kind: session.kind,
-                                            exchangeID: exchange.id
-                                        )
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                        }
-                    } header: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Label(session.kind.title, systemImage: session.kind == .responses ? "dot.radiowaves.left.and.right" : "text.bubble")
-                                Spacer()
-                                Button(role: .destructive) {
-                                    historyStore.deleteSession(session.id, kind: session.kind)
-                                } label: {
-                                    Image(systemName: "trash")
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            Text("Session ID: \(session.id)")
-                                .font(.caption.monospaced())
-                                .textSelection(.enabled)
-                            Text(session.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption)
-                                .foregroundStyle(.hermesSecondaryText)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     private func runDashboardSearch() {
         expandedConversationIDs.removeAll()
@@ -217,22 +171,9 @@ private struct HermesDashboardConversationDisclosure: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(alignment: .leading, spacing: 12) {
-                if !result.matches.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Matches")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.hermesSecondaryText)
-                        ForEach(result.matches.prefix(3)) { match in
-                            HermesDashboardMatchSnippet(match: match)
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(result.messages) { message in
-                        HermesDashboardConversationMessageRow(message: message)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(result.displayMessages) { message in
+                    HermesDashboardConversationMessageRow(message: message)
                 }
             }
             .padding(.top, 10)
@@ -265,7 +206,7 @@ private struct HermesDashboardConversationSummary: View {
                 if let model = result.session.model, !model.isEmpty {
                     Text(model)
                 }
-                Text("\(result.messages.count) messages")
+                Text("\(result.displayMessages.count) shown")
             }
             .font(.caption)
             .foregroundStyle(.hermesSecondaryText)
@@ -313,7 +254,7 @@ private struct HermesDashboardConversationMessageRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text(message.role.capitalized)
+                Text(displayRoleTitle)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(roleColor)
                 if let timestamp = message.timestampDate {
@@ -338,6 +279,17 @@ private struct HermesDashboardConversationMessageRow: View {
         .background(Color.hermesSurfaceInput.opacity(0.65), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    private var displayRoleTitle: String {
+        switch message.role.lowercased() {
+        case "user":
+            "Initial prompt"
+        case "assistant":
+            "Final response"
+        default:
+            message.role.capitalized
+        }
+    }
+
     private var roleColor: Color {
         switch message.role.lowercased() {
         case "user":
@@ -348,6 +300,27 @@ private struct HermesDashboardConversationMessageRow: View {
             .igGradOrange
         default:
             .hermesSecondaryText
+        }
+    }
+}
+
+private extension HermesDashboardConversationResult {
+    var displayMessages: [HermesDashboardConversationMessage] {
+        let nonEmptyMessages = messages.filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let initialUserPrompt = nonEmptyMessages.first { $0.role.lowercased() == "user" }
+        let finalAgentResponse = nonEmptyMessages.last { $0.role.lowercased() == "assistant" }
+
+        switch (initialUserPrompt, finalAgentResponse) {
+        case let (user?, assistant?) where user.id != assistant.id:
+            return [user, assistant]
+        case let (user?, nil):
+            return [user]
+        case let (nil, assistant?):
+            return [assistant]
+        case let (user?, assistant?):
+            return [user, assistant]
+        case (nil, nil):
+            return []
         }
     }
 }

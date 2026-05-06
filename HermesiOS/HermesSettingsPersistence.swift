@@ -86,6 +86,17 @@ enum HermesSettingsPersistence {
         UserDefaults.standard.removeObject(forKey: companionIdentityStateKey)
     }
 
+    static func removeLegacyLocalHistoryFile() {
+        let baseDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        guard let historyURL = baseDirectory?
+            .appendingPathComponent("HermesiOS", isDirectory: true)
+            .appendingPathComponent("history.json")
+        else { return }
+
+        try? FileManager.default.removeItem(at: historyURL)
+    }
+
     static func loadCompanionClientCredential() -> URLCredential? {
         guard
             let data = loadKeychainData(service: companionService, account: companionIdentityAccount),

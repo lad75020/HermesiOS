@@ -25,7 +25,6 @@ struct ContentView: View {
     @State private var responseSession = HermesResponsesSession()
     @State private var chatDraft: HermesChatDraft
     @State private var chatSession = HermesChatSession()
-    @State private var historyStore = HermesHistoryStore()
     @State private var companionEnrollment = HermesCompanionEnrollmentSession()
     @State private var companionRuntime = HermesCompanionRuntimeSession()
     @State private var statusMonitor = HermesStatusMonitor()
@@ -33,6 +32,7 @@ struct ContentView: View {
 
     init() {
         HermesAppearance.configureGlobalAppearance()
+        HermesSettingsPersistence.removeLegacyLocalHistoryFile()
         _apiSettings = State(initialValue: HermesSettingsPersistence.loadAPISettings())
         _companionSettings = State(initialValue: HermesSettingsPersistence.loadCompanionSettings())
         _responsesDraft = State(initialValue: HermesSettingsPersistence.loadResponsesDraft())
@@ -137,8 +137,7 @@ struct ContentView: View {
                     HermesResponsesConsoleView(
                         apiSettings: $apiSettings,
                         requestDraft: $responsesDraft,
-                        responseSession: responseSession,
-                        historyStore: historyStore
+                        responseSession: responseSession
                     )
                 }
                 .tabItem {
@@ -149,8 +148,7 @@ struct ContentView: View {
                     HermesChatConsoleView(
                         apiSettings: $apiSettings,
                         chatDraft: $chatDraft,
-                        chatSession: chatSession,
-                        historyStore: historyStore
+                        chatSession: chatSession
                     )
                 }
                 .tabItem {
@@ -158,7 +156,7 @@ struct ContentView: View {
                 }
 
                 NavigationStack {
-                    HermesHistoryView(historyStore: historyStore, apiSettings: $apiSettings)
+                    HermesHistoryView(apiSettings: $apiSettings)
                 }
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
@@ -201,18 +199,16 @@ struct ContentView: View {
             HermesResponsesConsoleView(
                 apiSettings: $apiSettings,
                 requestDraft: $responsesDraft,
-                responseSession: responseSession,
-                historyStore: historyStore
+                responseSession: responseSession
             )
         case .chat:
             HermesChatConsoleView(
                 apiSettings: $apiSettings,
                 chatDraft: $chatDraft,
-                chatSession: chatSession,
-                historyStore: historyStore
+                chatSession: chatSession
             )
         case .history:
-            HermesHistoryView(historyStore: historyStore, apiSettings: $apiSettings)
+            HermesHistoryView(apiSettings: $apiSettings)
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,

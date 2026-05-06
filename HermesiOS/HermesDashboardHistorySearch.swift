@@ -312,6 +312,7 @@ final class HermesDashboardHistorySearchSession {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.timeoutInterval = 300
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
 

@@ -17,6 +17,7 @@ struct HermesSettingsView: View {
     @Binding var appTheme: HermesAppTheme
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
     @State private var isPairingScannerPresented = false
     @State private var selectedPairingQRImage: PhotosPickerItem?
 
@@ -27,20 +28,28 @@ struct HermesSettingsView: View {
                 .padding(.top)
 
             Form {
-            Section("Appearance") {
-                Picker("App Theme", selection: $appTheme) {
-                    ForEach(HermesAppTheme.allCases) { theme in
-                        Text(theme.title).tag(theme)
+                Section("Appearance") {
+                    Picker("App Theme", selection: $appTheme) {
+                        ForEach(HermesAppTheme.allCases) { theme in
+                            Text(theme.title).tag(theme)
+                        }
                     }
+                    .pickerStyle(.segmented)
+
+                    Text("Choose System to follow the device appearance, or force Hermes to Light or Dark mode.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
                 }
-                .pickerStyle(.segmented)
 
-                Text("Choose System to follow the device appearance, or force Hermes to Light or Dark mode.")
-                    .font(.caption)
-                    .foregroundStyle(.hermesSecondaryText)
-            }
+                Section("Dashboard") {
+                    TextField("URL, e.g. https://hermes-mac.example.ts.net", text: $dashboardURL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+                }
 
-            Section("Gateway") {
+                Section("Gateway") {
                 TextField("Base URL", text: $apiSettings.baseURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -79,9 +88,9 @@ struct HermesSettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
-            }
+                }
 
-            Section("Host Companion") {
+                Section("Host Companion") {
                 TextField("Enrollment URL", text: $companionSettings.enrollmentURL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -151,9 +160,9 @@ struct HermesSettingsView: View {
                         .hermesGlassButton()
                     }
                 }
-            }
+                }
 
-            Section("/v1/responses") {
+                Section("/v1/responses") {
                 TextField("Model", text: $responsesDraft.model)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -162,9 +171,9 @@ struct HermesSettingsView: View {
 
                 TextField("Instructions", text: $responsesDraft.instructions, axis: .vertical)
                     .lineLimit(4, reservesSpace: true)
-            }
+                }
 
-            Section("/v1/chat/completions") {
+                Section("/v1/chat/completions") {
                 TextField("Model", text: $chatDraft.model)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -173,16 +182,16 @@ struct HermesSettingsView: View {
 
                 TextField("System prompt", text: $chatDraft.systemPrompt, axis: .vertical)
                     .lineLimit(4, reservesSpace: true)
-            }
+                }
 
-            Section("Notes") {
-                Text("Responses and Chat screens are now limited to message exchange and output.")
-                Text("Use this screen for endpoint, auth, model, streaming, and prompt configuration.")
-                Text("Keep self-signed certificate support off unless you trust the Hermes API server.")
-                Text("For the host companion, copy the server fingerprint from the macOS app, create a pairing there, then enroll this device to import its client certificate.")
-                Text("Set the Hermes workspace path to the host-side `.hermes` directory you want the Skills panel to manage.")
-            }
-            .foregroundStyle(.hermesSecondaryText)
+                Section("Notes") {
+                    Text("Responses and Chat screens are now limited to message exchange and output.")
+                    Text("Use this screen for endpoint, auth, model, streaming, and prompt configuration.")
+                    Text("Keep self-signed certificate support off unless you trust the Hermes API server.")
+                    Text("For the host companion, copy the server fingerprint from the macOS app, create a pairing there, then enroll this device to import its client certificate.")
+                    Text("Set the Hermes workspace path to the host-side `.hermes` directory you want the Skills panel to manage.")
+                }
+                .foregroundStyle(.hermesSecondaryText)
             }
             .scrollContentBackground(.hidden)
         }

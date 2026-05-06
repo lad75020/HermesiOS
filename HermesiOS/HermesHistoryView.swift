@@ -79,12 +79,6 @@ struct HermesHistoryView: View {
                     }
                 }
 
-                TextField("Dashboard URL, e.g. https://hermes-mac.example.ts.net", text: $dashboardURL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .hermesRuntimeInput()
-
                 VStack(alignment: .leading, spacing: 4) {
                     Text(searchSession.status)
                         .font(.caption)

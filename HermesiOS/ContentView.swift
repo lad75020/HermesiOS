@@ -15,6 +15,7 @@ import VisionKit
 
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
@@ -79,12 +80,23 @@ struct ContentView: View {
                 isShowingSplash = false
             }
         }
-        .task(id: statusRefreshKey) {
+        .task(id: statusLoopKey) {
+            guard scenePhase == .active else { return }
             await statusMonitor.runStatusLoop(
                 apiSettings: apiSettings,
                 companionSettings: companionSettings,
                 identityState: companionEnrollment.identityState
             )
+        }
+        .onChange(of: scenePhase) { _, newValue in
+            guard newValue == .active else { return }
+            Task {
+                await statusMonitor.refresh(
+                    apiSettings: apiSettings,
+                    companionSettings: companionSettings,
+                    identityState: companionEnrollment.identityState
+                )
+            }
         }
     }
 
@@ -99,6 +111,10 @@ struct ContentView: View {
 
     private var dashboardChannelActive: Bool {
         dashboardHistorySearchSession.isDashboardHTTPActive
+    }
+
+    private var statusLoopKey: String {
+        statusRefreshKey + "|scenePhase=\(scenePhase)"
     }
 
     private var statusRefreshKey: String {

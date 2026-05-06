@@ -2118,61 +2118,75 @@ final class HermesCompanionRuntimeSession {
 
 enum HermesCompanionSessionFactory {
     static func makeSession(for settings: HermesCompanionSettings, state: HermesCompanionIdentityState) -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = true
+        configuration.allowsExpensiveNetworkAccess = true
+        configuration.allowsConstrainedNetworkAccess = true
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 300
         let delegate = HermesCompanionURLSessionDelegate(
             expectedServerFingerprint: normalizedFingerprint(
                 state.serverCertificateFingerprint.isEmpty ? settings.expectedServerFingerprint : state.serverCertificateFingerprint
             ),
-            identityProvider: HermesCompanionIdentityLoader.loadCredential
-        )
-        return URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            identityProvider: HermesCompanionIdentityLoader.loadCredential)
+        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }
+
 
     static func enroll(
         url: URL,
         expectedServerFingerprint: String,
         payload: HermesEnrollClientPayload
     ) async throws -> HermesEnrollClientResult {
-        let delegate = HermesCompanionURLSessionDelegate(
-            expectedServerFingerprint: expectedServerFingerprint,
-            identityProvider: { nil }
-        )
-        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
+        try await HermesBackgroundActivity.run(named: "Hermes Companion Enrollment") {
+            let delegate = HermesCompanionURLSessionDelegate(
+                expectedServerFingerprint: expectedServerFingerprint,
+                identityProvider: { nil }
+            )
+            let configuration = URLSessionConfiguration.default
+            configuration.waitsForConnectivity = true
+            configuration.allowsExpensiveNetworkAccess = true
+            configuration.allowsConstrainedNetworkAccess = true
+            configuration.timeoutIntervalForRequest = 30
+            configuration.timeoutIntervalForResource = 300
+            let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+            defer { session.invalidateAndCancel() }
 
-        let task = session.webSocketTask(with: url)
-        task.resume()
+            let task = session.webSocketTask(with: url)
+            task.resume()
 
-        let envelope = HermesCompanionIncomingEnvelope(
-            id: UUID().uuidString,
-            type: "enroll_client",
-            payload: .encode(payload)
-        )
-        let requestData = try JSONEncoder().encode(envelope)
-        guard let requestString = String(data: requestData, encoding: .utf8) else {
-            throw HermesCompanionClientError.invalidResponse
+            let envelope = HermesCompanionIncomingEnvelope(
+                id: UUID().uuidString,
+                type: "enroll_client",
+                payload: .encode(payload)
+            )
+            let requestData = try JSONEncoder().encode(envelope)
+            guard let requestString = String(data: requestData, encoding: .utf8) else {
+                throw HermesCompanionClientError.invalidResponse
+            }
+            try await task.send(.string(requestString))
+
+            let message = try await task.receive()
+            let responseData: Data
+            switch message {
+            case .data(let data):
+                responseData = data
+            case .string(let text):
+                responseData = Data(text.utf8)
+            @unknown default:
+                throw HermesCompanionClientError.invalidResponse
+            }
+
+            let response = try JSONDecoder().decode(HermesCompanionOutgoingEnvelope.self, from: responseData)
+            guard response.ok else {
+                throw HermesCompanionClientError.serverRejected(response.error?.message ?? "The companion rejected the enrollment request.")
+            }
+            guard let payload = response.payload else {
+                throw HermesCompanionClientError.missingPayload
+            }
+
+            return try payload.decode(HermesEnrollClientResult.self)
         }
-        try await task.send(.string(requestString))
-
-        let message = try await task.receive()
-        let responseData: Data
-        switch message {
-        case .data(let data):
-            responseData = data
-        case .string(let text):
-            responseData = Data(text.utf8)
-        @unknown default:
-            throw HermesCompanionClientError.invalidResponse
-        }
-
-        let response = try JSONDecoder().decode(HermesCompanionOutgoingEnvelope.self, from: responseData)
-        guard response.ok else {
-            throw HermesCompanionClientError.serverRejected(response.error?.message ?? "The companion rejected the enrollment request.")
-        }
-        guard let payload = response.payload else {
-            throw HermesCompanionClientError.missingPayload
-        }
-
-        return try payload.decode(HermesEnrollClientResult.self)
     }
 
     static func normalizedFingerprint(_ value: String) -> String {
@@ -2198,42 +2212,44 @@ enum HermesCompanionSessionFactory {
             throw HermesCompanionClientError.invalidURL
         }
 
-        let session = makeSession(for: settings, state: state)
-        defer { session.invalidateAndCancel() }
+        return try await HermesBackgroundActivity.run(named: "Hermes Companion Request") {
+            let session = makeSession(for: settings, state: state)
+            defer { session.invalidateAndCancel() }
 
-        let task = session.webSocketTask(with: url)
-        task.resume()
+            let task = session.webSocketTask(with: url)
+            task.resume()
 
-        let envelope = HermesCompanionIncomingEnvelope(
-            id: UUID().uuidString,
-            type: type,
-            payload: payload.flatMap(HermesCompanionJSONValue.encode)
-        )
-        let data = try JSONEncoder().encode(envelope)
-        guard let text = String(data: data, encoding: .utf8) else {
-            throw HermesCompanionClientError.invalidResponse
-        }
-        try await task.send(.string(text))
+            let envelope = HermesCompanionIncomingEnvelope(
+                id: UUID().uuidString,
+                type: type,
+                payload: payload.flatMap(HermesCompanionJSONValue.encode)
+            )
+            let data = try JSONEncoder().encode(envelope)
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw HermesCompanionClientError.invalidResponse
+            }
+            try await task.send(.string(text))
 
-        let message = try await task.receive()
-        let responseData: Data
-        switch message {
-        case .data(let data):
-            responseData = data
-        case .string(let text):
-            responseData = Data(text.utf8)
-        @unknown default:
-            throw HermesCompanionClientError.invalidResponse
-        }
+            let message = try await task.receive()
+            let responseData: Data
+            switch message {
+            case .data(let data):
+                responseData = data
+            case .string(let text):
+                responseData = Data(text.utf8)
+            @unknown default:
+                throw HermesCompanionClientError.invalidResponse
+            }
 
-        let response = try JSONDecoder().decode(HermesCompanionOutgoingEnvelope.self, from: responseData)
-        guard response.ok else {
-            throw HermesCompanionClientError.serverRejected(response.error?.message ?? "The companion request failed.")
+            let response = try JSONDecoder().decode(HermesCompanionOutgoingEnvelope.self, from: responseData)
+            guard response.ok else {
+                throw HermesCompanionClientError.serverRejected(response.error?.message ?? "The companion request failed.")
+            }
+            guard let payload = response.payload else {
+                throw HermesCompanionClientError.missingPayload
+            }
+            return try payload.decode(Response.self)
         }
-        guard let payload = response.payload else {
-            throw HermesCompanionClientError.missingPayload
-        }
-        return try payload.decode(Response.self)
     }
 }
 

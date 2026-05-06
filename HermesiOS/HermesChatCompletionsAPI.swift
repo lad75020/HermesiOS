@@ -52,10 +52,12 @@ final class HermesChatSession {
         connectionStatus = draft.stream ? "Connecting to chat stream" : "Sending chat request"
 
         do {
-            if draft.stream {
-                try await streamResponse(apiSettings: apiSettings, draft: draft, history: history)
-            } else {
-                try await fetchResponse(apiSettings: apiSettings, draft: draft, history: history)
+            try await HermesBackgroundActivity.run(named: "Hermes Chat Request") {
+                if draft.stream {
+                    try await streamResponse(apiSettings: apiSettings, draft: draft, history: history)
+                } else {
+                    try await fetchResponse(apiSettings: apiSettings, draft: draft, history: history)
+                }
             }
 
             if !draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -110,8 +112,9 @@ final class HermesChatSession {
         let (data, response) = try await session.data(for: request)
         try validate(response: response)
 
-        let envelope = try JSONDecoder().decode(HermesChatCompletionEnvelope.self, from: data)
-        streamedText = envelope.assistantText
+        if let envelope = try? JSONDecoder().decode(HermesChatCompletionEnvelope.self, from: data) {
+            streamedText = envelope.assistantText
+        }
         eventCount = 1
         if streamedText.isEmpty {
             let payload = HermesLooseJSON(data: data)
@@ -160,18 +163,32 @@ final class HermesChatSession {
 
     private func extractChatText(from payload: HermesLooseJSON) -> String {
         let candidates = [
+            // OpenAI-compatible streaming and non-streaming shapes.
             payload.texts(at: ["choices", "0", "delta", "content"]),
             payload.texts(at: ["choices", "0", "message", "content"]),
             payload.texts(at: ["choices", "0", "text"]),
             payload.texts(at: ["delta", "content"]),
             payload.texts(at: ["message", "content"]),
             payload.texts(at: ["content"]),
-            payload.texts(at: ["text"])
+            payload.texts(at: ["text"]),
+            // Some Hermes/OpenAI-compatible gateways return a Responses-style
+            // envelope even from the chat endpoint, especially for final SSE
+            // events. Extract only message output first to avoid tool/reasoning
+            // chatter, then fall back to text-like output fields.
+            payload.messageOutputTexts(at: ["output"]),
+            payload.messageOutputTexts(at: ["response", "output"]),
+            payload.texts(at: ["output_text"]),
+            payload.texts(at: ["response", "output_text"]),
+            payload.texts(at: ["response", "message", "content"])
         ]
 
-        return candidates
-            .map { $0.joined() }
-            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
+        if let preferred = candidates
+            .map({ $0.joined() })
+            .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return preferred
+        }
+
+        return payload.chatCompletionFallbackText
     }
 
     private func validate(response: URLResponse) throws {

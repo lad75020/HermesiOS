@@ -225,27 +225,29 @@ final class HermesDashboardHistorySearchSession {
         lastErrorMessage = ""
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            let response: HermesDashboardConversationSearchResponse
+            try await HermesBackgroundActivity.run(named: "Hermes Dashboard History Search") {
+                let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+                let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                let response: HermesDashboardConversationSearchResponse
 
-            do {
-                response = try await fetchConversations(baseURL: baseURL, token: token, apiSettings: apiSettings, query: query, limit: limit)
-            } catch HermesResponsesError.httpError(401) {
-                // Dashboard session tokens are ephemeral and change whenever the
-                // dashboard process restarts. If the simulator has a cached token
-                // from a previous server, refresh it once and retry automatically.
-                cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
-                status = "Refreshing dashboard session token"
-                let refreshedToken = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-                response = try await fetchConversations(baseURL: baseURL, token: refreshedToken, apiSettings: apiSettings, query: query, limit: limit)
+                do {
+                    response = try await fetchConversations(baseURL: baseURL, token: token, apiSettings: apiSettings, query: query, limit: limit)
+                } catch HermesResponsesError.httpError(401) {
+                    // Dashboard session tokens are ephemeral and change whenever the
+                    // dashboard process restarts. If the simulator has a cached token
+                    // from a previous server, refresh it once and retry automatically.
+                    cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
+                    status = "Refreshing dashboard session token"
+                    let refreshedToken = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                    response = try await fetchConversations(baseURL: baseURL, token: refreshedToken, apiSettings: apiSettings, query: query, limit: limit)
+                }
+
+                try Task.checkCancellation()
+                results = response.results
+                matchedMessages = response.matchedMessages
+                matchedSessions = response.matchedSessions
+                status = response.results.isEmpty ? "No matching conversations" : "Found \(response.matchedSessions) conversations"
             }
-
-            try Task.checkCancellation()
-            results = response.results
-            matchedMessages = response.matchedMessages
-            matchedSessions = response.matchedSessions
-            status = response.results.isEmpty ? "No matching conversations" : "Found \(response.matchedSessions) conversations"
         } catch is CancellationError {
             status = "Cancelled"
         } catch {

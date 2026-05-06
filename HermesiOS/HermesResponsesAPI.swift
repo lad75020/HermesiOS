@@ -35,15 +35,21 @@ final class HermesNetworkSessionDelegate: NSObject, URLSessionDelegate {
 
 enum HermesNetworkSessionFactory {
     static func session(for apiSettings: HermesAPISettings) -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = true
+        configuration.allowsExpensiveNetworkAccess = true
+        configuration.allowsConstrainedNetworkAccess = true
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 3600
+
         if apiSettings.allowSelfSignedCertificates {
-            let configuration = URLSessionConfiguration.default
             let delegate = HermesNetworkSessionDelegate(
                 allowSelfSignedCertificates: apiSettings.allowSelfSignedCertificates
             )
             return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         }
 
-        return URLSession.shared
+        return URLSession(configuration: configuration)
     }
 }
 
@@ -143,10 +149,12 @@ final class HermesResponsesSession {
             : (draft.stream ? "Continuing SSE stream" : "Continuing request")
 
         do {
-            if draft.stream {
-                try await streamResponse(apiSettings: apiSettings, draft: draft, previousResponseID: continuationID)
-            } else {
-                try await fetchResponse(apiSettings: apiSettings, draft: draft, previousResponseID: continuationID)
+            try await HermesBackgroundActivity.run(named: "Hermes Responses Request") {
+                if draft.stream {
+                    try await streamResponse(apiSettings: apiSettings, draft: draft, previousResponseID: continuationID)
+                } else {
+                    try await fetchResponse(apiSettings: apiSettings, draft: draft, previousResponseID: continuationID)
+                }
             }
             if !latestResponseID.isEmpty {
                 previousResponseID = latestResponseID
@@ -630,6 +638,11 @@ struct HermesLooseJSON {
         return nil
     }
 
+    var chatCompletionFallbackText: String {
+        guard let object else { return "" }
+        return extractChatFallbackTexts(from: object).joined()
+    }
+
     private func value(at path: [String]) -> Any? {
         var current = object
 
@@ -687,6 +700,37 @@ struct HermesLooseJSON {
         }
 
         return []
+    }
+
+    private func extractChatFallbackTexts(from value: Any) -> [String] {
+        if let string = value as? String {
+            return [string]
+        }
+
+        if let array = value as? [Any] {
+            return array.flatMap(extractChatFallbackTexts)
+        }
+
+        guard let dictionary = value as? [String: Any] else { return [] }
+
+        let directKeys = ["content", "text", "output_text"]
+        let directTexts = directKeys.flatMap { key in
+            dictionary[key].map(extractTexts(from:)) ?? []
+        }
+        if !directTexts.isEmpty {
+            return directTexts
+        }
+
+        let metadataKeys: Set<String> = [
+            "id", "object", "created", "created_at", "model", "system_fingerprint",
+            "service_tier", "finish_reason", "index", "role", "type", "status",
+            "usage", "prompt_tokens", "completion_tokens", "total_tokens"
+        ]
+
+        return dictionary
+            .filter { !metadataKeys.contains($0.key) }
+            .values
+            .flatMap(extractChatFallbackTexts)
     }
 }
 

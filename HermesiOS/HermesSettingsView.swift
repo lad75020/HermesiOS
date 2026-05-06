@@ -49,6 +49,8 @@ struct HermesSettingsView: View {
                         .hermesRuntimeInput()
                 }
 
+                HermesOfficeSettingsSection()
+
                 Section("Gateway") {
                 TextField("Base URL", text: $apiSettings.baseURL)
                     .textInputAutocapitalization(.never)

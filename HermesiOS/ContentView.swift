@@ -194,6 +194,14 @@ struct ContentView: View {
                 .tag(WorkspaceSection.history)
 
                 NavigationStack {
+                    HermesOfficeView()
+                }
+                .tabItem {
+                    Label("Office", systemImage: "building.2.crop.circle")
+                }
+                .tag(WorkspaceSection.office)
+
+                NavigationStack {
                     HermesSettingsView(
                         apiSettings: $apiSettings,
                         companionSettings: $companionSettings,
@@ -246,6 +254,8 @@ struct ContentView: View {
                 searchSession: dashboardHistorySearchSession,
                 onResumeConversation: resumeConversationInResponses
             )
+        case .office:
+            HermesOfficeView()
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,

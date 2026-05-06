@@ -9,6 +9,7 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     case responses
     case chat
     case history
+    case office
     case settings
     case runtime
 
@@ -22,6 +23,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Chat Completions"
         case .history:
             "History"
+        case .office:
+            "Office"
         case .settings:
             "Settings"
         case .runtime:
@@ -37,6 +40,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Use `/v1/chat/completions` with an independent transcript."
         case .history:
             "Review saved requests and final responses grouped by session."
+        case .office:
+            "Open the Hermes Office web experience inside the app."
         case .settings:
             "Configure gateway, prompts, models, and streaming behavior."
         case .runtime:
@@ -52,6 +57,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "text.bubble"
         case .history:
             "clock.arrow.circlepath"
+        case .office:
+            "building.2.crop.circle"
         case .settings:
             "slider.horizontal.3"
         case .runtime:

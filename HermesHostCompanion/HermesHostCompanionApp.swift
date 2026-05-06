@@ -119,7 +119,7 @@ private struct HermesHostCompanionRootView: View {
                                         .padding(12)
                                         .background(Color.white)
                                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                    Text("Scan this QR code from the iOS app to populate enrollment URL, API URL, fingerprint, pairing ID, and secret.")
+                                    Text("Scan this QR code from the iOS app to populate enrollment URL, API URL, fingerprint, pairing ID, and secret. If scanning is flaky, copy the fields below into the iOS enrollment form.")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }

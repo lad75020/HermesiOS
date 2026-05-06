@@ -50,6 +50,7 @@ enum HermesNetworkSessionFactory {
 @MainActor
 @Observable
 final class HermesResponsesSession {
+    var entries: [HermesResponseMessage] = []
     var streamedText = ""
     var isSending = false
     var connectionStatus = "Idle"
@@ -60,6 +61,7 @@ final class HermesResponsesSession {
     var eventCount = 0
 
     private var requestTask: Task<Void, Never>?
+    private var activeAssistantEntryID: UUID?
 
     func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft) {
         requestTask?.cancel()
@@ -78,7 +80,9 @@ final class HermesResponsesSession {
     func resetConversation() {
         requestTask?.cancel()
         requestTask = nil
+        entries = []
         streamedText = ""
+        activeAssistantEntryID = nil
         isSending = false
         connectionStatus = "Idle"
         latestResponseID = ""
@@ -90,7 +94,9 @@ final class HermesResponsesSession {
 
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft) async {
         let continuationID = previousResponseID
+        let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         resetForRequest()
+        appendExchange(prompt: prompt)
         isSending = true
         connectionStatus = continuationID.isEmpty
             ? (draft.stream ? "Connecting to SSE stream" : "Sending request")
@@ -110,9 +116,11 @@ final class HermesResponsesSession {
             }
         } catch is CancellationError {
             connectionStatus = "Cancelled"
+            updateActiveAssistantEntry(with: streamedText.isEmpty ? "Cancelled." : streamedText)
         } catch {
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Failed"
+            updateActiveAssistantEntry(with: streamedText.isEmpty ? "Request failed: \(error.localizedDescription)" : streamedText)
         }
 
         isSending = false
@@ -124,6 +132,24 @@ final class HermesResponsesSession {
         lastErrorMessage = ""
         latestMessageType = ""
         eventCount = 0
+        activeAssistantEntryID = nil
+    }
+
+    private func appendExchange(prompt: String) {
+        guard !prompt.isEmpty else { return }
+        entries.append(HermesResponseMessage(role: "user", content: prompt))
+        let assistant = HermesResponseMessage(role: "assistant", content: "")
+        activeAssistantEntryID = assistant.id
+        entries.append(assistant)
+    }
+
+    private func updateActiveAssistantEntry(with content: String) {
+        guard let activeAssistantEntryID,
+              let index = entries.firstIndex(where: { $0.id == activeAssistantEntryID })
+        else { return }
+        var updatedEntries = entries
+        updatedEntries[index].content = content
+        entries = updatedEntries
     }
 
     private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, previousResponseID: String) async throws {
@@ -164,6 +190,7 @@ final class HermesResponsesSession {
         let envelope = try JSONDecoder().decode(HermesResponseEnvelope.self, from: data)
         latestResponseID = envelope.id ?? ""
         streamedText = envelope.assistantText
+        updateActiveAssistantEntry(with: streamedText)
         latestMessageType = envelope.outputMessageType
         eventCount = 1
     }
@@ -239,6 +266,7 @@ final class HermesResponsesSession {
             } else if !streamedText.hasSuffix(delta) {
                 streamedText += delta
             }
+            updateActiveAssistantEntry(with: streamedText)
             connectionStatus = "Streaming output"
         } else {
             connectionStatus = "Processing \(summary.title)"
@@ -246,6 +274,13 @@ final class HermesResponsesSession {
 
     }
 
+}
+
+
+struct HermesResponseMessage: Identifiable {
+    let id = UUID()
+    let role: String
+    var content: String
 }
 
 struct HermesAPISettings: Codable, Equatable {

@@ -123,6 +123,7 @@ struct HermesStatusBand: View {
     @Bindable var statusMonitor: HermesStatusMonitor
     var apiChannelActive = false
     var companionChannelActive = false
+    var dashboardChannelActive = false
     @Namespace private var ledNamespace
 
     var body: some View {
@@ -142,6 +143,15 @@ struct HermesStatusBand: View {
                 )
                 .hermesGlassEffectID("led.mac", in: ledNamespace)
 
+                HermesStatusLED(
+                    label: "DASH",
+                    status: .up,
+                    isActive: dashboardChannelActive,
+                    inactiveColor: Color.igOnlineGreen.opacity(0.34),
+                    activeFlashOffColor: Color.igOnlineGreen.opacity(0.42)
+                )
+                .hermesGlassEffectID("led.dash", in: ledNamespace)
+
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
@@ -160,12 +170,15 @@ private struct HermesStatusLED: View {
     let label: String
     let status: HermesServiceReachability
     let isActive: Bool
+    var inactiveColor: Color? = nil
+    var activeFlashOffColor: Color? = nil
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.12)) { timeline in
-            let flashOn = Int(timeline.date.timeIntervalSinceReferenceDate * 9) % 2 == 0
+        TimelineView(.animation(minimumInterval: 0.08)) { timeline in
+            let flashOn = Int(timeline.date.timeIntervalSinceReferenceDate * 13) % 2 == 0
             let activeColor = flashOn ? Color.igOnlineGreen : Color.igOnlineGreen.opacity(0.38)
-            let ledColor = isActive ? activeColor : status.color
+            let dashActiveColor = flashOn ? Color.igOnlineGreen : (activeFlashOffColor ?? Color.igOnlineGreen.opacity(0.38))
+            let ledColor = isActive ? (activeFlashOffColor == nil ? activeColor : dashActiveColor) : (inactiveColor ?? status.color)
 
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)

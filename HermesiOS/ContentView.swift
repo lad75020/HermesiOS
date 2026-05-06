@@ -28,6 +28,7 @@ struct ContentView: View {
     @State private var companionEnrollment = HermesCompanionEnrollmentSession()
     @State private var companionRuntime = HermesCompanionRuntimeSession()
     @State private var statusMonitor = HermesStatusMonitor()
+    @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
     @State private var isShowingSplash = true
 
     init() {
@@ -95,6 +96,10 @@ struct ContentView: View {
         companionEnrollment.isEnrolling || companionRuntime.isBusy
     }
 
+    private var dashboardChannelActive: Bool {
+        dashboardHistorySearchSession.isDashboardHTTPActive
+    }
+
     private var statusRefreshKey: String {
         [
             apiSettings.baseURL,
@@ -114,7 +119,8 @@ struct ContentView: View {
                 selection: $selectedWorkspace,
                 statusMonitor: statusMonitor,
                 apiChannelActive: apiChannelActive,
-                companionChannelActive: companionChannelActive
+                companionChannelActive: companionChannelActive,
+                dashboardChannelActive: dashboardChannelActive
             )
             .navigationTitle("Hermes")
                 .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
@@ -129,7 +135,8 @@ struct ContentView: View {
             HermesStatusBand(
                 statusMonitor: statusMonitor,
                 apiChannelActive: apiChannelActive,
-                companionChannelActive: companionChannelActive
+                companionChannelActive: companionChannelActive,
+                dashboardChannelActive: dashboardChannelActive
             )
 
             TabView {
@@ -156,7 +163,7 @@ struct ContentView: View {
                 }
 
                 NavigationStack {
-                    HermesHistoryView(apiSettings: $apiSettings)
+                    HermesHistoryView(apiSettings: $apiSettings, searchSession: dashboardHistorySearchSession)
                 }
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
@@ -208,7 +215,7 @@ struct ContentView: View {
                 chatSession: chatSession
             )
         case .history:
-            HermesHistoryView(apiSettings: $apiSettings)
+            HermesHistoryView(apiSettings: $apiSettings, searchSession: dashboardHistorySearchSession)
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,

@@ -8,9 +8,9 @@ import SwiftUI
 
 struct HermesHistoryView: View {
     @Binding var apiSettings: HermesAPISettings
+    @Bindable var searchSession: HermesDashboardHistorySearchSession
 
     @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
-    @State private var searchSession = HermesDashboardHistorySearchSession()
     @State private var expandedConversationIDs: Set<String> = []
 
     var body: some View {

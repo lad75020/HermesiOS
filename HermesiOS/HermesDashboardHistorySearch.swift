@@ -189,6 +189,7 @@ final class HermesDashboardHistorySearchSession {
     var lastErrorMessage = ""
     var matchedMessages = 0
     var matchedSessions = 0
+    var isDashboardHTTPActive = false
 
     private var requestTask: Task<Void, Never>?
     private var cachedTokenByBaseURL: [String: String] = [:]
@@ -214,6 +215,7 @@ final class HermesDashboardHistorySearchSession {
         requestTask?.cancel()
         requestTask = nil
         isSearching = false
+        isDashboardHTTPActive = false
         status = "Cancelled"
     }
 
@@ -255,6 +257,7 @@ final class HermesDashboardHistorySearchSession {
         }
 
         isSearching = false
+        isDashboardHTTPActive = false
     }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
@@ -265,6 +268,8 @@ final class HermesDashboardHistorySearchSession {
 
         status = "Fetching dashboard session token"
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
+        isDashboardHTTPActive = true
+        defer { isDashboardHTTPActive = false }
         let (data, response) = try await session.data(from: baseURL)
         try validate(response: response)
 
@@ -311,6 +316,8 @@ final class HermesDashboardHistorySearchSession {
         request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
 
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
+        isDashboardHTTPActive = true
+        defer { isDashboardHTTPActive = false }
         let (data, response) = try await session.data(for: request)
         try validate(response: response)
         return try JSONDecoder().decode(HermesDashboardConversationSearchResponse.self, from: data)

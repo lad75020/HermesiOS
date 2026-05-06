@@ -65,13 +65,15 @@ struct WorkspaceSidebar: View {
     @Bindable var statusMonitor: HermesStatusMonitor
     var apiChannelActive = false
     var companionChannelActive = false
+    var dashboardChannelActive = false
 
     var body: some View {
         VStack(spacing: 0) {
             HermesStatusBand(
                 statusMonitor: statusMonitor,
                 apiChannelActive: apiChannelActive,
-                companionChannelActive: companionChannelActive
+                companionChannelActive: companionChannelActive,
+                dashboardChannelActive: dashboardChannelActive
             )
 
             List(WorkspaceSection.allCases, selection: $selection) { section in

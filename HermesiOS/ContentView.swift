@@ -158,7 +158,7 @@ struct ContentView: View {
                 }
 
                 NavigationStack {
-                    HermesHistoryView(historyStore: historyStore)
+                    HermesHistoryView(historyStore: historyStore, apiSettings: $apiSettings)
                 }
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
@@ -212,7 +212,7 @@ struct ContentView: View {
                 historyStore: historyStore
             )
         case .history:
-            HermesHistoryView(historyStore: historyStore)
+            HermesHistoryView(historyStore: historyStore, apiSettings: $apiSettings)
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,

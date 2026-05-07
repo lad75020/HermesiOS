@@ -211,37 +211,22 @@ final class HermesSpeechTranscriptionSession {
         }
 
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.taskHint = .dictation
         recognitionRequest = request
 
         let inputNode = audioEngine.inputNode
         inputNode.removeTap(onBus: 0)
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak request] buffer, _ in
-            request?.append(buffer)
-        }
-
-        audioEngine.prepare()
-        try audioEngine.start()
-        isRecording = true
-        statusMessage = "Listening…"
 
         recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
             Task { @MainActor in
                 guard let self else { return }
                 if let result {
-                    let transcription = result.bestTranscription.formattedString
-                    let composed = self.merge(seedText: seedText, transcription: transcription)
-                    self.liveText = transcription
-                    self.composedText = composed
-                    self.onTextChange?(composed)
-                    if result.isFinal {
-                        self.finishRecognition(status: "Dictation complete")
-                    }
+                    self.applyRecognitionResult(result, seedText: seedText)
                 }
 
                 if let error {
@@ -251,6 +236,28 @@ final class HermesSpeechTranscriptionSession {
                     self.finishRecognition(status: nil, cancelTask: true)
                 }
             }
+        }
+
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak request] buffer, _ in
+            request?.append(buffer)
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+        isRecording = true
+        statusMessage = "Listening…"
+    }
+
+    private func applyRecognitionResult(_ result: SFSpeechRecognitionResult, seedText: String) {
+        let transcription = result.bestTranscription.formattedString
+        let composed = merge(seedText: seedText, transcription: transcription)
+        liveText = transcription
+        composedText = composed
+        onTextChange?(composed)
+        statusMessage = transcription.isEmpty ? "Listening…" : "Dictating: \(transcription)"
+        if result.isFinal {
+            finishRecognition(status: "Dictation complete")
         }
     }
 

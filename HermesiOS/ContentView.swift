@@ -144,7 +144,7 @@ struct ContentView: View {
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive
             )
-            .navigationTitle("")
+            .toolbar(.hidden, for: .navigationBar)
             .navigationSplitViewColumnWidth(min: 72, ideal: 84, max: 96)
         } detail: {
             workspaceDetail(for: selectedWorkspace ?? .responses)

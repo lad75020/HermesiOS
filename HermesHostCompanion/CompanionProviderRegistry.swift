@@ -29,6 +29,17 @@ final class CompanionProviderRegistry {
         .init(value: "custom", label: "Local / Custom")
     ]
 
+    private static let auxiliaryModelSlots: [(key: String, label: String)] = [
+        ("vision", "Vision"),
+        ("compression", "Compression"),
+        ("title_generation", "Title Generation"),
+        ("mcp", "MCP"),
+        ("curator", "Curator"),
+        ("skills_hub", "Skills Hub"),
+        ("approval", "Approval"),
+        ("session_search", "Session Search")
+    ]
+
     private static let sections: [ProviderEnvSection] = [
         .init(id: "llm", title: "LLM Providers", items: [
             .init(key: "OPENROUTER_API_KEY", label: "OpenRouter API Key", type: "password", hint: "Used for OpenRouter models."),
@@ -83,6 +94,8 @@ final class CompanionProviderRegistry {
             authFilePath: authURL(for: workspaceURL).path,
             env: readEnv(workspaceURL: workspaceURL),
             modelConfig: readModelConfig(workspaceURL: workspaceURL),
+            delegationModelConfig: readDelegationModelConfig(workspaceURL: workspaceURL),
+            auxiliaryModelConfigs: readAuxiliaryModelConfigs(workspaceURL: workspaceURL),
             credentialPool: readCredentialPool(workspaceURL: workspaceURL),
             sections: Self.sections,
             providerOptions: Self.providerOptions
@@ -100,6 +113,12 @@ final class CompanionProviderRegistry {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         try writeModelConfig(workspaceURL: workspaceURL, provider: provider, model: model, baseUrl: baseUrl)
         return SetProviderModelConfigResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, configPath: configURL(for: workspaceURL).path, modelConfig: ProviderModelConfig(provider: provider, model: model, baseUrl: baseUrl))
+    }
+
+    func setRuntimeModelSlot(workspacePath: String, section: String, key: String, provider: String, model: String) throws -> SetRuntimeModelSlotResult {
+        let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
+        let slot = try writeRuntimeModelSlot(workspaceURL: workspaceURL, section: section, key: key, provider: provider, model: model)
+        return SetRuntimeModelSlotResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, configPath: configURL(for: workspaceURL).path, slot: slot)
     }
 
     func setCredentialPool(workspacePath: String, provider: String, entries: [ProviderCredentialEntry]) throws -> SetCredentialPoolResult {
@@ -158,49 +177,189 @@ final class CompanionProviderRegistry {
     }
 
     private func readModelConfig(workspaceURL: URL) -> ProviderModelConfig {
-        guard let content = try? String(contentsOf: configURL(for: workspaceURL), encoding: .utf8) else {
-            return ProviderModelConfig(provider: "auto", model: "", baseUrl: "")
-        }
+        let content = (try? String(contentsOf: configURL(for: workspaceURL), encoding: .utf8)) ?? ""
         return ProviderModelConfig(
-            provider: firstMatch(in: content, pattern: #"^\s*provider:\s*[\"']?([^\"'\n#]+)[\"']?"#) ?? "auto",
-            model: firstMatch(in: content, pattern: #"^\s*default:\s*[\"']?([^\"'\n#]+)[\"']?"#) ?? "",
-            baseUrl: firstMatch(in: content, pattern: #"^\s*base_url:\s*[\"']?([^\"'\n#]+)[\"']?"#) ?? ""
+            provider: readYAMLScalar(content: content, section: "model", key: "provider") ?? readTopLevelYAMLScalar(content: content, key: "provider") ?? "auto",
+            model: readYAMLScalar(content: content, section: "model", key: "default") ?? readTopLevelYAMLScalar(content: content, key: "default") ?? "",
+            baseUrl: readYAMLScalar(content: content, section: "model", key: "base_url") ?? readTopLevelYAMLScalar(content: content, key: "base_url") ?? ""
         )
+    }
+
+    private func readDelegationModelConfig(workspaceURL: URL) -> RuntimeModelSlotConfig {
+        let content = (try? String(contentsOf: configURL(for: workspaceURL), encoding: .utf8)) ?? ""
+        return RuntimeModelSlotConfig(
+            id: "delegation",
+            label: "Delegation",
+            section: "delegation",
+            key: "delegation",
+            provider: readYAMLScalar(content: content, section: "delegation", key: "provider") ?? "",
+            model: readYAMLScalar(content: content, section: "delegation", key: "model") ?? ""
+        )
+    }
+
+    private func readAuxiliaryModelConfigs(workspaceURL: URL) -> [RuntimeModelSlotConfig] {
+        let content = (try? String(contentsOf: configURL(for: workspaceURL), encoding: .utf8)) ?? ""
+        return Self.auxiliaryModelSlots.map { slot in
+            RuntimeModelSlotConfig(
+                id: "auxiliary.\(slot.key)",
+                label: slot.label,
+                section: "auxiliary",
+                key: slot.key,
+                provider: readYAMLScalar(content: content, section: "auxiliary", child: slot.key, key: "provider") ?? "",
+                model: readYAMLScalar(content: content, section: "auxiliary", child: slot.key, key: "model") ?? ""
+            )
+        }
     }
 
     private func writeModelConfig(workspaceURL: URL, provider: String, model: String, baseUrl: String) throws {
         let url = configURL(for: workspaceURL)
         var content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-        content = replaceConfigLine(content, key: "provider", value: provider)
-        content = replaceConfigLine(content, key: "default", value: model)
-        content = replaceConfigLine(content, key: "base_url", value: baseUrl)
-        content = disableSmartModelRouting(in: content)
-        content = replaceConfigLine(content, key: "streaming", rawValue: "true")
+        content = setYAMLScalar(content: content, section: "model", key: "provider", value: provider)
+        content = setYAMLScalar(content: content, section: "model", key: "default", value: model)
+        content = setYAMLScalar(content: content, section: "model", key: "base_url", value: baseUrl)
+        content = setYAMLScalar(content: content, section: "model", key: "streaming", rawValue: "true")
         try write(content, to: url)
     }
 
-    private func disableSmartModelRouting(in content: String) -> String {
-        var lines = content.components(separatedBy: "\n")
-        for index in lines.indices where index > 0 {
-            if lines[index].range(of: #"^\s*enabled:\s*(true|false)"#, options: .regularExpression) != nil,
-               lines[index - 1].contains("smart_model_routing") {
-                lines[index] = lines[index].replacingOccurrences(
-                    of: #"(enabled:\s*)(true|false)"#,
-                    with: "$1false",
-                    options: .regularExpression
-                )
-            }
+    private func writeRuntimeModelSlot(workspaceURL: URL, section: String, key: String, provider: String, model: String) throws -> RuntimeModelSlotConfig {
+        let url = configURL(for: workspaceURL)
+        var content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let slot: RuntimeModelSlotConfig
+        if section == "delegation" {
+            content = setYAMLScalar(content: content, section: "delegation", key: "provider", value: provider)
+            content = setYAMLScalar(content: content, section: "delegation", key: "model", value: model)
+            slot = RuntimeModelSlotConfig(id: "delegation", label: "Delegation", section: "delegation", key: "delegation", provider: provider, model: model)
+        } else {
+            let label = Self.auxiliaryModelSlots.first(where: { $0.key == key })?.label ?? key
+            content = setYAMLScalar(content: content, section: "auxiliary", child: key, key: "provider", value: provider)
+            content = setYAMLScalar(content: content, section: "auxiliary", child: key, key: "model", value: model)
+            slot = RuntimeModelSlotConfig(id: "auxiliary.\(key)", label: label, section: "auxiliary", key: key, provider: provider, model: model)
         }
+        try write(content, to: url)
+        return slot
+    }
+
+    private func readTopLevelYAMLScalar(content: String, key: String) -> String? {
+        firstMatch(in: content, pattern: #"^\#(key):\s*[\"']?([^\"'\n#]+)[\"']?"#)
+    }
+
+    private func readYAMLScalar(content: String, section: String, child: String? = nil, key: String) -> String? {
+        let lines = content.components(separatedBy: "\n")
+        guard let sectionIndex = lines.firstIndex(where: { $0.range(of: #"^\#(section):\s*(#.*)?$"#, options: .regularExpression) != nil }) else { return nil }
+        let sectionIndent = indentation(of: lines[sectionIndex])
+        var index = sectionIndex + 1
+        if let child {
+            var childIndex: Int?
+            while index < lines.count {
+                let line = lines[index]
+                if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && indentation(of: line) <= sectionIndent { break }
+                if indentation(of: line) == sectionIndent + 2 && line.trimmingCharacters(in: .whitespaces).range(of: #"^\#(child):\s*(#.*)?$"#, options: .regularExpression) != nil {
+                    childIndex = index
+                    break
+                }
+                index += 1
+            }
+            guard let childIndex else { return nil }
+            let childIndent = indentation(of: lines[childIndex])
+            index = childIndex + 1
+            while index < lines.count {
+                let line = lines[index]
+                if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && indentation(of: line) <= childIndent { break }
+                if indentation(of: line) == childIndent + 2, let value = scalarValue(from: line, key: key) { return value }
+                index += 1
+            }
+            return nil
+        }
+        while index < lines.count {
+            let line = lines[index]
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && indentation(of: line) <= sectionIndent { break }
+            if indentation(of: line) == sectionIndent + 2, let value = scalarValue(from: line, key: key) { return value }
+            index += 1
+        }
+        return nil
+    }
+
+    private func setYAMLScalar(content: String, section: String, child: String? = nil, key: String, value: String? = nil, rawValue: String? = nil) -> String {
+        var lines = content.components(separatedBy: "\n")
+        if lines == [""] { lines = [] }
+        let replacementValue = rawValue ?? quotedYAML(value ?? "")
+        let sectionLine = "\(section):"
+        let keyLine = "  \(key): \(replacementValue)"
+        let childLine = child.map { "  \($0):" }
+        let childKeyLine = child.map { _ in "    \(key): \(replacementValue)" }
+
+        guard let sectionIndex = lines.firstIndex(where: { $0.range(of: #"^\#(section):\s*(#.*)?$"#, options: .regularExpression) != nil }) else {
+            lines.append(sectionLine)
+            if let childLine, let childKeyLine {
+                lines.append(childLine)
+                lines.append(childKeyLine)
+            } else {
+                lines.append(keyLine)
+            }
+            return lines.joined(separator: "\n") + "\n"
+        }
+
+        let sectionIndent = indentation(of: lines[sectionIndex])
+        if let child, let childLine, let childKeyLine {
+            var index = sectionIndex + 1
+            var insertAt = index
+            while index < lines.count {
+                let line = lines[index]
+                if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && indentation(of: line) <= sectionIndent { break }
+                insertAt = index + 1
+                if indentation(of: line) == sectionIndent + 2 && line.trimmingCharacters(in: .whitespaces).range(of: #"^\#(child):\s*(#.*)?$"#, options: .regularExpression) != nil {
+                    let childIndent = indentation(of: line)
+                    var childScan = index + 1
+                    var childInsertAt = childScan
+                    while childScan < lines.count {
+                        let childScanLine = lines[childScan]
+                        if !childScanLine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && indentation(of: childScanLine) <= childIndent { break }
+                        childInsertAt = childScan + 1
+                        if indentation(of: childScanLine) == childIndent + 2 && scalarValue(from: childScanLine, key: key) != nil {
+                            lines[childScan] = childKeyLine
+                            return lines.joined(separator: "\n")
+                        }
+                        childScan += 1
+                    }
+                    lines.insert(childKeyLine, at: childInsertAt)
+                    return lines.joined(separator: "\n")
+                }
+                index += 1
+            }
+            lines.insert(contentsOf: [childLine, childKeyLine], at: insertAt)
+            return lines.joined(separator: "\n")
+        }
+
+        var index = sectionIndex + 1
+        var insertAt = index
+        while index < lines.count {
+            let line = lines[index]
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && indentation(of: line) <= sectionIndent { break }
+            insertAt = index + 1
+            if indentation(of: line) == sectionIndent + 2 && scalarValue(from: line, key: key) != nil {
+                lines[index] = keyLine
+                return lines.joined(separator: "\n")
+            }
+            index += 1
+        }
+        lines.insert(keyLine, at: insertAt)
         return lines.joined(separator: "\n")
     }
 
-    private func replaceConfigLine(_ content: String, key: String, value: String? = nil, rawValue: String? = nil) -> String {
-        let replacement = rawValue ?? "\"\(value ?? "")\""
-        let pattern = #"(?m)^(\s*#?\s*\#(key):\s*)[\"']?[^\"'\n#]*[\"']?"#
-        if content.range(of: pattern, options: .regularExpression) != nil {
-            return content.replacingOccurrences(of: pattern, with: "$1\(replacement)", options: .regularExpression)
-        }
-        return content + (content.hasSuffix("\n") ? "" : "\n") + "\(key): \(replacement)\n"
+    private func scalarValue(from line: String, key: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*\#(key):\s*[\"']?([^\"'\n#]*)[\"']?"#),
+              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: line) else { return nil }
+        return String(line[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func indentation(of line: String) -> Int {
+        line.prefix { $0 == " " }.count
+    }
+
+    private func quotedYAML(_ value: String) -> String {
+        "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
     }
 
     private func readCredentialPool(workspaceURL: URL) -> [String: [ProviderCredentialEntry]] {

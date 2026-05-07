@@ -489,6 +489,15 @@ struct HermesCompanionProviderModelConfig: Codable, Equatable {
     let baseUrl: String
 }
 
+struct HermesCompanionRuntimeModelSlotConfig: Codable, Identifiable, Equatable {
+    let id: String
+    let label: String
+    let section: String
+    let key: String
+    let provider: String
+    let model: String
+}
+
 struct HermesCompanionProviderCredentialEntry: Codable, Identifiable, Equatable {
     let key: String
     let label: String
@@ -507,6 +516,8 @@ struct HermesCompanionProvidersConfigResult: Codable {
     let authFilePath: String
     let env: [String: String]
     let modelConfig: HermesCompanionProviderModelConfig
+    let delegationModelConfig: HermesCompanionRuntimeModelSlotConfig
+    let auxiliaryModelConfigs: [HermesCompanionRuntimeModelSlotConfig]
     let credentialPool: [String: [HermesCompanionProviderCredentialEntry]]
     let sections: [HermesCompanionProviderEnvSection]
     let providerOptions: [HermesCompanionProviderOption]
@@ -538,6 +549,21 @@ struct HermesCompanionSetProviderModelConfigResult: Codable {
     let resolvedWorkspacePath: String
     let configPath: String
     let modelConfig: HermesCompanionProviderModelConfig
+}
+
+struct HermesCompanionSetRuntimeModelSlotPayload: Codable {
+    let workspacePath: String
+    let section: String
+    let key: String
+    let provider: String
+    let model: String
+}
+
+struct HermesCompanionSetRuntimeModelSlotResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let configPath: String
+    let slot: HermesCompanionRuntimeModelSlotConfig
 }
 
 struct HermesCompanionSetCredentialPoolPayload: Codable {
@@ -1005,6 +1031,8 @@ final class HermesCompanionRuntimeSession {
     var providerOptions: [HermesCompanionProviderOption] = []
     var providerCredentialPool: [String: [HermesCompanionProviderCredentialEntry]] = [:]
     var providerModelConfig = HermesCompanionProviderModelConfig(provider: "auto", model: "", baseUrl: "")
+    var delegationModelConfig = HermesCompanionRuntimeModelSlotConfig(id: "delegation", label: "Delegation", section: "delegation", key: "delegation", provider: "", model: "")
+    var auxiliaryModelConfigs: [HermesCompanionRuntimeModelSlotConfig] = []
     var providerEnvFilePath = ""
     var providerConfigPath = ""
     var providerAuthFilePath = ""
@@ -1713,6 +1741,53 @@ final class HermesCompanionRuntimeSession {
         }
     }
 
+    func saveRuntimeModelSlotConfig(
+        slot: HermesCompanionRuntimeModelSlotConfig,
+        provider: String,
+        model: String,
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        let updated = HermesCompanionRuntimeModelSlotConfig(
+            id: slot.id,
+            label: slot.label,
+            section: slot.section,
+            key: slot.key,
+            provider: provider,
+            model: model
+        )
+        if slot.section == "delegation" {
+            delegationModelConfig = updated
+        } else if let index = auxiliaryModelConfigs.firstIndex(where: { $0.id == slot.id }) {
+            auxiliaryModelConfigs[index] = updated
+        }
+        run {
+            self.connectionStatus = "Saving \(slot.label) Model"
+            let result: HermesCompanionSetRuntimeModelSlotResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_runtime_model_slot",
+                payload: HermesCompanionSetRuntimeModelSlotPayload(
+                    workspacePath: settings.hermesWorkspacePath,
+                    section: slot.section,
+                    key: slot.key,
+                    provider: provider,
+                    model: model
+                )
+            )
+            if result.slot.section == "delegation" {
+                self.delegationModelConfig = result.slot
+            } else if let index = self.auxiliaryModelConfigs.firstIndex(where: { $0.id == result.slot.id }) {
+                self.auxiliaryModelConfigs[index] = result.slot
+            } else {
+                self.auxiliaryModelConfigs.append(result.slot)
+            }
+            self.providerConfigPath = result.configPath
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = "\(result.slot.label) Model Saved"
+        }
+    }
+
     func setProviderCredentialPool(
         provider: String,
         entries: [HermesCompanionProviderCredentialEntry],
@@ -1745,6 +1820,8 @@ final class HermesCompanionRuntimeSession {
         providerOptions = result.providerOptions
         providerCredentialPool = result.credentialPool
         providerModelConfig = result.modelConfig
+        delegationModelConfig = result.delegationModelConfig
+        auxiliaryModelConfigs = result.auxiliaryModelConfigs
         providerEnvFilePath = result.envFilePath
         providerConfigPath = result.configPath
         providerAuthFilePath = result.authFilePath

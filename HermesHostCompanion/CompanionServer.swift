@@ -309,6 +309,7 @@ final class CompanionClientSession {
                         "get_providers_config",
                         "set_provider_env",
                         "set_provider_model_config",
+                        "set_runtime_model_slot",
                         "set_credential_pool",
                         "get_memory_config",
                         "add_memory_entry",
@@ -608,6 +609,23 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "set_provider_model_config_failed", message: error.localizedDescription)
+            }
+        case "set_runtime_model_slot":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The set_runtime_model_slot request requires a payload.")
+                }
+                let slotPayload = try payload.decode(SetRuntimeModelSlotPayload.self)
+                let result = try providerRegistry.setRuntimeModelSlot(
+                    workspacePath: slotPayload.workspacePath,
+                    section: slotPayload.section,
+                    key: slotPayload.key,
+                    provider: slotPayload.provider,
+                    model: slotPayload.model
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "set_runtime_model_slot_failed", message: error.localizedDescription)
             }
         case "set_credential_pool":
             do {

@@ -256,7 +256,7 @@ struct HermesAgentConfigView: View {
 
                 HermesRuntimeAccordionPanel(
                     title: "Models",
-                    subtitle: "\(companionRuntime.hermesModels.count) saved in workspace inventory",
+                    subtitle: "Main, delegation, and auxiliary runtime model routing",
                     systemImage: "cpu",
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .models },

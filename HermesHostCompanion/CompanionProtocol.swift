@@ -421,6 +421,15 @@ struct ProviderModelConfig: Codable {
     let baseUrl: String
 }
 
+struct RuntimeModelSlotConfig: Codable, Identifiable {
+    let id: String
+    let label: String
+    let section: String
+    let key: String
+    let provider: String
+    let model: String
+}
+
 struct ProviderCredentialEntry: Codable, Identifiable {
     let key: String
     let label: String
@@ -439,6 +448,8 @@ struct ProvidersConfigResult: Codable {
     let authFilePath: String
     let env: [String: String]
     let modelConfig: ProviderModelConfig
+    let delegationModelConfig: RuntimeModelSlotConfig
+    let auxiliaryModelConfigs: [RuntimeModelSlotConfig]
     let credentialPool: [String: [ProviderCredentialEntry]]
     let sections: [ProviderEnvSection]
     let providerOptions: [ProviderOption]
@@ -476,6 +487,21 @@ struct SetProviderModelConfigResult: Codable {
     let resolvedWorkspacePath: String
     let configPath: String
     let modelConfig: ProviderModelConfig
+}
+
+struct SetRuntimeModelSlotPayload: Codable {
+    let workspacePath: String
+    let section: String
+    let key: String
+    let provider: String
+    let model: String
+}
+
+struct SetRuntimeModelSlotResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let configPath: String
+    let slot: RuntimeModelSlotConfig
 }
 
 struct SetCredentialPoolPayload: Codable {

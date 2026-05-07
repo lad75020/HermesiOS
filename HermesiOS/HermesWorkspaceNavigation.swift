@@ -80,6 +80,14 @@ struct WorkspaceSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Text("Hermes")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
+                .accessibilityAddTraits(.isHeader)
+
             HermesStatusBand(
                 statusMonitor: statusMonitor,
                 showsLabels: false,

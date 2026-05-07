@@ -153,12 +153,14 @@ final class CompanionTLSIdentityStore {
             try generateLocalCA()
         }
 
-        let serverP12Path = try serverP12URL().path
-        let serverCertificatePath = try serverCertificateURL().path
+        let serverP12URL = try serverP12URL()
+        let serverCertificateURL = try serverCertificateURL()
+        let serverPrivateKeyURL = try serverPrivateKeyURL()
         let normalizedHost = normalizedServerHost(host)
         let storedHost = (try? String(contentsOf: serverHostURL(), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
-        if fileManager.fileExists(atPath: serverP12Path) == false ||
-            fileManager.fileExists(atPath: serverCertificatePath) == false ||
+        if fileHasContent(serverP12URL) == false ||
+            fileHasContent(serverCertificateURL) == false ||
+            fileHasContent(serverPrivateKeyURL) == false ||
             storedHost != normalizedHost {
             try generateServerIdentity(host: normalizedHost)
         }
@@ -270,6 +272,11 @@ final class CompanionTLSIdentityStore {
             let output = String(data: outputData, encoding: .utf8) ?? "Unknown OpenSSL error."
             throw CompanionTLSIdentityStoreError.opensslFailed(output)
         }
+    }
+
+    private func fileHasContent(_ url: URL) -> Bool {
+        let size = (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
+        return size > 0
     }
 
     private func pkiDirectory() throws -> URL {

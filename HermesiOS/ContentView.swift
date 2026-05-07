@@ -145,8 +145,8 @@ struct ContentView: View {
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive
             )
-            .navigationTitle("Hermes")
-                .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
+            .navigationTitle("")
+            .navigationSplitViewColumnWidth(min: 72, ideal: 84, max: 96)
         } detail: {
             workspaceDetail(for: selectedWorkspace ?? .responses)
         }

@@ -85,8 +85,8 @@ final class CompanionServer {
             port: configuration.enrollmentPort
         )
 
-        let listener = try NWListener(using: parameters, on: configuration.port)
-        let enrollmentListener = try NWListener(using: enrollmentParameters, on: configuration.enrollmentPort)
+        let listener = try NWListener(using: parameters)
+        let enrollmentListener = try NWListener(using: enrollmentParameters)
         let logger = Logger.companion
 
         listener.stateUpdateHandler = { [weak self] newState in

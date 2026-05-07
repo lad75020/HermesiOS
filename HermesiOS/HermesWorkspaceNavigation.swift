@@ -82,6 +82,7 @@ struct WorkspaceSidebar: View {
         VStack(spacing: 0) {
             HermesStatusBand(
                 statusMonitor: statusMonitor,
+                showsLabels: false,
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive
@@ -89,16 +90,14 @@ struct WorkspaceSidebar: View {
 
             List(WorkspaceSection.allCases, selection: $selection) { section in
                 NavigationLink(value: section) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label(section.title, systemImage: section.systemImage)
-                            .font(.headline)
-                        Text(section.subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.hermesSecondaryText)
-                    }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 4)
+                    Image(systemName: section.systemImage)
+                        .font(.title3.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .foregroundStyle(selection == section ? Color.igActionBlue : Color.hermesSecondaryText)
+                        .contentShape(Rectangle())
+                        .accessibilityLabel(section.title)
                 }
+                .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
                 .listRowBackground(
                     selection == section
                         ? AnyView(HermesLiquidGlassBackground(cornerRadius: 14, tint: .igActionBlue.opacity(0.18), interactive: true))
@@ -117,15 +116,17 @@ struct WorkspaceSidebar: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: isShowingStreamDebugJSON ? "checkmark.square.fill" : "square")
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(isShowingStreamDebugJSON ? Color.igActionBlue : Color.hermesSecondaryText)
-                    Label("Debug stream JSON", systemImage: "ladybug")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
+                    Image(systemName: "ladybug")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Color.hermesSecondaryText)
                 }
+                .frame(maxWidth: .infinity, minHeight: 36)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 10)
             .padding(.vertical, 12)
             .accessibilityLabel("Debug stream JSON checkbox")
             .accessibilityValue(isShowingStreamDebugJSON ? "Checked" : "Unchecked")

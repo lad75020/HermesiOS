@@ -121,6 +121,7 @@ final class HermesStatusMonitor {
 
 struct HermesStatusBand: View {
     @Bindable var statusMonitor: HermesStatusMonitor
+    var showsLabels = true
     var apiChannelActive = false
     var companionChannelActive = false
     var dashboardChannelActive = false
@@ -131,6 +132,7 @@ struct HermesStatusBand: View {
             HStack(spacing: 10) {
                 HermesStatusLED(
                     label: "API",
+                    showsLabel: showsLabels,
                     status: statusMonitor.apiServerStatus,
                     isActive: apiChannelActive || statusMonitor.isAPIProbeActive
                 )
@@ -138,6 +140,7 @@ struct HermesStatusBand: View {
 
                 HermesStatusLED(
                     label: "Mac",
+                    showsLabel: showsLabels,
                     status: statusMonitor.companionStatus,
                     isActive: companionChannelActive || statusMonitor.isCompanionProbeActive
                 )
@@ -145,6 +148,7 @@ struct HermesStatusBand: View {
 
                 HermesStatusLED(
                     label: "DASH",
+                    showsLabel: showsLabels,
                     status: .up,
                     isActive: dashboardChannelActive,
                     inactiveColor: Color.igOnlineGreen.opacity(0.34),
@@ -168,6 +172,7 @@ struct HermesStatusBand: View {
 
 private struct HermesStatusLED: View {
     let label: String
+    var showsLabel = true
     let status: HermesServiceReachability
     let isActive: Bool
     var inactiveColor: Color? = nil
@@ -186,9 +191,11 @@ private struct HermesStatusLED: View {
                     .frame(width: 3, height: 14)
                     .shadow(color: ledColor.opacity(isActive ? 0.45 : 0.22), radius: isActive ? 4 : 2)
 
-                Text(label)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.hermesSecondaryText)
+                if showsLabel {
+                    Text(label)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+                }
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 6)

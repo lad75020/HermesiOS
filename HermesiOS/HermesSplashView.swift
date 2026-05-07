@@ -3,40 +3,96 @@
 //  HermesiOS
 //
 
+import AVFoundation
+import Combine
 import SwiftUI
+import UIKit
 
 struct HermesSplashView: View {
+    @StateObject private var playerModel = HermesSplashPlayerModel()
+
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.02, green: 0.03, blue: 0.06),
-                    Color(red: 0.04, green: 0.10, blue: 0.18),
-                    Color(red: 0.01, green: 0.02, blue: 0.05)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                Image(systemName: "sparkles.tv")
-                    .font(.system(size: 58, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(22)
-                    .hermesLiquidGlass(cornerRadius: 28, tint: Color.white.opacity(0.10))
-
-                Text("Hermes")
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(.white)
-
-                Text("iOS Console")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.72))
+            if let player = playerModel.player {
+                HermesSplashVideoPlayer(player: player)
+                    .ignoresSafeArea()
+                    .onAppear {
+                        playerModel.playFromBeginning()
+                    }
+                    .onDisappear {
+                        playerModel.stop()
+                    }
             }
-            .padding(32)
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)
+    }
+}
+
+@MainActor
+private final class HermesSplashPlayerModel: ObservableObject {
+    let player: AVPlayer?
+
+    init() {
+        guard let videoURL = Bundle.main.url(forResource: "HermesSplash", withExtension: "mp4")
+            ?? Bundle.main.url(forResource: "HermesSplash", withExtension: "mp4", subdirectory: "Resources")
+        else {
+            player = nil
+            return
+        }
+
+        let player = AVPlayer(url: videoURL)
+        player.isMuted = true
+        player.actionAtItemEnd = .pause
+        self.player = player
+    }
+
+    func playFromBeginning() {
+        player?.seek(to: .zero)
+        player?.play()
+    }
+
+    func stop() {
+        player?.pause()
+    }
+}
+
+private struct HermesSplashVideoPlayer: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> HermesSplashVideoPlayerView {
+        let view = HermesSplashVideoPlayerView()
+        view.playerLayer.player = player
+        return view
+    }
+
+    func updateUIView(_ uiView: HermesSplashVideoPlayerView, context: Context) {
+        if uiView.playerLayer.player !== player {
+            uiView.playerLayer.player = player
+        }
+    }
+}
+
+private final class HermesSplashVideoPlayerView: UIView {
+    override static var layerClass: AnyClass {
+        AVPlayerLayer.self
+    }
+
+    var playerLayer: AVPlayerLayer {
+        layer as! AVPlayerLayer
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        playerLayer.videoGravity = .resizeAspectFill
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        backgroundColor = .black
+        playerLayer.videoGravity = .resizeAspectFill
     }
 }

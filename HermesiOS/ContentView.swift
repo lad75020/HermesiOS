@@ -48,18 +48,19 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            Group {
-                if horizontalSizeClass == .compact {
-                    iPhoneLayout
-                } else {
-                    iPadLayout
-                }
-            }
-
             if isShowingSplash {
                 HermesSplashView()
                     .transition(.opacity)
                     .zIndex(1)
+            } else {
+                Group {
+                    if horizontalSizeClass == .compact {
+                        iPhoneLayout
+                    } else {
+                        iPadLayout
+                    }
+                }
+                .transition(.opacity)
             }
         }
         .background(Color.hermesCanvas)
@@ -85,10 +86,11 @@ struct ContentView: View {
             }
         }
         .task(id: officePreloadKey) {
+            guard !isShowingSplash else { return }
             officeWebViewStore.preload(urlString: officeURLString, reloadID: officeReloadID)
         }
         .task(id: statusLoopKey) {
-            guard scenePhase == .active else { return }
+            guard !isShowingSplash, scenePhase == .active else { return }
             await statusMonitor.runStatusLoop(
                 apiSettings: apiSettings,
                 companionSettings: companionSettings,
@@ -121,11 +123,11 @@ struct ContentView: View {
     }
 
     private var statusLoopKey: String {
-        statusRefreshKey + "|scenePhase=\(scenePhase)"
+        statusRefreshKey + "|scenePhase=\(scenePhase)|splash=\(isShowingSplash)"
     }
 
     private var officePreloadKey: String {
-        officeURLString + "|reload=\(officeReloadID.uuidString)"
+        officeURLString + "|reload=\(officeReloadID.uuidString)|splash=\(isShowingSplash)"
     }
 
     private var statusRefreshKey: String {

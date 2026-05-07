@@ -179,29 +179,42 @@ private struct HermesStatusLED: View {
     var activeFlashOffColor: Color? = nil
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.08)) { timeline in
-            let flashOn = Int(timeline.date.timeIntervalSinceReferenceDate * 13) % 2 == 0
-            let activeColor = flashOn ? Color.igOnlineGreen : Color.igOnlineGreen.opacity(0.38)
-            let dashActiveColor = flashOn ? Color.igOnlineGreen : (activeFlashOffColor ?? Color.igOnlineGreen.opacity(0.38))
-            let ledColor = isActive ? (activeFlashOffColor == nil ? activeColor : dashActiveColor) : (inactiveColor ?? status.color)
-
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(ledColor)
-                    .frame(width: 3, height: 14)
-                    .shadow(color: ledColor.opacity(isActive ? 0.45 : 0.22), radius: isActive ? 4 : 2)
-
-                if showsLabel {
-                    Text(label)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.hermesSecondaryText)
+        Group {
+            if isActive {
+                TimelineView(.animation(minimumInterval: 0.16)) { timeline in
+                    ledContent(color: flashingColor(for: timeline.date), isFlashing: true)
                 }
+            } else {
+                ledContent(color: inactiveColor ?? status.color, isFlashing: false)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .hermesLiquidGlass(cornerRadius: 12, tint: ledColor.opacity(0.08), interactive: false)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label) status \(isActive ? "active" : status.accessibilityLabel)")
+    }
+
+    private func flashingColor(for date: Date) -> Color {
+        let flashOn = Int(date.timeIntervalSinceReferenceDate * 6) % 2 == 0
+        if let activeFlashOffColor {
+            return flashOn ? Color.igOnlineGreen : activeFlashOffColor
+        }
+        return flashOn ? Color.igOnlineGreen : Color.igOnlineGreen.opacity(0.38)
+    }
+
+    private func ledContent(color ledColor: Color, isFlashing: Bool) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(ledColor)
+                .frame(width: 3, height: 14)
+                .shadow(color: ledColor.opacity(isFlashing ? 0.45 : 0.22), radius: isFlashing ? 4 : 2)
+
+            if showsLabel {
+                Text(label)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .hermesLiquidGlass(cornerRadius: 12, tint: ledColor.opacity(0.08), interactive: false)
     }
 }

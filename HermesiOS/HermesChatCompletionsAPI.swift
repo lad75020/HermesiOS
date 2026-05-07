@@ -223,11 +223,15 @@ final class HermesChatSession {
             return
         }
 
-        eventCount += 1
-        let payload = HermesLooseJSON(json: event.data)
-        let delta = extractChatText(from: payload, eventName: event.name)
+        var didExtractText = false
+        for payloadString in Self.jsonPayloadStrings(from: event.data) {
+            eventCount += 1
+            let payload = HermesLooseJSON(json: payloadString)
+            let delta = extractChatText(from: payload, eventName: event.name)
 
-        if !delta.isEmpty {
+            guard !delta.isEmpty else { continue }
+            didExtractText = true
+
             switch event.name {
             case "response.output_text.done", "response.completed":
                 if streamedText.isEmpty {
@@ -236,10 +240,60 @@ final class HermesChatSession {
             default:
                 streamedText += delta
             }
-            connectionStatus = "Streaming output"
-        } else {
-            connectionStatus = "Processing chat chunks"
         }
+
+        connectionStatus = didExtractText ? "Streaming output" : "Processing chat chunks"
+    }
+
+    private static func jsonPayloadStrings(from data: String) -> [String] {
+        let trimmed = data.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        var payloads: [String] = []
+        var startIndex: String.Index?
+        var depth = 0
+        var isInsideString = false
+        var isEscaped = false
+
+        var index = trimmed.startIndex
+        while index < trimmed.endIndex {
+            let character = trimmed[index]
+
+            if isInsideString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    isInsideString = false
+                }
+            } else {
+                switch character {
+                case "\"":
+                    isInsideString = true
+                case "{", "[":
+                    if depth == 0 {
+                        startIndex = index
+                    }
+                    depth += 1
+                case "}", "]":
+                    if depth > 0 {
+                        depth -= 1
+                    }
+                    if depth == 0, let payloadStartIndex = startIndex {
+                        let endIndex = trimmed.index(after: index)
+                        payloads.append(String(trimmed[payloadStartIndex..<endIndex]))
+                        startIndex = nil
+                    }
+                default:
+                    break
+                }
+            }
+
+            index = trimmed.index(after: index)
+        }
+
+        return payloads.isEmpty ? [trimmed] : payloads
     }
 
     private func appendRawStreamedJSON(_ event: HermesChatSSEEvent) {

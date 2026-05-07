@@ -162,7 +162,7 @@ final class HermesResponsesSession {
     var entries: [HermesResponseMessage] = []
     var streamedText = ""
     var isSending = false
-    var activeModel = ""
+    var activeProfile = ""
     var connectionStatus = "Idle"
     var latestResponseID = ""
     var previousResponseID = ""
@@ -185,11 +185,11 @@ final class HermesResponsesSession {
 
     func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment? = nil) {
         requestTask?.cancel()
-        let requestedModel = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if activeModel.isEmpty {
-            activeModel = requestedModel.isEmpty ? "hermes-agent" : requestedModel
+        let requestedProfile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if activeProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            activeProfile = requestedProfile.isEmpty ? "default" : requestedProfile
         }
-        let lockedDraft = draft.locked(to: activeModel)
+        let lockedDraft = draft.locked(toProfile: activeProfile)
         requestTask = Task {
             await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment)
         }
@@ -209,7 +209,7 @@ final class HermesResponsesSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
-        activeModel = ""
+        activeProfile = ""
         connectionStatus = "Idle"
         latestResponseID = ""
         previousResponseID = ""
@@ -253,7 +253,7 @@ final class HermesResponsesSession {
         activeAssistantEntryID = nil
         isSending = false
         latestResponseID = ""
-        activeModel = result.session.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        activeProfile = ""
         let continuationID = Self.responseContinuationID(from: result)
         previousResponseID = continuationID
         persistLastResponseID(continuationID)
@@ -429,7 +429,7 @@ final class HermesResponsesSession {
         }
 
         let payload = HermesResponsesRequestBody(
-            model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "hermes-agent" : draft.model,
+            model: "hermes-agent",
             input: HermesResponsesInput(prompt: draft.userPrompt, attachment: attachment),
             instructions: draft.instructions,
             stream: stream,
@@ -446,6 +446,9 @@ final class HermesResponsesSession {
             request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
             request.timeoutInterval = 0
         }
+
+        let profile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.setValue(profile.isEmpty ? "default" : profile, forHTTPHeaderField: "X-Hermes-Profile")
 
         if !apiSettings.apiKey.isEmpty {
             request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
@@ -553,6 +556,10 @@ struct HermesAPISettings: Codable, Equatable {
         endpointURL(from: baseURL, suffix: "models")
     }
 
+    static func profilesURL(from baseURL: String) -> URL? {
+        endpointURL(from: baseURL, suffix: "profiles")
+    }
+
     private static func endpointURL(from baseURL: String, suffix: String) -> URL? {
         let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -582,25 +589,29 @@ struct HermesAPISettings: Codable, Equatable {
     }
 }
 
-struct HermesAPIServerModel: Decodable, Identifiable, Equatable {
+struct HermesAPIProfile: Decodable, Identifiable, Equatable {
     let id: String
-    let object: String?
-    let ownedBy: String?
+    let name: String
+    let isDefault: Bool
+    let model: String?
+    let provider: String?
 
     enum CodingKeys: String, CodingKey {
         case id
-        case object
-        case ownedBy = "owned_by"
+        case name
+        case isDefault = "is_default"
+        case model
+        case provider
     }
 }
 
-private struct HermesAPIServerModelsEnvelope: Decodable {
-    let data: [HermesAPIServerModel]
+private struct HermesAPIProfilesEnvelope: Decodable {
+    let data: [HermesAPIProfile]
 }
 
-enum HermesAPIServerModelsClient {
-    static func fetchModels(apiSettings: HermesAPISettings) async throws -> [HermesAPIServerModel] {
-        guard let url = HermesAPISettings.modelsURL(from: apiSettings.baseURL) else {
+enum HermesAPIProfilesClient {
+    static func fetchProfiles(apiSettings: HermesAPISettings) async throws -> [HermesAPIProfile] {
+        guard let url = HermesAPISettings.profilesURL(from: apiSettings.baseURL) else {
             throw HermesResponsesError.invalidURL
         }
 
@@ -620,23 +631,48 @@ enum HermesAPIServerModelsClient {
             throw HermesResponsesError.httpError(httpResponse.statusCode)
         }
 
-        return try JSONDecoder().decode(HermesAPIServerModelsEnvelope.self, from: data).data
+        return try JSONDecoder().decode(HermesAPIProfilesEnvelope.self, from: data).data
             .filter { !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 }
 
 struct HermesRequestDraft: Codable, Equatable {
-    var model = "hermes-agent"
+    var profile = "default"
     var instructions = "You are a helpful coding assistant."
     var userPrompt = "Summarize the current project layout and recommend the next integration step."
     var stream = true
 
-    func locked(to model: String) -> HermesRequestDraft {
+    enum CodingKeys: String, CodingKey {
+        case profile
+        case instructions
+        case userPrompt
+        case stream
+        case legacyModel = "model"
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profile = try container.decodeIfPresent(String.self, forKey: .profile) ?? "default"
+        _ = try container.decodeIfPresent(String.self, forKey: .legacyModel)
+        instructions = try container.decodeIfPresent(String.self, forKey: .instructions) ?? instructions
+        userPrompt = try container.decodeIfPresent(String.self, forKey: .userPrompt) ?? userPrompt
+        stream = try container.decodeIfPresent(Bool.self, forKey: .stream) ?? stream
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(profile, forKey: .profile)
+        try container.encode(instructions, forKey: .instructions)
+        try container.encode(userPrompt, forKey: .userPrompt)
+        try container.encode(stream, forKey: .stream)
+    }
+
+    func locked(toProfile profile: String) -> HermesRequestDraft {
         var copy = self
-        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedModel.isEmpty {
-            copy.model = trimmedModel
-        }
+        let trimmedProfile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.profile = trimmedProfile.isEmpty ? "default" : trimmedProfile
         return copy
     }
 }

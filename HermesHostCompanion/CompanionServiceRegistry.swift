@@ -12,6 +12,8 @@ struct CompanionManagedServiceRecord: Codable, Identifiable {
     let displayName: String
     let statusCommand: [String]
     let restartCommand: [String]
+    let startCommand: [String]?
+    let stopCommand: [String]?
 }
 
 struct CompanionServiceRegistryDocument: Codable {
@@ -52,15 +54,11 @@ final class CompanionServiceRegistry {
            let document = try? JSONDecoder().decode(CompanionServiceRegistryDocument.self, from: data) {
             let migrated = Self.migratedDocument(from: document)
             self.document = migrated
-            if let data = try? JSONEncoder().encode(migrated) {
-                try? data.write(to: fileURL, options: [.atomic])
-            }
+            save(migrated)
         } else {
             let seeded = Self.seededDocument()
             self.document = seeded
-            if let data = try? JSONEncoder().encode(seeded) {
-                try? data.write(to: fileURL, options: [.atomic])
-            }
+            save(seeded)
         }
     }
 
@@ -70,6 +68,30 @@ final class CompanionServiceRegistry {
         return ServiceStatusResult(
             serviceID: serviceID,
             status: inferStatus(from: output),
+            output: output
+        )
+    }
+
+    func start(serviceID: String) throws -> ServiceStartResult {
+        let service = try serviceRecord(for: serviceID)
+        let command = service.startCommand ?? service.restartCommand
+        let output = try run(command: command)
+        return ServiceStartResult(
+            serviceID: serviceID,
+            status: .started,
+            output: output
+        )
+    }
+
+    func stop(serviceID: String) throws -> ServiceStopResult {
+        let service = try serviceRecord(for: serviceID)
+        guard let command = service.stopCommand else {
+            throw CompanionServiceRegistryError.commandMissing("No stop command configured for \(serviceID).")
+        }
+        let output = try run(command: command)
+        return ServiceStopResult(
+            serviceID: serviceID,
+            status: .stopped,
             output: output
         )
     }
@@ -190,36 +212,88 @@ final class CompanionServiceRegistry {
             || normalized.contains("pid") {
             return .running
         }
-        if normalized.contains("stopped") || normalized.contains("could not find service") || normalized.contains("not running") {
+        if normalized.contains("stopped")
+            || normalized.contains("could not find service")
+            || normalized.contains("not running")
+            || normalized.contains("service status command exited") {
             return .stopped
         }
         return .unknown
     }
 
+    private func save(_ document: CompanionServiceRegistryDocument) {
+        if let data = try? JSONEncoder().encode(document) {
+            try? data.write(to: fileURL, options: [.atomic])
+        }
+    }
+
     private static func seededDocument() -> CompanionServiceRegistryDocument {
-        return CompanionServiceRegistryDocument(
-            services: [
-                CompanionManagedServiceRecord(
-                    id: "hermesd",
-                    displayName: "Hermes Gateway / API Server",
-                    statusCommand: ["/usr/bin/env", "hermes", "gateway", "status"],
-                    restartCommand: ["/usr/bin/env", "hermes", "gateway", "restart"]
-                )
-            ]
-        )
+        return CompanionServiceRegistryDocument(services: knownServices())
     }
 
     private static func migratedDocument(from document: CompanionServiceRegistryDocument) -> CompanionServiceRegistryDocument {
-        return CompanionServiceRegistryDocument(
-            services: document.services.map { service in
-                guard service.id == "hermesd" else { return service }
-                return CompanionManagedServiceRecord(
-                    id: service.id,
-                    displayName: "Hermes Gateway / API Server",
-                    statusCommand: ["/usr/bin/env", "hermes", "gateway", "status"],
-                    restartCommand: ["/usr/bin/env", "hermes", "gateway", "restart"]
-                )
+        var merged: [CompanionManagedServiceRecord] = []
+        let known = Dictionary(uniqueKeysWithValues: knownServices().map { ($0.id, $0) })
+        let existingIDs = Set(document.services.map(\.id))
+
+        for service in document.services {
+            if let updatedKnownService = known[service.id] {
+                merged.append(updatedKnownService)
+            } else {
+                merged.append(service)
             }
+        }
+
+        for service in knownServices() where existingIDs.contains(service.id) == false {
+            merged.append(service)
+        }
+
+        return CompanionServiceRegistryDocument(services: merged)
+    }
+
+    private static func knownServices() -> [CompanionManagedServiceRecord] {
+        return [
+            CompanionManagedServiceRecord(
+                id: "hermesd",
+                displayName: "Hermes Gateway / API Server",
+                statusCommand: ["/usr/bin/env", "hermes", "gateway", "status"],
+                restartCommand: ["/usr/bin/env", "hermes", "gateway", "restart"],
+                startCommand: ["/usr/bin/env", "hermes", "gateway", "start"],
+                stopCommand: ["/usr/bin/env", "hermes", "gateway", "stop"]
+            ),
+            launchAgentService(
+                id: "hermes-dashboard",
+                displayName: "Hermes Dashboard",
+                label: "fr.dubertrand.hermes-dashboard-host-proxy",
+                plistPath: "~/Library/LaunchAgents/fr.dubertrand.hermes-dashboard-host-proxy.plist"
+            ),
+            launchAgentService(
+                id: "claw3d-adapter",
+                displayName: "Claw3D Hermes Adapter",
+                label: "fr.dubertrand.hermes-office-adapter",
+                plistPath: "~/Library/LaunchAgents/fr.dubertrand.hermes-office-adapter.plist"
+            ),
+            launchAgentService(
+                id: "openclaw-gateway",
+                displayName: "OpenClaw Gateway",
+                label: "ai.openclaw.gateway",
+                plistPath: "~/Library/LaunchAgents/ai.openclaw.gateway.plist"
+            )
+        ]
+    }
+
+    private static func launchAgentService(id: String, displayName: String, label: String, plistPath: String) -> CompanionManagedServiceRecord {
+        let domain = "gui/$(id -u)"
+        let service = "\(domain)/\(label)"
+        let startScript = "label='\(label)'; plist=\(plistPath); test -f \"${plist/#\\~/$HOME}\" || { echo \"LaunchAgent plist not found: $plist\"; exit 1; }; launchctl enable \(domain)/$label 2>/dev/null || true; launchctl bootstrap \(domain) \"${plist/#\\~/$HOME}\" 2>/dev/null || true; launchctl kickstart -k \(service)"
+        let stopScript = "launchctl bootout \(service) 2>/dev/null || true; echo 'Service stopped: \(label)'"
+        return CompanionManagedServiceRecord(
+            id: id,
+            displayName: displayName,
+            statusCommand: ["/bin/zsh", "-lc", "launchctl print \(service) 2>&1"],
+            restartCommand: ["/bin/zsh", "-lc", startScript],
+            startCommand: ["/bin/zsh", "-lc", startScript],
+            stopCommand: ["/bin/zsh", "-lc", stopScript]
         )
     }
 }

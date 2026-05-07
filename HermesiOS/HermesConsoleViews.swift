@@ -404,7 +404,7 @@ struct HermesResponsesConsoleView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var responseSession: HermesResponsesSession
-    @State private var apiServerModels: [HermesAPIServerModel] = []
+    @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
     @State private var speechSession = HermesSpeechTranscriptionSession()
@@ -417,13 +417,15 @@ struct HermesResponsesConsoleView: View {
                     HermesTabHeader("Responses API", systemImage: "dot.radiowaves.left.and.right")
 
                     HStack(alignment: .top, spacing: 12) {
-                        HermesModelSelector(
-                            selectedModel: $requestDraft.model,
-                            apiModels: apiServerModels,
-                            isEnabled: !responseSession.hasActiveConversation,
-                            lockedModel: responseSession.activeModel,
-                            fallbackModel: "hermes-agent"
-                        )
+                        HermesProfileSelector(
+                            selectedProfile: $requestDraft.profile,
+                            apiProfiles: apiProfiles,
+                            lockedProfile: responseSession.activeProfile
+                        ) { newProfile in
+                            if responseSession.activeProfile != newProfile {
+                                responseSession.terminateAndStartNewSession()
+                            }
+                        }
 
                         HermesStatusRow(
                             items: [
@@ -448,10 +450,10 @@ struct HermesResponsesConsoleView: View {
             if promptText.isEmpty {
                 promptText = requestDraft.userPrompt
             }
-            await refreshAPIServerModels()
+            await refreshAPIProfiles()
         }
         .onChange(of: apiSettings) { _, _ in
-            Task { await refreshAPIServerModels() }
+            Task { await refreshAPIProfiles() }
         }
         .onChange(of: promptText) { _, text in
             requestDraft.userPrompt = text
@@ -486,7 +488,10 @@ struct HermesResponsesConsoleView: View {
                         .hermesLiquidGlass(cornerRadius: 22, tint: Color.igActionBlue.opacity(0.06))
                     } else {
                         ForEach(responseSession.entries) { message in
-                            HermesResponseBubble(message: message)
+                            HermesResponseBubble(
+                                message: message,
+                                isResponding: isResponsePlaceholder(message)
+                            )
                                 .id(message.id)
                         }
                     }
@@ -637,6 +642,13 @@ struct HermesResponsesConsoleView: View {
         canResumeLastResponseSession || responseSession.hasActiveConversation || responseSession.isSending
     }
 
+    private func isResponsePlaceholder(_ message: HermesResponseMessage) -> Bool {
+        responseSession.isSending
+            && message.role != "user"
+            && message.content.isEmpty
+            && responseSession.entries.last?.id == message.id
+    }
+
     private func handleAttachmentImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -652,62 +664,70 @@ struct HermesResponsesConsoleView: View {
         }
     }
 
-    private func refreshAPIServerModels() async {
+    private func refreshAPIProfiles() async {
         do {
-            let models = try await HermesAPIServerModelsClient.fetchModels(apiSettings: apiSettings)
-            apiServerModels = models
-            syncSelectedModelWithAPIServerModels(models, selectedModel: &requestDraft.model)
+            let profiles = try await HermesAPIProfilesClient.fetchProfiles(apiSettings: apiSettings)
+            apiProfiles = profiles
+            syncSelectedProfileWithAPIProfiles(profiles, selectedProfile: &requestDraft.profile)
         } catch {
-            if apiServerModels.isEmpty {
-                apiServerModels = []
+            if apiProfiles.isEmpty {
+                apiProfiles = []
             }
         }
     }
 
-    private func syncSelectedModelWithAPIServerModels(_ models: [HermesAPIServerModel], selectedModel: inout String) {
-        guard let firstModel = models.first?.id else { return }
-        let current = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        if current.isEmpty || !models.contains(where: { $0.id == current }) {
-            selectedModel = firstModel
+    private func syncSelectedProfileWithAPIProfiles(_ profiles: [HermesAPIProfile], selectedProfile: inout String) {
+        let current = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if current.isEmpty {
+            selectedProfile = profiles.first?.id ?? "default"
+        } else if !profiles.isEmpty && !profiles.contains(where: { $0.id == current }) {
+            selectedProfile = profiles.first?.id ?? "default"
         }
     }
 }
 
-private struct HermesModelSelector: View {
-    @Binding var selectedModel: String
-    let apiModels: [HermesAPIServerModel]
-    let isEnabled: Bool
-    let lockedModel: String
-    let fallbackModel: String
+private struct HermesProfileSelector: View {
+    @Binding var selectedProfile: String
+    let apiProfiles: [HermesAPIProfile]
+    let lockedProfile: String
+    let onProfileSelected: (String) -> Void
 
-    private var currentModel: String {
-        let locked = lockedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var currentProfile: String {
+        let locked = lockedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
         if !locked.isEmpty { return locked }
-        let selected = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        return selected.isEmpty ? fallbackModel : selected
+        let selected = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        return selected.isEmpty ? "default" : selected
     }
 
     private var selection: Binding<String> {
         Binding(
-            get: { currentModel },
-            set: { selectedModel = $0 }
+            get: { currentProfile },
+            set: { newValue in
+                let profile = newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "default" : newValue
+                selectedProfile = profile
+                onProfileSelected(profile)
+            }
         )
     }
 
-    private var pickerModels: [HermesAPIServerModel] {
+    private var pickerProfiles: [HermesAPIProfile] {
         var seen = Set<String>()
-        var unique = apiModels.filter { model in
-            let value = model.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        var unique = apiProfiles.filter { profile in
+            let value = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty, !seen.contains(value) else { return false }
             seen.insert(value)
             return true
         }
 
-        if !currentModel.isEmpty, !seen.contains(currentModel) {
+        if !currentProfile.isEmpty, !seen.contains(currentProfile) {
             unique.insert(
-                HermesAPIServerModel(id: currentModel, object: "model", ownedBy: nil),
+                HermesAPIProfile(id: currentProfile, name: currentProfile, isDefault: currentProfile == "default", model: nil, provider: nil),
                 at: 0
             )
+        }
+
+        if unique.isEmpty {
+            unique.append(HermesAPIProfile(id: "default", name: "default", isDefault: true, model: nil, provider: nil))
         }
 
         return unique
@@ -715,19 +735,18 @@ private struct HermesModelSelector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("MODEL")
+            Text("PROFILE")
                 .font(.igBadge)
                 .tracking(0.6)
                 .foregroundStyle(.hermesSecondaryText)
 
-            Picker("Model", selection: selection) {
-                ForEach(pickerModels) { model in
-                    Text(label(for: model)).tag(model.id)
+            Picker("Profile", selection: selection) {
+                ForEach(pickerProfiles) { profile in
+                    Text(label(for: profile)).tag(profile.id)
                 }
             }
             .pickerStyle(.menu)
             .labelsHidden()
-            .disabled(!isEnabled)
             .font(.igUsername)
             .lineLimit(1)
             .tint(.primary)
@@ -735,20 +754,22 @@ private struct HermesModelSelector: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(minWidth: 170, maxWidth: 260, alignment: .leading)
-        .hermesLiquidGlass(cornerRadius: 18, tint: Color.igActionBlue.opacity(0.08), interactive: isEnabled)
-        .opacity(isEnabled ? 1 : 0.72)
-        .accessibilityLabel(isEnabled ? "Choose model" : "Model locked for this session")
+        .hermesLiquidGlass(cornerRadius: 18, tint: Color.igActionBlue.opacity(0.08), interactive: true)
+        .accessibilityLabel("Choose Hermes profile")
     }
 
-    private func label(for model: HermesAPIServerModel) -> String {
-        let id = model.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        let owner = model.ownedBy?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return owner.isEmpty || owner == "hermes" ? id : "\(id) · \(owner)"
+    private func label(for profile: HermesAPIProfile) -> String {
+        let id = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let provider = profile.provider?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let model = profile.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let detail = [provider, model].filter { !$0.isEmpty }.joined(separator: " · ")
+        return detail.isEmpty ? id : "\(id) · \(detail)"
     }
 }
 
 struct HermesResponseBubble: View {
     let message: HermesResponseMessage
+    var isResponding = false
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -762,7 +783,8 @@ struct HermesResponseBubble: View {
                 HermesCopyableBubbleContent(
                     text: displayContent,
                     copyText: message.content,
-                    isUser: isUser
+                    isUser: isUser,
+                    isResponding: isResponding
                 )
             }
             .frame(maxWidth: 620, alignment: isUser ? .trailing : .leading)
@@ -775,9 +797,6 @@ struct HermesResponseBubble: View {
     private var isUser: Bool { message.role == "user" }
 
     private var displayContent: String {
-        if message.content.isEmpty, !isUser {
-            return "…"
-        }
         return message.content
     }
 }
@@ -785,6 +804,7 @@ struct HermesResponseBubble: View {
 struct HermesChatBubble: View {
     let message: HermesChatMessage
     var liveContent: String? = nil
+    var isResponding = false
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -798,7 +818,8 @@ struct HermesChatBubble: View {
                 HermesCopyableBubbleContent(
                     text: displayContent,
                     copyText: copyContent,
-                    isUser: isUser
+                    isUser: isUser,
+                    isResponding: isResponding
                 )
             }
             .frame(maxWidth: 620, alignment: isUser ? .trailing : .leading)
@@ -816,9 +837,6 @@ struct HermesChatBubble: View {
     }
 
     private var displayContent: String {
-        if resolvedContent.isEmpty, !isUser {
-            return "…"
-        }
         return resolvedContent
     }
 
@@ -831,12 +849,20 @@ private struct HermesCopyableBubbleContent: View {
     let text: String
     let copyText: String
     let isUser: Bool
+    var isResponding = false
 
     var body: some View {
-        Text(text)
-            .font(.body)
-            .foregroundStyle(isUser ? .white : .primary)
-            .textSelection(.enabled)
+        Group {
+            if isResponding && text.isEmpty && !isUser {
+                HermesUndulatingDotsIndicator()
+                    .accessibilityLabel("Hermes is responding")
+            } else {
+                Text(text)
+                    .font(.body)
+                    .foregroundStyle(isUser ? .white : .primary)
+                    .textSelection(.enabled)
+            }
+        }
             .padding(.leading, 14)
             .padding(.trailing, 32)
             .padding(.top, 11)
@@ -850,10 +876,38 @@ private struct HermesCopyableBubbleContent: View {
                     .strokeBorder(isUser ? Color.igActionBlue.opacity(0.45) : Color.hermesDivider.opacity(0.7), lineWidth: 1)
             )
             .overlay(alignment: .bottomTrailing) {
-                HermesBubbleCopyButton(text: copyText, isUserBubble: isUser)
-                    .padding(.trailing, 8)
-                    .padding(.bottom, 6)
+                if !copyText.isEmpty {
+                    HermesBubbleCopyButton(text: copyText, isUserBubble: isUser)
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 6)
+                }
             }
+    }
+}
+
+private struct HermesUndulatingDotsIndicator: View {
+    private let dotCount = 3
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+
+            HStack(spacing: 6) {
+                ForEach(0..<dotCount, id: \.self) { index in
+                    let phase = time * 4.0 - Double(index) * 0.55
+                    let wave = (sin(phase) + 1.0) / 2.0
+
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 7, weight: .bold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                        .offset(y: CGFloat(-5.0 * wave))
+                        .scaleEffect(0.78 + (0.22 * wave))
+                        .opacity(0.45 + (0.45 * wave))
+                }
+            }
+            .frame(width: 42, height: 20, alignment: .center)
+        }
     }
 }
 
@@ -905,7 +959,7 @@ struct HermesChatConsoleView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var chatSession: HermesChatSession
-    @State private var apiServerModels: [HermesAPIServerModel] = []
+    @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
     @State private var speechSession = HermesSpeechTranscriptionSession()
@@ -918,13 +972,15 @@ struct HermesChatConsoleView: View {
                     HermesTabHeader("Chat Completions", systemImage: "text.bubble")
 
                     HStack(alignment: .top, spacing: 12) {
-                        HermesModelSelector(
-                            selectedModel: $chatDraft.model,
-                            apiModels: apiServerModels,
-                            isEnabled: chatSession.entries.isEmpty && !chatSession.isSending,
-                            lockedModel: chatSession.activeModel,
-                            fallbackModel: "hermes-agent"
-                        )
+                        HermesProfileSelector(
+                            selectedProfile: $chatDraft.profile,
+                            apiProfiles: apiProfiles,
+                            lockedProfile: chatSession.activeProfile
+                        ) { newProfile in
+                            if chatSession.activeProfile != newProfile {
+                                chatSession.resetConversation()
+                            }
+                        }
 
                         HermesStatusRow(
                             items: [
@@ -950,10 +1006,10 @@ struct HermesChatConsoleView: View {
             if promptText.isEmpty {
                 promptText = chatDraft.userPrompt
             }
-            await refreshAPIServerModels()
+            await refreshAPIProfiles()
         }
         .onChange(of: apiSettings) { _, _ in
-            Task { await refreshAPIServerModels() }
+            Task { await refreshAPIProfiles() }
         }
         .onChange(of: promptText) { _, text in
             chatDraft.userPrompt = text
@@ -990,7 +1046,8 @@ struct HermesChatConsoleView: View {
                         ForEach(chatSession.entries) { message in
                             HermesChatBubble(
                                 message: message,
-                                liveContent: liveContent(for: message)
+                                liveContent: liveContent(for: message),
+                                isResponding: isChatPlaceholder(message)
                             )
                             .id(message.id)
                         }
@@ -1153,33 +1210,45 @@ struct HermesChatConsoleView: View {
         }
     }
 
+    private func isChatPlaceholder(_ message: HermesChatMessage) -> Bool {
+        chatSession.isSending
+            && message.role != "user"
+            && resolvedLiveContent(for: message).isEmpty
+            && message.id == chatSession.entries.last(where: { $0.role != "user" })?.id
+    }
+
     private func liveContent(for message: HermesChatMessage) -> String? {
+        let content = resolvedLiveContent(for: message)
+        return content.isEmpty ? nil : content
+    }
+
+    private func resolvedLiveContent(for message: HermesChatMessage) -> String {
         guard chatSession.isSending,
               message.role != "user",
-              message.id == chatSession.entries.last(where: { $0.role != "user" })?.id,
-              !chatSession.streamedText.isEmpty
-        else { return nil }
+              message.id == chatSession.entries.last(where: { $0.role != "user" })?.id
+        else { return "" }
 
         return chatSession.streamedText
     }
 
-    private func refreshAPIServerModels() async {
+    private func refreshAPIProfiles() async {
         do {
-            let models = try await HermesAPIServerModelsClient.fetchModels(apiSettings: apiSettings)
-            apiServerModels = models
-            syncSelectedModelWithAPIServerModels(models, selectedModel: &chatDraft.model)
+            let profiles = try await HermesAPIProfilesClient.fetchProfiles(apiSettings: apiSettings)
+            apiProfiles = profiles
+            syncSelectedProfileWithAPIProfiles(profiles, selectedProfile: &chatDraft.profile)
         } catch {
-            if apiServerModels.isEmpty {
-                apiServerModels = []
+            if apiProfiles.isEmpty {
+                apiProfiles = []
             }
         }
     }
 
-    private func syncSelectedModelWithAPIServerModels(_ models: [HermesAPIServerModel], selectedModel: inout String) {
-        guard let firstModel = models.first?.id else { return }
-        let current = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        if current.isEmpty || !models.contains(where: { $0.id == current }) {
-            selectedModel = firstModel
+    private func syncSelectedProfileWithAPIProfiles(_ profiles: [HermesAPIProfile], selectedProfile: inout String) {
+        let current = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if current.isEmpty {
+            selectedProfile = profiles.first?.id ?? "default"
+        } else if !profiles.isEmpty && !profiles.contains(where: { $0.id == current }) {
+            selectedProfile = profiles.first?.id ?? "default"
         }
     }
 }

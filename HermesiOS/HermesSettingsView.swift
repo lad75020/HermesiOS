@@ -16,6 +16,12 @@ struct HermesSettingsView: View {
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
 
+    private let macServices: [HermesSettingsMacService] = [
+        .init(id: "hermes-dashboard", title: "Hermes Dashboard", subtitle: "Host-rewriting dashboard proxy", icon: "rectangle.on.rectangle.angled"),
+        .init(id: "claw3d-adapter", title: "Claw3D Adapter", subtitle: "Hermes Office / Claw3D bridge", icon: "cube.transparent"),
+        .init(id: "openclaw-gateway", title: "OpenClaw Gateway", subtitle: "Claw3D gateway service", icon: "point.3.connected.trianglepath.dotted")
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
             HermesTabHeader("Settings", systemImage: "slider.horizontal.3")
@@ -42,6 +48,49 @@ struct HermesSettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .hermesRuntimeInput()
+                }
+
+                Section("Mac Services") {
+                    if companionEnrollment.identityState.isEnrolled == false {
+                        Text("Authenticate Host Companion before controlling Mac services from iOS.")
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+
+                    ForEach(macServices) { service in
+                        HermesSettingsMacServiceRow(
+                            service: service,
+                            status: companionRuntime.macServiceStatuses[service.id]?.status,
+                            output: companionRuntime.macServiceOutputs[service.id] ?? "",
+                            isEnabled: companionEnrollment.identityState.isEnrolled && !companionRuntime.isBusy,
+                            onStart: {
+                                companionRuntime.startMacService(
+                                    service.id,
+                                    settings: companionSettings,
+                                    identityState: companionEnrollment.identityState
+                                )
+                            },
+                            onStop: {
+                                companionRuntime.stopMacService(
+                                    service.id,
+                                    settings: companionSettings,
+                                    identityState: companionEnrollment.identityState
+                                )
+                            }
+                        )
+                    }
+
+                    Button {
+                        companionRuntime.refreshMacServices(
+                            macServices.map(\.id),
+                            settings: companionSettings,
+                            identityState: companionEnrollment.identityState
+                        )
+                    } label: {
+                        Label("Refresh Service Status", systemImage: "arrow.clockwise")
+                    }
+                    .hermesGlassButton()
+                    .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isBusy)
                 }
 
                 HermesOfficeSettingsSection()
@@ -135,10 +184,6 @@ struct HermesSettingsView: View {
 
 
                 Section("/v1/responses") {
-                TextField("Model", text: $responsesDraft.model)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
                 Toggle("Streaming enabled", isOn: $responsesDraft.stream)
 
                 TextField("Instructions", text: $responsesDraft.instructions, axis: .vertical)
@@ -146,10 +191,6 @@ struct HermesSettingsView: View {
                 }
 
                 Section("/v1/chat/completions") {
-                TextField("Model", text: $chatDraft.model)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
                 Toggle("Streaming enabled", isOn: $chatDraft.stream)
 
                 TextField("System prompt", text: $chatDraft.systemPrompt, axis: .vertical)
@@ -161,6 +202,14 @@ struct HermesSettingsView: View {
         }
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
+        .task(id: companionEnrollment.identityState.deviceID) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            companionRuntime.refreshMacServices(
+                macServices.map(\.id),
+                settings: companionSettings,
+                identityState: companionEnrollment.identityState
+            )
+        }
     }
 
     private func settingsRow(label: String, value: String) -> some View {
@@ -174,5 +223,99 @@ struct HermesSettingsView: View {
         }
         .font(.subheadline)
     }
+}
 
+private struct HermesSettingsMacService: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let icon: String
+}
+
+private struct HermesSettingsMacServiceRow: View {
+    let service: HermesSettingsMacService
+    let status: HermesCompanionManagedServiceStatus?
+    let output: String
+    let isEnabled: Bool
+    let onStart: () -> Void
+    let onStop: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: service.icon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(statusColor)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(service.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(service.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+
+                Spacer()
+
+                Label(statusLabel, systemImage: statusIcon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(statusColor)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    onStart()
+                } label: {
+                    Label("Start", systemImage: "play.fill")
+                }
+                .hermesGlassProminentButton()
+                .disabled(!isEnabled || status == .running)
+
+                Button(role: .destructive) {
+                    onStop()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                .hermesGlassButton()
+                .disabled(!isEnabled || status == .stopped)
+            }
+
+            let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedOutput.isEmpty {
+                Text(trimmedOutput)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(3)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var statusLabel: String {
+        switch status {
+        case .running: "Running"
+        case .stopped: "Stopped"
+        case .restarted: "Restarted"
+        case .started: "Started"
+        case .unknown: "Unknown"
+        case nil: "Not checked"
+        }
+    }
+
+    private var statusIcon: String {
+        switch status {
+        case .running, .started, .restarted: "checkmark.circle.fill"
+        case .stopped: "stop.circle"
+        case .unknown, nil: "questionmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .running, .started, .restarted: .igOnlineGreen
+        case .stopped: .igDestructive
+        case .unknown, nil: .hermesSecondaryText
+        }
+    }
 }

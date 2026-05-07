@@ -293,6 +293,8 @@ final class CompanionClientSession {
                         "list_backups",
                         "restore_backup",
                         "service_status",
+                        "service_start",
+                        "service_stop",
                         "service_restart",
                         "list_skills",
                         "set_skill_state",
@@ -419,6 +421,28 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "service_status_failed", message: error.localizedDescription)
+            }
+        case "service_start":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The service_start request requires a payload.")
+                }
+                let startPayload = try payload.decode(ServiceStartPayload.self)
+                let result = try serviceRegistry.start(serviceID: startPayload.serviceID)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "service_start_failed", message: error.localizedDescription)
+            }
+        case "service_stop":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The service_stop request requires a payload.")
+                }
+                let stopPayload = try payload.decode(ServiceStopPayload.self)
+                let result = try serviceRegistry.stop(serviceID: stopPayload.serviceID)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "service_stop_failed", message: error.localizedDescription)
             }
         case "service_restart":
             do {

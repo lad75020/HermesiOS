@@ -14,7 +14,7 @@ final class HermesChatSession {
     var entries: [HermesChatMessage] = []
     var streamedText = ""
     var isSending = false
-    var activeModel = ""
+    var activeProfile = ""
     var connectionStatus = "Idle"
     var activeChatSessionID = ""
     var lastKnownChatSessionID = ""
@@ -31,14 +31,14 @@ final class HermesChatSession {
 
     func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment? = nil) {
         requestTask?.cancel()
-        let requestedModel = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if activeModel.isEmpty {
-            activeModel = requestedModel.isEmpty ? "hermes-agent" : requestedModel
+        let requestedProfile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if activeProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            activeProfile = requestedProfile.isEmpty ? "default" : requestedProfile
         }
         if activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             persistLastChatSessionID(Self.makeChatSessionID())
         }
-        let lockedDraft = draft.locked(to: activeModel)
+        let lockedDraft = draft.locked(toProfile: activeProfile)
         requestTask = Task {
             await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment)
         }
@@ -58,7 +58,7 @@ final class HermesChatSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
-        activeModel = ""
+        activeProfile = ""
         activeChatSessionID = ""
         connectionStatus = "Idle"
         lastErrorMessage = ""
@@ -226,7 +226,7 @@ final class HermesChatSession {
             : [HermesChatRequestMessage(role: "system", content: .text(draft.systemPrompt))] + historyMessages + [userMessage]
 
         let payload = HermesChatCompletionsRequestBody(
-            model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "hermes-agent" : draft.model,
+            model: "hermes-agent",
             messages: requestMessages,
             stream: stream,
             user: activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : activeChatSessionID
@@ -246,6 +246,9 @@ final class HermesChatSession {
             request.setValue(chatSessionID, forHTTPHeaderField: "x-hermes-session-id")
             request.setValue(chatSessionID, forHTTPHeaderField: "x-openclaw-session-key")
         }
+
+        let profile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.setValue(profile.isEmpty ? "default" : profile, forHTTPHeaderField: "X-Hermes-Profile")
 
         if !apiSettings.apiKey.isEmpty {
             request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
@@ -457,17 +460,42 @@ final class HermesChatSession {
 }
 
 struct HermesChatDraft: Codable, Equatable {
-    var model = "hermes-agent"
+    var profile = "default"
     var systemPrompt = "You are a helpful coding assistant."
     var userPrompt = "Summarize the current project layout."
     var stream = true
 
-    func locked(to model: String) -> HermesChatDraft {
+    enum CodingKeys: String, CodingKey {
+        case profile
+        case systemPrompt
+        case userPrompt
+        case stream
+        case legacyModel = "model"
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profile = try container.decodeIfPresent(String.self, forKey: .profile) ?? "default"
+        _ = try container.decodeIfPresent(String.self, forKey: .legacyModel)
+        systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? systemPrompt
+        userPrompt = try container.decodeIfPresent(String.self, forKey: .userPrompt) ?? userPrompt
+        stream = try container.decodeIfPresent(Bool.self, forKey: .stream) ?? stream
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(profile, forKey: .profile)
+        try container.encode(systemPrompt, forKey: .systemPrompt)
+        try container.encode(userPrompt, forKey: .userPrompt)
+        try container.encode(stream, forKey: .stream)
+    }
+
+    func locked(toProfile profile: String) -> HermesChatDraft {
         var copy = self
-        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedModel.isEmpty {
-            copy.model = trimmedModel
-        }
+        let trimmedProfile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.profile = trimmedProfile.isEmpty ? "default" : trimmedProfile
         return copy
     }
 }

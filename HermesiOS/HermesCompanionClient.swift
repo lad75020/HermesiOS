@@ -121,7 +121,27 @@ struct HermesCompanionServiceRestartPayload: Codable {
     let serviceID: String
 }
 
+struct HermesCompanionServiceStartPayload: Codable {
+    let serviceID: String
+}
+
+struct HermesCompanionServiceStopPayload: Codable {
+    let serviceID: String
+}
+
 struct HermesCompanionServiceRestartResult: Codable {
+    let serviceID: String
+    let status: HermesCompanionManagedServiceStatus
+    let output: String
+}
+
+struct HermesCompanionServiceStartResult: Codable {
+    let serviceID: String
+    let status: HermesCompanionManagedServiceStatus
+    let output: String
+}
+
+struct HermesCompanionServiceStopResult: Codable {
     let serviceID: String
     let status: HermesCompanionManagedServiceStatus
     let output: String
@@ -851,6 +871,7 @@ enum HermesCompanionManagedServiceStatus: String, Codable, Equatable {
     case stopped
     case unknown
     case restarted
+    case started
 }
 
 enum HermesCompanionJSONValue: Codable {
@@ -1039,6 +1060,8 @@ final class HermesCompanionRuntimeSession {
     var diagnostics: [HermesCompanionValidationDiagnostic] = []
     var linkedServiceStatus = ""
     var linkedServiceOutput = ""
+    var macServiceStatuses: [String: HermesCompanionServiceStatusResult] = [:]
+    var macServiceOutputs: [String: String] = [:]
     var connectionStatus = "Idle"
     var lastErrorMessage = ""
     var isBusy = false
@@ -1196,6 +1219,66 @@ final class HermesCompanionRuntimeSession {
             self.linkedServiceStatus = result.status.rawValue.capitalized
             self.linkedServiceOutput = result.output
             self.connectionStatus = "API Server Restarted"
+        }
+    }
+
+    func refreshMacServices(_ serviceIDs: [String], settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Checking Mac Services"
+            for serviceID in serviceIDs {
+                let result: HermesCompanionServiceStatusResult = try await HermesCompanionSessionFactory.request(
+                    settings: settings,
+                    state: identityState,
+                    type: "service_status",
+                    payload: HermesCompanionServiceStatusPayload(serviceID: serviceID)
+                )
+                self.macServiceStatuses[serviceID] = result
+                self.macServiceOutputs[serviceID] = result.output
+            }
+            self.connectionStatus = "Mac Services Updated"
+        }
+    }
+
+    func startMacService(_ serviceID: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Starting \(serviceID)"
+            let result: HermesCompanionServiceStartResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "service_start",
+                payload: HermesCompanionServiceStartPayload(serviceID: serviceID)
+            )
+            self.macServiceOutputs[serviceID] = result.output
+            try await self.refreshMacService(serviceID, settings: settings, identityState: identityState)
+            self.connectionStatus = "Service Started"
+        }
+    }
+
+    func stopMacService(_ serviceID: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Stopping \(serviceID)"
+            let result: HermesCompanionServiceStopResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "service_stop",
+                payload: HermesCompanionServiceStopPayload(serviceID: serviceID)
+            )
+            self.macServiceOutputs[serviceID] = result.output
+            try await self.refreshMacService(serviceID, settings: settings, identityState: identityState)
+            self.connectionStatus = "Service Stopped"
+        }
+    }
+
+    private func refreshMacService(_ serviceID: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionServiceStatusResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "service_status",
+            payload: HermesCompanionServiceStatusPayload(serviceID: serviceID)
+        )
+        macServiceStatuses[serviceID] = result
+        if macServiceOutputs[serviceID, default: ""].isEmpty {
+            macServiceOutputs[serviceID] = result.output
         }
     }
 

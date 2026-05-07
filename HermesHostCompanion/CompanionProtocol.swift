@@ -141,7 +141,27 @@ struct ServiceRestartPayload: Codable {
     let serviceID: String
 }
 
+struct ServiceStartPayload: Codable {
+    let serviceID: String
+}
+
+struct ServiceStopPayload: Codable {
+    let serviceID: String
+}
+
 struct ServiceRestartResult: Codable {
+    let serviceID: String
+    let status: CompanionManagedServiceStatus
+    let output: String
+}
+
+struct ServiceStartResult: Codable {
+    let serviceID: String
+    let status: CompanionManagedServiceStatus
+    let output: String
+}
+
+struct ServiceStopResult: Codable {
     let serviceID: String
     let status: CompanionManagedServiceStatus
     let output: String
@@ -763,6 +783,7 @@ enum CompanionManagedServiceStatus: String, Codable {
     case stopped
     case unknown
     case restarted
+    case started
 }
 
 struct CompanionValidationDiagnostic: Codable, Identifiable {

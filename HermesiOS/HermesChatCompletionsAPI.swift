@@ -14,6 +14,7 @@ final class HermesChatSession {
     var entries: [HermesChatMessage] = []
     var streamedText = ""
     var isSending = false
+    var activeModel = ""
     var connectionStatus = "Idle"
     var lastErrorMessage = ""
     var eventCount = 0
@@ -24,8 +25,13 @@ final class HermesChatSession {
 
     func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft) {
         requestTask?.cancel()
+        let requestedModel = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if activeModel.isEmpty {
+            activeModel = requestedModel.isEmpty ? "hermes-agent" : requestedModel
+        }
+        let lockedDraft = draft.locked(to: activeModel)
         requestTask = Task {
-            await runRequest(apiSettings: apiSettings, draft: draft)
+            await runRequest(apiSettings: apiSettings, draft: lockedDraft)
         }
     }
 
@@ -43,6 +49,7 @@ final class HermesChatSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
+        activeModel = ""
         connectionStatus = "Idle"
         lastErrorMessage = ""
         eventCount = 0
@@ -159,6 +166,7 @@ final class HermesChatSession {
             : [HermesChatRequestMessage(role: "system", content: draft.systemPrompt)] + historyMessages + [HermesChatRequestMessage(role: "user", content: draft.userPrompt)]
 
         let payload = HermesChatCompletionsRequestBody(
+            model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "hermes-agent" : draft.model,
             messages: requestMessages,
             stream: stream
         )
@@ -367,6 +375,7 @@ struct HermesChatMessage: Identifiable {
 }
 
 private struct HermesChatCompletionsRequestBody: Encodable {
+    let model: String
     let messages: [HermesChatRequestMessage]
     let stream: Bool
 }

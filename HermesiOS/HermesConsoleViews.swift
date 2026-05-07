@@ -18,6 +18,7 @@ struct HermesResponsesConsoleView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var responseSession: HermesResponsesSession
+    @State private var apiServerModels: [HermesAPIServerModel] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,9 +29,9 @@ struct HermesResponsesConsoleView: View {
                     HStack(alignment: .top, spacing: 12) {
                         HermesModelSelector(
                             selectedModel: $requestDraft.model,
-                            savedModels: companionRuntime.hermesModels,
+                            apiModels: apiServerModels,
                             isEnabled: !responseSession.hasActiveConversation,
-                            lockedModel: "",
+                            lockedModel: responseSession.activeModel,
                             fallbackModel: "hermes-agent"
                         )
 
@@ -53,11 +54,11 @@ struct HermesResponsesConsoleView: View {
         }
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
-        .task(id: companionEnrollment.identityState.deviceID) {
-            refreshModelsIfAvailable()
+        .task(id: apiSettings.baseURL) {
+            await refreshAPIServerModels()
         }
-        .task(id: companionSettings.hermesWorkspacePath) {
-            refreshModelsIfAvailable()
+        .onChange(of: apiSettings) { _, _ in
+            Task { await refreshAPIServerModels() }
         }
     }
 
@@ -167,18 +168,30 @@ struct HermesResponsesConsoleView: View {
         }
     }
 
-    private func refreshModelsIfAvailable() {
-        guard companionEnrollment.identityState.isEnrolled else { return }
-        companionRuntime.refreshHermesModels(
-            settings: companionSettings,
-            identityState: companionEnrollment.identityState
-        )
+    private func refreshAPIServerModels() async {
+        do {
+            let models = try await HermesAPIServerModelsClient.fetchModels(apiSettings: apiSettings)
+            apiServerModels = models
+            syncSelectedModelWithAPIServerModels(models, selectedModel: &requestDraft.model)
+        } catch {
+            if apiServerModels.isEmpty {
+                apiServerModels = []
+            }
+        }
+    }
+
+    private func syncSelectedModelWithAPIServerModels(_ models: [HermesAPIServerModel], selectedModel: inout String) {
+        guard let firstModel = models.first?.id else { return }
+        let current = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if current.isEmpty || !models.contains(where: { $0.id == current }) {
+            selectedModel = firstModel
+        }
     }
 }
 
 private struct HermesModelSelector: View {
     @Binding var selectedModel: String
-    let savedModels: [HermesCompanionSavedModel]
+    let apiModels: [HermesAPIServerModel]
     let isEnabled: Bool
     let lockedModel: String
     let fallbackModel: String
@@ -197,10 +210,10 @@ private struct HermesModelSelector: View {
         )
     }
 
-    private var pickerModels: [HermesCompanionSavedModel] {
+    private var pickerModels: [HermesAPIServerModel] {
         var seen = Set<String>()
-        var unique = savedModels.filter { model in
-            let value = model.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        var unique = apiModels.filter { model in
+            let value = model.id.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty, !seen.contains(value) else { return false }
             seen.insert(value)
             return true
@@ -208,14 +221,7 @@ private struct HermesModelSelector: View {
 
         if !currentModel.isEmpty, !seen.contains(currentModel) {
             unique.insert(
-                HermesCompanionSavedModel(
-                    id: "current-\(currentModel)",
-                    name: currentModel,
-                    provider: "manual",
-                    model: currentModel,
-                    baseURL: "",
-                    createdAt: 0
-                ),
+                HermesAPIServerModel(id: currentModel, object: "model", ownedBy: nil),
                 at: 0
             )
         }
@@ -232,7 +238,7 @@ private struct HermesModelSelector: View {
 
             Picker("Model", selection: selection) {
                 ForEach(pickerModels) { model in
-                    Text(label(for: model)).tag(model.model)
+                    Text(label(for: model)).tag(model.id)
                 }
             }
             .pickerStyle(.menu)
@@ -250,15 +256,10 @@ private struct HermesModelSelector: View {
         .accessibilityLabel(isEnabled ? "Choose model" : "Model locked for this session")
     }
 
-    private func label(for savedModel: HermesCompanionSavedModel) -> String {
-        let name = savedModel.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let provider = savedModel.provider.trimmingCharacters(in: .whitespacesAndNewlines)
-        let model = savedModel.model.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if name.isEmpty || name == model {
-            return provider.isEmpty || provider == "manual" ? model : "\(model) · \(provider)"
-        }
-        return provider.isEmpty || provider == "manual" ? "\(name) · \(model)" : "\(name) · \(provider)"
+    private func label(for model: HermesAPIServerModel) -> String {
+        let id = model.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let owner = model.ownedBy?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return owner.isEmpty || owner == "hermes" ? id : "\(id) · \(owner)"
     }
 }
 
@@ -420,6 +421,7 @@ struct HermesChatConsoleView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var chatSession: HermesChatSession
+    @State private var apiServerModels: [HermesAPIServerModel] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -430,9 +432,9 @@ struct HermesChatConsoleView: View {
                     HStack(alignment: .top, spacing: 12) {
                         HermesModelSelector(
                             selectedModel: $chatDraft.model,
-                            savedModels: companionRuntime.hermesModels,
+                            apiModels: apiServerModels,
                             isEnabled: chatSession.entries.isEmpty && !chatSession.isSending,
-                            lockedModel: "",
+                            lockedModel: chatSession.activeModel,
                             fallbackModel: "hermes-agent"
                         )
 
@@ -455,11 +457,11 @@ struct HermesChatConsoleView: View {
         }
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
-        .task(id: companionEnrollment.identityState.deviceID) {
-            refreshModelsIfAvailable()
+        .task(id: apiSettings.baseURL) {
+            await refreshAPIServerModels()
         }
-        .task(id: companionSettings.hermesWorkspacePath) {
-            refreshModelsIfAvailable()
+        .onChange(of: apiSettings) { _, _ in
+            Task { await refreshAPIServerModels() }
         }
     }
 
@@ -580,11 +582,23 @@ struct HermesChatConsoleView: View {
         return chatSession.streamedText
     }
 
-    private func refreshModelsIfAvailable() {
-        guard companionEnrollment.identityState.isEnrolled else { return }
-        companionRuntime.refreshHermesModels(
-            settings: companionSettings,
-            identityState: companionEnrollment.identityState
-        )
+    private func refreshAPIServerModels() async {
+        do {
+            let models = try await HermesAPIServerModelsClient.fetchModels(apiSettings: apiSettings)
+            apiServerModels = models
+            syncSelectedModelWithAPIServerModels(models, selectedModel: &chatDraft.model)
+        } catch {
+            if apiServerModels.isEmpty {
+                apiServerModels = []
+            }
+        }
+    }
+
+    private func syncSelectedModelWithAPIServerModels(_ models: [HermesAPIServerModel], selectedModel: inout String) {
+        guard let firstModel = models.first?.id else { return }
+        let current = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if current.isEmpty || !models.contains(where: { $0.id == current }) {
+            selectedModel = firstModel
+        }
     }
 }

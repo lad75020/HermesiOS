@@ -59,6 +59,7 @@ final class HermesResponsesSession {
     var entries: [HermesResponseMessage] = []
     var streamedText = ""
     var isSending = false
+    var activeModel = ""
     var connectionStatus = "Idle"
     var latestResponseID = ""
     var previousResponseID = ""
@@ -76,8 +77,13 @@ final class HermesResponsesSession {
 
     func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft) {
         requestTask?.cancel()
+        let requestedModel = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if activeModel.isEmpty {
+            activeModel = requestedModel.isEmpty ? "hermes-agent" : requestedModel
+        }
+        let lockedDraft = draft.locked(to: activeModel)
         requestTask = Task {
-            await runRequest(apiSettings: apiSettings, draft: draft)
+            await runRequest(apiSettings: apiSettings, draft: lockedDraft)
         }
     }
 
@@ -95,6 +101,7 @@ final class HermesResponsesSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
+        activeModel = ""
         connectionStatus = "Idle"
         latestResponseID = ""
         previousResponseID = ""
@@ -116,6 +123,7 @@ final class HermesResponsesSession {
         activeAssistantEntryID = nil
         isSending = false
         latestResponseID = ""
+        activeModel = result.session.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let continuationID = Self.responseContinuationID(from: result)
         previousResponseID = continuationID
         lastErrorMessage = ""
@@ -265,6 +273,7 @@ final class HermesResponsesSession {
         }
 
         let payload = HermesResponsesRequestBody(
+            model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "hermes-agent" : draft.model,
             input: draft.userPrompt,
             instructions: draft.instructions,
             stream: stream,
@@ -383,6 +392,10 @@ struct HermesAPISettings: Codable, Equatable {
         endpointURL(from: baseURL, suffix: "chat/completions")
     }
 
+    static func modelsURL(from baseURL: String) -> URL? {
+        endpointURL(from: baseURL, suffix: "models")
+    }
+
     private static func endpointURL(from baseURL: String, suffix: String) -> URL? {
         let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -412,6 +425,49 @@ struct HermesAPISettings: Codable, Equatable {
     }
 }
 
+struct HermesAPIServerModel: Decodable, Identifiable, Equatable {
+    let id: String
+    let object: String?
+    let ownedBy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case object
+        case ownedBy = "owned_by"
+    }
+}
+
+private struct HermesAPIServerModelsEnvelope: Decodable {
+    let data: [HermesAPIServerModel]
+}
+
+enum HermesAPIServerModelsClient {
+    static func fetchModels(apiSettings: HermesAPISettings) async throws -> [HermesAPIServerModel] {
+        guard let url = HermesAPISettings.modelsURL(from: apiSettings.baseURL) else {
+            throw HermesResponsesError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if !apiSettings.apiKey.isEmpty {
+            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        }
+
+        let session = HermesNetworkSessionFactory.session(for: apiSettings)
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw HermesResponsesError.invalidResponse
+        }
+        guard 200 ..< 300 ~= httpResponse.statusCode else {
+            throw HermesResponsesError.httpError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(HermesAPIServerModelsEnvelope.self, from: data).data
+            .filter { !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+}
+
 struct HermesRequestDraft: Codable, Equatable {
     var model = "hermes-agent"
     var instructions = "You are a helpful coding assistant."
@@ -429,6 +485,7 @@ struct HermesRequestDraft: Codable, Equatable {
 }
 
 private struct HermesResponsesRequestBody: Encodable {
+    let model: String
     let input: String
     let instructions: String
     let stream: Bool
@@ -436,6 +493,7 @@ private struct HermesResponsesRequestBody: Encodable {
     let previousResponseID: String?
 
     enum CodingKeys: String, CodingKey {
+        case model
         case input
         case instructions
         case stream

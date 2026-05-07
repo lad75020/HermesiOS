@@ -323,6 +323,8 @@ final class HermesResponsesSession {
             }
             updateActiveAssistantEntry(with: streamedText)
             connectionStatus = "Streaming output"
+        } else if summary.title.hasPrefix("response.output_item.") {
+            connectionStatus = summary.status
         } else {
             connectionStatus = "Processing \(summary.title)"
         }
@@ -576,14 +578,18 @@ private enum HermesEventSummaryBuilder {
                 includeInTimeline: true
             )
 
-        case "response.output_item.added", "response.output_item.done":
+        case let eventName where eventName.hasPrefix("response.output_item."):
             let itemType = payload.string(at: ["item", "type"]) ?? payload.string(at: ["type"]) ?? "item"
             let name = payload.string(at: ["item", "name"]) ?? payload.string(at: ["name"])
+            let itemStatus = payload.string(at: ["item", "status"])
+                ?? payload.string(at: ["status"])
+                ?? String(eventName.dropFirst("response.output_item.".count))
+            let statusText = "\(name ?? itemType): \(itemStatus)"
             let detail = name.map { "\(itemType) \($0)" } ?? "Received \(itemType)."
             return HermesEventSummary(
                 title: title,
                 messageType: itemType,
-                status: title.hasSuffix("done") ? "Done" : "Update",
+                status: statusText,
                 detail: detail,
                 metadata: compactMetadata([
                     payload.string(at: ["item", "call_id"]).map { "Call ID: \($0)" },

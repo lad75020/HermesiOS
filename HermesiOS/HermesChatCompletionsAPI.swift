@@ -20,6 +20,7 @@ final class HermesChatSession {
     var rawStreamedJSON = ""
 
     private var requestTask: Task<Void, Never>?
+    private var activeAssistantEntryID: UUID?
 
     func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft) {
         requestTask?.cancel()
@@ -40,6 +41,7 @@ final class HermesChatSession {
         requestTask = nil
         entries = []
         streamedText = ""
+        activeAssistantEntryID = nil
         isSending = false
         connectionStatus = "Idle"
         lastErrorMessage = ""
@@ -49,7 +51,9 @@ final class HermesChatSession {
 
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft) async {
         let history = entries
+        let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         resetForRequest()
+        appendExchange(prompt: prompt)
         isSending = true
         connectionStatus = draft.stream ? "Connecting to chat stream" : "Sending chat request"
 
@@ -62,22 +66,16 @@ final class HermesChatSession {
                 }
             }
 
-            if !draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                entries.append(.init(role: "user", content: draft.userPrompt))
-            }
-
-            if !streamedText.isEmpty {
-                entries.append(.init(role: "assistant", content: streamedText))
-            }
-
             if !Task.isCancelled {
                 connectionStatus = "Completed"
             }
         } catch is CancellationError {
             connectionStatus = "Cancelled"
+            updateActiveAssistantEntry(with: streamedText.isEmpty ? "Cancelled." : streamedText)
         } catch {
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Failed"
+            updateActiveAssistantEntry(with: streamedText.isEmpty ? "Request failed: \(error.localizedDescription)" : streamedText)
         }
 
         isSending = false
@@ -88,6 +86,24 @@ final class HermesChatSession {
         lastErrorMessage = ""
         eventCount = 0
         rawStreamedJSON = ""
+        activeAssistantEntryID = nil
+    }
+
+    private func appendExchange(prompt: String) {
+        guard !prompt.isEmpty else { return }
+        entries.append(.init(role: "user", content: prompt))
+        let assistant = HermesChatMessage(role: "assistant", content: "")
+        activeAssistantEntryID = assistant.id
+        entries.append(assistant)
+    }
+
+    private func updateActiveAssistantEntry(with content: String) {
+        guard let activeAssistantEntryID,
+              let index = entries.firstIndex(where: { $0.id == activeAssistantEntryID })
+        else { return }
+        var updatedEntries = entries
+        updatedEntries[index].content = content
+        entries = updatedEntries
     }
 
     private func streamResponse(apiSettings: HermesAPISettings, draft: HermesChatDraft, history: [HermesChatMessage]) async throws {
@@ -124,6 +140,7 @@ final class HermesChatSession {
             let payload = HermesLooseJSON(data: data)
             streamedText = extractChatText(from: payload)
         }
+        updateActiveAssistantEntry(with: streamedText)
     }
 
     private func buildRequest(
@@ -236,10 +253,13 @@ final class HermesChatSession {
             case "response.output_text.done", "response.completed":
                 if streamedText.isEmpty {
                     streamedText = delta
+                } else if delta.hasPrefix(streamedText) {
+                    streamedText = delta
                 }
             default:
                 streamedText += delta
             }
+            updateActiveAssistantEntry(with: streamedText)
         }
 
         connectionStatus = didExtractText ? "Streaming output" : "Processing chat chunks"
@@ -335,7 +355,7 @@ struct HermesChatDraft: Codable, Equatable {
 struct HermesChatMessage: Identifiable {
     let id = UUID()
     let role: String
-    let content: String
+    var content: String
 }
 
 private struct HermesChatCompletionsRequestBody: Encodable {

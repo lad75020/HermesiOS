@@ -31,7 +31,6 @@ struct ContentView: View {
     @State private var companionRuntime = HermesCompanionRuntimeSession()
     @State private var statusMonitor = HermesStatusMonitor()
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
-    @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
     @State private var isShowingSplash = true
     @State private var isShowingStreamDebugJSON = false
 
@@ -264,7 +263,7 @@ struct ContentView: View {
                 onResumeConversation: resumeConversationInResponses
             )
         case .office:
-            HermesOfficeView(webViewStore: officeWebViewStore)
+            HermesOfficeView()
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,

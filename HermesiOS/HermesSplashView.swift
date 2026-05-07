@@ -3,95 +3,40 @@
 //  HermesiOS
 //
 
-import AVFoundation
 import SwiftUI
 
 struct HermesSplashView: View {
-    private let resourceName = "HermesSplash"
-    private let resourceExtension = "mp4"
-
     var body: some View {
         ZStack {
-            Color.black
-                .ignoresSafeArea()
+            LinearGradient(
+                colors: [
+                    Color(red: 0.02, green: 0.03, blue: 0.06),
+                    Color(red: 0.04, green: 0.10, blue: 0.18),
+                    Color(red: 0.01, green: 0.02, blue: 0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            if let videoURL = Bundle.main.url(forResource: resourceName, withExtension: resourceExtension) {
-                HermesSplashPlayerView(url: videoURL)
-                    .ignoresSafeArea()
-            } else {
-                VStack(spacing: 14) {
-                    Image(systemName: "sparkles.tv")
-                        .font(.system(size: 58, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text("Hermes")
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(.white)
-                }
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles.tv")
+                    .font(.system(size: 58, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(22)
+                    .hermesLiquidGlass(cornerRadius: 28, tint: Color.white.opacity(0.10))
+
+                Text("Hermes")
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text("iOS Console")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.72))
             }
+            .padding(32)
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)
-    }
-}
-
-private struct HermesSplashPlayerView: UIViewRepresentable {
-    let url: URL
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeUIView(context: Context) -> PlayerContainerView {
-        let view = PlayerContainerView()
-        let player = AVPlayer(url: url)
-        player.isMuted = true
-        player.actionAtItemEnd = .none
-
-        context.coordinator.player = player
-        context.coordinator.endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: player.currentItem,
-            queue: .main
-        ) { [weak player] _ in
-            player?.seek(to: .zero)
-            player?.play()
-        }
-
-        view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
-        player.play()
-        return view
-    }
-
-    func updateUIView(_ uiView: PlayerContainerView, context: Context) {
-        uiView.playerLayer.videoGravity = .resizeAspectFill
-        if uiView.playerLayer.player == nil {
-            uiView.playerLayer.player = context.coordinator.player
-        }
-    }
-
-    static func dismantleUIView(_ uiView: PlayerContainerView, coordinator: Coordinator) {
-        coordinator.player?.pause()
-        uiView.playerLayer.player = nil
-        if let endObserver = coordinator.endObserver {
-            NotificationCenter.default.removeObserver(endObserver)
-        }
-        coordinator.endObserver = nil
-        coordinator.player = nil
-    }
-
-    final class Coordinator {
-        var player: AVPlayer?
-        var endObserver: NSObjectProtocol?
-    }
-}
-
-private final class PlayerContainerView: UIView {
-    override class var layerClass: AnyClass {
-        AVPlayerLayer.self
-    }
-
-    var playerLayer: AVPlayerLayer {
-        layer as! AVPlayerLayer
     }
 }

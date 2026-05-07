@@ -13,12 +13,7 @@ private let hermesOfficeURLStorageKey = "hermes.office.url"
 struct HermesOfficeView: View {
     @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
     @State private var reloadID = UUID()
-
-    let webViewStore: HermesOfficeWebViewStore
-
-    init(webViewStore: HermesOfficeWebViewStore) {
-        self.webViewStore = webViewStore
-    }
+    @StateObject private var webViewStore = HermesOfficeWebViewStore()
 
     private var officeURL: URL? {
         let trimmedURL = officeURLString.trimmingCharacters(in: .whitespacesAndNewlines)

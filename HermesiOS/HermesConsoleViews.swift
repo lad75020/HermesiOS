@@ -103,7 +103,7 @@ final class HermesSpeechTranscriptionSession {
     var statusMessage = ""
     var lastErrorMessage = ""
 
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine: AVAudioEngine?
     private var analyzer: SpeechAnalyzer?
     private var transcriber: DictationTranscriber?
     private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
@@ -150,10 +150,10 @@ final class HermesSpeechTranscriptionSession {
     }
 
     private func finishRecognition(status: String? = nil, cancelAnalysis: Bool = false) {
-        if audioEngine.isRunning {
-            audioEngine.stop()
+        if audioEngine?.isRunning == true {
+            audioEngine?.stop()
         }
-        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine?.inputNode.removeTap(onBus: 0)
         inputContinuation?.finish()
         inputContinuation = nil
 
@@ -167,6 +167,7 @@ final class HermesSpeechTranscriptionSession {
         let analyzerToFinish = analyzer
         analyzer = nil
         transcriber = nil
+        audioEngine = nil
         audioConverter = nil
         analyzerAudioFormat = nil
         isRecording = false
@@ -230,6 +231,8 @@ final class HermesSpeechTranscriptionSession {
             try await installationRequest.downloadAndInstall()
         }
 
+        let audioEngine = AVAudioEngine()
+        self.audioEngine = audioEngine
         let inputNode = audioEngine.inputNode
         inputNode.removeTap(onBus: 0)
         let inputFormat = inputNode.outputFormat(forBus: 0)

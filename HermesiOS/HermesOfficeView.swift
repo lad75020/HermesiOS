@@ -3,6 +3,7 @@
 //  HermesiOS
 //
 
+import Combine
 import SwiftUI
 import WebKit
 
@@ -12,6 +13,12 @@ private let hermesOfficeURLStorageKey = "hermes.office.url"
 struct HermesOfficeView: View {
     @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
     @State private var reloadID = UUID()
+
+    let webViewStore: HermesOfficeWebViewStore
+
+    init(webViewStore: HermesOfficeWebViewStore) {
+        self.webViewStore = webViewStore
+    }
 
     private var officeURL: URL? {
         let trimmedURL = officeURLString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,8 +32,7 @@ struct HermesOfficeView: View {
                 .padding(.top)
 
             if let officeURL {
-                HermesOfficeWebView(url: officeURL, reloadID: reloadID)
-                    .id(officeURL.absoluteString)
+                HermesOfficeWebView(store: webViewStore, url: officeURL, reloadID: reloadID)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -77,15 +83,15 @@ struct HermesOfficeSettingsSection: View {
     }
 }
 
-private struct HermesOfficeWebView: UIViewRepresentable {
-    let url: URL
-    let reloadID: UUID
+@MainActor
+final class HermesOfficeWebViewStore: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    let webView: WKWebView
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
+    private var lastURL: URL?
+    private var lastReloadID: UUID?
 
-    func makeUIView(context: Context) -> WKWebView {
+    init() {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
@@ -94,25 +100,29 @@ private struct HermesOfficeWebView: UIViewRepresentable {
         webView.scrollView.backgroundColor = UIColor(Color.hermesCanvas)
         webView.backgroundColor = UIColor(Color.hermesCanvas)
         webView.allowsBackForwardNavigationGestures = true
-        load(url, in: webView, context: context)
-        return webView
+        self.webView = webView
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        if context.coordinator.lastURL != url || context.coordinator.lastReloadID != reloadID {
-            load(url, in: webView, context: context)
-        }
-    }
-
-    private func load(_ url: URL, in webView: WKWebView, context: Context) {
-        context.coordinator.lastURL = url
-        context.coordinator.lastReloadID = reloadID
+    func loadIfNeeded(url: URL, reloadID: UUID) {
+        guard lastURL != url || lastReloadID != reloadID else { return }
+        lastURL = url
+        lastReloadID = reloadID
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         webView.load(request)
     }
+}
 
-    final class Coordinator {
-        var lastURL: URL?
-        var lastReloadID: UUID?
+private struct HermesOfficeWebView: UIViewRepresentable {
+    let store: HermesOfficeWebViewStore
+    let url: URL
+    let reloadID: UUID
+
+    func makeUIView(context: Context) -> WKWebView {
+        store.loadIfNeeded(url: url, reloadID: reloadID)
+        return store.webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        store.loadIfNeeded(url: url, reloadID: reloadID)
     }
 }

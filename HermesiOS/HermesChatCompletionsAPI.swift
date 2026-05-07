@@ -161,13 +161,23 @@ final class HermesChatSession {
     }
 
 
-    private func extractChatText(from payload: HermesLooseJSON) -> String {
+    private func extractChatText(from payload: HermesLooseJSON, eventName: String? = nil) -> String {
+        switch eventName {
+        case "response.output_text.delta":
+            return payload.string(at: ["delta"]) ?? ""
+        case "response.output_text.done":
+            return payload.string(at: ["text"]) ?? ""
+        default:
+            break
+        }
+
         let candidates = [
             // OpenAI-compatible streaming and non-streaming shapes.
             payload.texts(at: ["choices", "0", "delta", "content"]),
             payload.texts(at: ["choices", "0", "message", "content"]),
             payload.texts(at: ["choices", "0", "text"]),
             payload.texts(at: ["delta", "content"]),
+            payload.texts(at: ["delta"]),
             payload.texts(at: ["message", "content"]),
             payload.texts(at: ["content"]),
             payload.texts(at: ["text"]),
@@ -209,10 +219,17 @@ final class HermesChatSession {
 
         eventCount += 1
         let payload = HermesLooseJSON(json: event.data)
-        let delta = extractChatText(from: payload)
+        let delta = extractChatText(from: payload, eventName: event.name)
 
         if !delta.isEmpty {
-            streamedText += delta
+            switch event.name {
+            case "response.output_text.done", "response.completed":
+                if streamedText.isEmpty {
+                    streamedText = delta
+                }
+            default:
+                streamedText += delta
+            }
             connectionStatus = "Streaming output"
         } else {
             connectionStatus = "Processing chat chunks"
@@ -297,10 +314,12 @@ private struct HermesChatContentPart: Decodable {
 }
 
 private struct HermesChatSSEEvent {
+    let name: String?
     let data: String
 }
 
 private struct HermesChatSSEParser {
+    private var eventName: String?
     private var dataLines: [String] = []
 
     mutating func consume(line: String) -> HermesChatSSEEvent? {
@@ -308,7 +327,9 @@ private struct HermesChatSSEParser {
             return flush()
         }
 
-        if line.hasPrefix("data:") {
+        if line.hasPrefix("event:") {
+            eventName = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+        } else if line.hasPrefix("data:") {
             let value = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
             dataLines.append(value)
         }
@@ -321,8 +342,12 @@ private struct HermesChatSSEParser {
     }
 
     private mutating func flush() -> HermesChatSSEEvent? {
-        guard !dataLines.isEmpty else { return nil }
-        let event = HermesChatSSEEvent(data: dataLines.joined(separator: "\n"))
+        guard !dataLines.isEmpty else {
+            eventName = nil
+            return nil
+        }
+        let event = HermesChatSSEEvent(name: eventName, data: dataLines.joined(separator: "\n"))
+        eventName = nil
         dataLines.removeAll(keepingCapacity: true)
         return event
     }

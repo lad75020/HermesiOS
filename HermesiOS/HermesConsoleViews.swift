@@ -188,116 +188,136 @@ struct HermesResponseBubble: View {
     }
 }
 
-
 struct HermesChatConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
     @Binding var chatDraft: HermesChatDraft
     @Bindable var chatSession: HermesChatSession
 
     var body: some View {
-        ScrollView {
-            HermesGlassEffectContainer(spacing: 26) {
-                VStack(alignment: .leading, spacing: 20) {
-                HermesTabHeader("Chat Completions", systemImage: "text.bubble")
+        ScrollViewReader { proxy in
+            ScrollView {
+                HermesGlassEffectContainer(spacing: 26) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        HermesTabHeader("Chat Completions", systemImage: "text.bubble")
 
-                HermesStatusRow(
-                    items: [
-                        .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .igGradPurple),
-                        .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange)
-                    ]
-                )
+                        HermesStatusRow(
+                            items: [
+                                .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .igGradPurple),
+                                .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange),
+                            ]
+                        )
 
-                HermesSectionCard("Message Draft") {
-                    VStack(alignment: .leading, spacing: 14) {
-                        TextEditor(text: $chatDraft.userPrompt)
-                            .scrollContentBackground(.hidden)
-                            .frame(minHeight: 160)
-                            .igFieldBackground()
-                            .overlay(alignment: .topLeading) {
-                                if chatDraft.userPrompt.isEmpty {
-                                    Text("Send a message to Hermes using the chat completions format...")
+                        HermesSectionCard("Message Draft") {
+                            VStack(alignment: .leading, spacing: 14) {
+                                TextEditor(text: $chatDraft.userPrompt)
+                                    .scrollContentBackground(.hidden)
+                                    .frame(minHeight: 160)
+                                    .igFieldBackground()
+                                    .overlay(alignment: .topLeading) {
+                                        if chatDraft.userPrompt.isEmpty {
+                                            Text("Send a message to Hermes using the chat completions format...")
+                                                .foregroundStyle(.hermesSecondaryText)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 8)
+                                                .allowsHitTesting(false)
+                                        }
+                                    }
+
+                                HStack {
+                                    Label("Chat transcript stays separate from `/v1/responses`", systemImage: "rectangle.split.3x1")
+                                        .font(.footnote)
                                         .foregroundStyle(.hermesSecondaryText)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 8)
-                                        .allowsHitTesting(false)
+                                    Spacer()
+
+                                    if !chatSession.entries.isEmpty && !chatSession.isSending {
+                                        Button("New Chat") {
+                                            chatSession.resetConversation()
+                                        }
+                                        .hermesGlassButton()
+                                    }
+
+                                    if chatSession.isSending {
+                                        Button("Cancel") {
+                                            chatSession.cancel()
+                                        }
+                                        .hermesGlassButton()
+                                    }
+
+                                    Button("Send Message") {
+                                        chatSession.submit(apiSettings: apiSettings, draft: chatDraft)
+                                        scrollToAssistantOutput(proxy)
+                                    }
+                                    .hermesGlassProminentButton()
+                                    .disabled(chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatSession.isSending)
                                 }
                             }
-
-                        HStack {
-                            Label("Chat transcript stays separate from `/v1/responses`", systemImage: "rectangle.split.3x1")
-                                .font(.footnote)
-                                .foregroundStyle(.hermesSecondaryText)
-                            Spacer()
-
-                            if !chatSession.entries.isEmpty && !chatSession.isSending {
-                                Button("New Chat") {
-                                    chatSession.resetConversation()
-                                }
-                                .hermesGlassButton()
-                            }
-
-                            if chatSession.isSending {
-                                Button("Cancel") {
-                                    chatSession.cancel()
-                                }
-                                .hermesGlassButton()
-                            }
-
-                            Button("Send Message") {
-                                chatSession.submit(apiSettings: apiSettings, draft: chatDraft)
-                            }
-                            .hermesGlassProminentButton()
-                            .disabled(chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-                }
-
-                HermesSectionCard("Assistant Output") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if !chatSession.lastErrorMessage.isEmpty {
-                            Text(chatSession.lastErrorMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(.igDestructive)
                         }
 
-                        Group {
-                            if chatSession.streamedText.isEmpty {
-                                Text("Send a `/v1/chat/completions` message to populate assistant output here.")
+                        HermesSectionCard("Assistant Output") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                if !chatSession.lastErrorMessage.isEmpty {
+                                    Text(chatSession.lastErrorMessage)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.igDestructive)
+                                }
+
+                                Group {
+                                    if chatSession.streamedText.isEmpty {
+                                        Text("Send a `/v1/chat/completions` message to populate assistant output here.")
+                                            .foregroundStyle(.hermesSecondaryText)
+                                    } else {
+                                        Text(chatSession.streamedText)
+                                            .foregroundStyle(.primary)
+                                            .textSelection(.enabled)
+                                    }
+                                }
+                                .font(.body)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .id(Self.assistantOutputID)
+
+                        HermesSectionCard("Transcript") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("\(chatSession.eventCount) stream events received", systemImage: "timeline.selection")
+                                    .font(.caption)
                                     .foregroundStyle(.hermesSecondaryText)
-                            } else {
-                                Text(chatSession.streamedText)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        .font(.body)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
 
-                HermesSectionCard("Transcript") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("\(chatSession.eventCount) stream events received", systemImage: "timeline.selection")
-                            .font(.caption)
-                            .foregroundStyle(.hermesSecondaryText)
-
-                        if chatSession.entries.isEmpty {
-                            Text("User and assistant messages from the chat completions session will accumulate here.")
-                                .font(.subheadline)
-                                .foregroundStyle(.hermesSecondaryText)
-                        } else {
-                            LazyVStack(spacing: 12) {
-                                ForEach(chatSession.entries) { message in
-                                    HermesChatMessageCard(message: message)
+                                if chatSession.entries.isEmpty {
+                                    Text("User and assistant messages from the chat completions session will accumulate here.")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.hermesSecondaryText)
+                                } else {
+                                    LazyVStack(spacing: 12) {
+                                        ForEach(chatSession.entries) { message in
+                                            HermesChatMessageCard(message: message)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                    .padding()
                 }
-                }
-                .padding()
+            }
+            .onChange(of: chatSession.streamedText) { _, _ in
+                scrollToAssistantOutput(proxy)
+            }
+            .onChange(of: chatSession.lastErrorMessage) { _, _ in
+                scrollToAssistantOutput(proxy)
             }
         }
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private static let assistantOutputID = "assistant-output"
+
+    private func scrollToAssistantOutput(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(Self.assistantOutputID, anchor: .top)
+            }
+        }
     }
 }

@@ -88,6 +88,7 @@ struct HermesModelsPanel: View {
                             provider: companionRuntime.delegationModelConfig.provider,
                             model: companionRuntime.delegationModelConfig.model,
                             providerOptions: providerOptions,
+                            allowEmptyProvider: true,
                             onSave: { provider, model in
                                 companionRuntime.saveRuntimeModelSlotConfig(
                                     slot: companionRuntime.delegationModelConfig,
@@ -115,6 +116,7 @@ struct HermesModelsPanel: View {
                                 provider: slot.provider,
                                 model: slot.model,
                                 providerOptions: providerOptions,
+                                allowEmptyProvider: true,
                                 onSave: { provider, model in
                                     companionRuntime.saveRuntimeModelSlotConfig(
                                         slot: slot,
@@ -156,6 +158,7 @@ struct HermesModelsPanel: View {
     private func auxiliaryIcon(for key: String) -> String {
         switch key {
         case "vision": "eye"
+        case "web_extract": "doc.text.magnifyingglass"
         case "compression": "arrow.down.forward.and.arrow.up.backward"
         case "title_generation": "textformat"
         case "mcp": "point.3.connected.trianglepath.dotted"
@@ -175,6 +178,7 @@ struct HermesRuntimeModelSlotEditorCard: View {
     let provider: String
     let model: String
     let providerOptions: [HermesCompanionProviderOption]
+    let allowEmptyProvider: Bool
     let onSave: (String, String) -> Void
 
     @State private var draftProvider: String
@@ -188,6 +192,7 @@ struct HermesRuntimeModelSlotEditorCard: View {
         provider: String,
         model: String,
         providerOptions: [HermesCompanionProviderOption],
+        allowEmptyProvider: Bool = false,
         onSave: @escaping (String, String) -> Void
     ) {
         self.title = title
@@ -196,8 +201,9 @@ struct HermesRuntimeModelSlotEditorCard: View {
         self.provider = provider
         self.model = model
         self.providerOptions = providerOptions
+        self.allowEmptyProvider = allowEmptyProvider
         self.onSave = onSave
-        _draftProvider = State(initialValue: provider.isEmpty ? "auto" : provider)
+        _draftProvider = State(initialValue: provider.isEmpty && allowEmptyProvider == false ? "auto" : provider)
         _draftModel = State(initialValue: model)
     }
 
@@ -224,6 +230,9 @@ struct HermesRuntimeModelSlotEditorCard: View {
             }
 
             Picker("Provider", selection: $draftProvider) {
+                if allowEmptyProvider {
+                    Text("Unset / inherit default").tag("")
+                }
                 ForEach(providerOptions) { option in
                     Text(option.label).tag(option.value)
                 }
@@ -250,7 +259,7 @@ struct HermesRuntimeModelSlotEditorCard: View {
                 .buttonStyle(.borderedProminent)
 
                 Button("Reset Draft") {
-                    draftProvider = provider.isEmpty ? "auto" : provider
+                    draftProvider = provider.isEmpty && allowEmptyProvider == false ? "auto" : provider
                     draftModel = model
                 }
                 .buttonStyle(.bordered)
@@ -261,7 +270,7 @@ struct HermesRuntimeModelSlotEditorCard: View {
         .background(Color.hermesSurfaceInput)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onChange(of: provider) { _, newValue in
-            draftProvider = newValue.isEmpty ? "auto" : newValue
+            draftProvider = newValue.isEmpty && allowEmptyProvider == false ? "auto" : newValue
         }
         .onChange(of: model) { _, newValue in
             draftModel = newValue

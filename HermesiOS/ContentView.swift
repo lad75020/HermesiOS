@@ -205,14 +205,6 @@ struct ContentView: View {
                 .tag(WorkspaceSection.history)
 
                 NavigationStack {
-                    HermesOfficeView(webViewStore: officeWebViewStore)
-                }
-                .tabItem {
-                    Label("Office", systemImage: "building.2.crop.circle")
-                }
-                .tag(WorkspaceSection.office)
-
-                NavigationStack {
                     HermesSettingsView(
                         apiSettings: $apiSettings,
                         companionSettings: $companionSettings,

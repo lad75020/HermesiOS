@@ -475,6 +475,19 @@ struct SetProviderEnvResult: Codable {
     let envFilePath: String
 }
 
+struct RemoveProviderEnvPayload: Codable {
+    let workspacePath: String
+    let key: String
+}
+
+struct RemoveProviderEnvResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let key: String
+    let envFilePath: String
+    let env: [String: String]
+}
+
 struct SetProviderModelConfigPayload: Codable {
     let workspacePath: String
     let provider: String

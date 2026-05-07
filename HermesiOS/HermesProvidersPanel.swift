@@ -21,6 +21,9 @@ struct HermesProvidersPanel: View {
     @State private var poolProvider = ""
     @State private var poolNewKey = ""
     @State private var poolNewLabel = ""
+    @State private var newEnvKey = ""
+    @State private var newEnvCustomKey = ""
+    @State private var newEnvValue = ""
 
     private var providerOptions: [HermesCompanionProviderOption] {
         if companionRuntime.providerOptions.isEmpty {
@@ -38,6 +41,38 @@ struct HermesProvidersPanel: View {
             ]
         }
         return companionRuntime.providerOptions
+    }
+
+    private var allProviderEnvFields: [HermesCompanionProviderEnvField] {
+        var seen: Set<String> = []
+        var fields: [HermesCompanionProviderEnvField] = []
+        for field in companionRuntime.providerSections.flatMap({ $0.items }) {
+            guard seen.insert(field.key).inserted else { continue }
+            fields.append(field)
+        }
+        for key in companionRuntime.providerEnv.keys.sorted() where seen.insert(key).inserted && isProviderEnvKey(key) {
+            fields.append(
+                HermesCompanionProviderEnvField(
+                    key: key,
+                    label: humanizedEnvLabel(for: key),
+                    type: key.hasSuffix("PROJECT_ID") ? "text" : "password",
+                    hint: "Configured in .env."
+                )
+            )
+        }
+        return fields
+    }
+
+    private var configuredProviderEnvFields: [HermesCompanionProviderEnvField] {
+        allProviderEnvFields
+            .filter { (companionRuntime.providerEnv[$0.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+            .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+    }
+
+    private var availableProviderEnvFields: [HermesCompanionProviderEnvField] {
+        allProviderEnvFields
+            .filter { (companionRuntime.providerEnv[$0.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
     }
 
     var body: some View {
@@ -170,6 +205,64 @@ struct HermesProvidersPanel: View {
                     }
                 }
 
+                HermesSectionCard("Configured Providers") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Loaded from the configured keys currently present in `.env`. Edit values inline, add a new provider key, or remove a key from the host `.env` file.")
+                            .font(.subheadline)
+                            .foregroundStyle(.hermesSecondaryText)
+                        companionSummaryRow(label: "Env File", value: companionRuntime.providerEnvFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/.env" : companionRuntime.providerEnvFilePath)
+
+                        if configuredProviderEnvFields.isEmpty {
+                            ContentUnavailableView(
+                                "No Configured Providers",
+                                systemImage: "key.slash",
+                                description: Text("Add a provider API key below to create it in `.env`.")
+                            )
+                            .frame(maxWidth: .infinity)
+                        } else {
+                            ForEach(configuredProviderEnvFields) { field in
+                                configuredProviderField(field)
+                            }
+                        }
+
+                        Divider()
+                            .overlay(Color.hermesSecondaryText.opacity(0.18))
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Add provider key")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.hermesSecondaryText)
+
+                            Picker("Key", selection: $newEnvKey) {
+                                Text("Choose a key").tag("")
+                                ForEach(availableProviderEnvFields) { field in
+                                    Text(field.label).tag(field.key)
+                                }
+                                Text("Custom env key…").tag("__custom__")
+                            }
+                            .pickerStyle(.menu)
+
+                            if newEnvKey == "__custom__" {
+                                TextField("CUSTOM_PROVIDER_API_KEY", text: $newEnvCustomKey)
+                                    .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                            }
+
+                            SecureField("API key or token", text: $newEnvValue)
+                                .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+
+                            Button("Add Provider") {
+                                addProviderEnvKey()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(pendingNewEnvKey.isEmpty || newEnvValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                }
+
                 HermesSectionCard("Environment") {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Edits the same provider and tool API keys as desktop Providers, writing to `.env` on the macOS host via the token-authenticated WebSocket companion.")
@@ -218,6 +311,86 @@ struct HermesProvidersPanel: View {
         }
     }
 
+    private func isProviderEnvKey(_ key: String) -> Bool {
+        key.range(of: #"^[A-Z][A-Z0-9_]*(API_KEY|TOKEN|KEY|PROJECT_ID)$"#, options: .regularExpression) != nil
+    }
+
+    private func humanizedEnvLabel(for key: String) -> String {
+        key.split(separator: "_")
+            .map { word in
+                guard word.count > 2 else { return word.uppercased() }
+                return word.prefix(1).uppercased() + word.dropFirst().lowercased()
+            }
+            .joined(separator: " ")
+    }
+
+    @ViewBuilder
+    private func configuredProviderField(_ field: HermesCompanionProviderEnvField) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(field.label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+                    Text(field.key)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.hermesSecondaryText.opacity(0.85))
+                }
+                Spacer()
+                if savedEnvKey == field.key {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.igOnlineGreen)
+                }
+            }
+
+            HStack(spacing: 8) {
+                let binding = Binding<String>(
+                    get: { companionRuntime.providerEnv[field.key] ?? "" },
+                    set: { companionRuntime.providerEnv[field.key] = $0 }
+                )
+                if field.type == "password" && visibleKeys.contains(field.key) == false {
+                    SecureField(field.label, text: binding)
+                        .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } else {
+                    TextField(field.label, text: binding)
+                        .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                if field.type == "password" {
+                    Button(visibleKeys.contains(field.key) ? "Hide" : "Show") {
+                        if visibleKeys.contains(field.key) { visibleKeys.remove(field.key) } else { visibleKeys.insert(field.key) }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            HStack {
+                Button("Save") { saveProviderEnvField(field) }
+                    .buttonStyle(.borderedProminent)
+                Button(role: .destructive) {
+                    companionRuntime.removeProviderEnvValue(
+                        key: field.key,
+                        settings: companionSettings,
+                        identityState: companionEnrollment.identityState
+                    )
+                    savedEnvKey = nil
+                    visibleKeys.remove(field.key)
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(12)
+        .background(Color.hermesSurfaceInput)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
     @ViewBuilder
     private func providerField(_ field: HermesCompanionProviderEnvField) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -262,20 +435,46 @@ struct HermesProvidersPanel: View {
                 .foregroundStyle(.hermesSecondaryText)
 
             Button("Save \(field.label)") {
-                companionRuntime.setProviderEnvValue(
-                    key: field.key,
-                    value: companionRuntime.providerEnv[field.key] ?? "",
-                    settings: companionSettings,
-                    identityState: companionEnrollment.identityState
-                )
-                savedEnvKey = field.key
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedEnvKey = nil }
+                saveProviderEnvField(field)
             }
             .buttonStyle(.bordered)
         }
         .padding(12)
         .background(Color.hermesSurfaceInput)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var pendingNewEnvKey: String {
+        let key = newEnvKey == "__custom__" ? newEnvCustomKey : newEnvKey
+        return key.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    }
+
+    private func saveProviderEnvField(_ field: HermesCompanionProviderEnvField) {
+        companionRuntime.setProviderEnvValue(
+            key: field.key,
+            value: companionRuntime.providerEnv[field.key] ?? "",
+            settings: companionSettings,
+            identityState: companionEnrollment.identityState
+        )
+        savedEnvKey = field.key
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedEnvKey = nil }
+    }
+
+    private func addProviderEnvKey() {
+        let key = pendingNewEnvKey
+        let value = newEnvValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, !value.isEmpty else { return }
+        companionRuntime.setProviderEnvValue(
+            key: key,
+            value: value,
+            settings: companionSettings,
+            identityState: companionEnrollment.identityState
+        )
+        savedEnvKey = key
+        newEnvKey = ""
+        newEnvCustomKey = ""
+        newEnvValue = ""
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedEnvKey = nil }
     }
 
     private func syncModelState(_ config: HermesCompanionProviderModelConfig) {

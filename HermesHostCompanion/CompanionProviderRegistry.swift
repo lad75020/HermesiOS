@@ -31,13 +31,14 @@ final class CompanionProviderRegistry {
 
     private static let auxiliaryModelSlots: [(key: String, label: String)] = [
         ("vision", "Vision"),
+        ("web_extract", "Web Extract"),
         ("compression", "Compression"),
-        ("title_generation", "Title Generation"),
-        ("mcp", "MCP"),
-        ("curator", "Curator"),
+        ("session_search", "Session Search"),
         ("skills_hub", "Skills Hub"),
         ("approval", "Approval"),
-        ("session_search", "Session Search")
+        ("mcp", "MCP"),
+        ("title_generation", "Title Generation"),
+        ("curator", "Curator")
     ]
 
     private static let sections: [ProviderEnvSection] = [
@@ -97,16 +98,29 @@ final class CompanionProviderRegistry {
             delegationModelConfig: readDelegationModelConfig(workspaceURL: workspaceURL),
             auxiliaryModelConfigs: readAuxiliaryModelConfigs(workspaceURL: workspaceURL),
             credentialPool: readCredentialPool(workspaceURL: workspaceURL),
-            sections: Self.sections,
+            sections: sectionsIncludingConfiguredEnv(readEnv(workspaceURL: workspaceURL)),
             providerOptions: Self.providerOptions
         )
     }
 
     func setEnv(workspacePath: String, key: String, value: String) throws -> SetProviderEnvResult {
-        guard Self.sections.flatMap({ $0.items }).contains(where: { $0.key == key }) else { throw CompanionProviderRegistryError.invalidKey(key) }
+        guard isAllowedProviderEnvKey(key) else { throw CompanionProviderRegistryError.invalidKey(key) }
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         try writeEnvValue(workspaceURL: workspaceURL, key: key, value: value)
         return SetProviderEnvResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, key: key, value: value, envFilePath: envURL(for: workspaceURL).path)
+    }
+
+    func removeEnv(workspacePath: String, key: String) throws -> RemoveProviderEnvResult {
+        guard isAllowedProviderEnvKey(key) else { throw CompanionProviderRegistryError.invalidKey(key) }
+        let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
+        try removeEnvValue(workspaceURL: workspaceURL, key: key)
+        return RemoveProviderEnvResult(
+            workspacePath: workspacePath,
+            resolvedWorkspacePath: workspaceURL.path,
+            key: key,
+            envFilePath: envURL(for: workspaceURL).path,
+            env: readEnv(workspaceURL: workspaceURL)
+        )
     }
 
     func setModelConfig(workspacePath: String, provider: String, model: String, baseUrl: String) throws -> SetProviderModelConfigResult {
@@ -127,6 +141,38 @@ final class CompanionProviderRegistry {
         pool[provider] = entries
         try writeCredentialPool(workspaceURL: workspaceURL, pool: pool)
         return SetCredentialPoolResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, authFilePath: authURL(for: workspaceURL).path, credentialPool: pool)
+    }
+
+    private func isAllowedProviderEnvKey(_ key: String) -> Bool {
+        if Self.sections.flatMap({ $0.items }).contains(where: { $0.key == key }) { return true }
+        guard key.range(of: #"^[A-Z][A-Z0-9_]*(API_KEY|TOKEN|KEY|PROJECT_ID)$"#, options: .regularExpression) != nil else { return false }
+        return true
+    }
+
+    private func sectionsIncludingConfiguredEnv(_ env: [String: String]) -> [ProviderEnvSection] {
+        let knownKeys = Set(Self.sections.flatMap { $0.items.map(\.key) })
+        let extraFields = env.keys
+            .filter { !knownKeys.contains($0) && isAllowedProviderEnvKey($0) }
+            .sorted()
+            .map { key in
+                ProviderEnvField(
+                    key: key,
+                    label: humanizedEnvLabel(for: key),
+                    type: key.hasSuffix("PROJECT_ID") ? "text" : "password",
+                    hint: "Configured in .env."
+                )
+            }
+        guard extraFields.isEmpty == false else { return Self.sections }
+        return [ProviderEnvSection(id: "configured", title: "Configured in .env", items: extraFields)] + Self.sections
+    }
+
+    private func humanizedEnvLabel(for key: String) -> String {
+        key.split(separator: "_")
+            .map { word in
+                guard word.count > 2 else { return word.uppercased() }
+                return word.prefix(1).uppercased() + word.dropFirst().lowercased()
+            }
+            .joined(separator: " ")
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
@@ -163,17 +209,36 @@ final class CompanionProviderRegistry {
     private func writeEnvValue(workspaceURL: URL, key: String, value: String) throws {
         let url = envURL(for: workspaceURL)
         var lines = (try? String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")) ?? []
+        if lines == [""] { lines = [] }
+        let keyPattern = NSRegularExpression.escapedPattern(for: key)
+        let assignmentPattern = "^#?\\s*" + keyPattern + "\\s*="
         var found = false
         for i in lines.indices {
             let trimmed = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.range(of: #"^#?\s*\#(key)\s*="#, options: .regularExpression) != nil {
-                lines[i] = "\(key)=\(value)"
+            if trimmed.range(of: assignmentPattern, options: .regularExpression) != nil {
+                lines[i] = "\(key)=\(envEncoded(value))"
                 found = true
                 break
             }
         }
-        if !found { lines.append("\(key)=\(value)") }
+        if !found { lines.append("\(key)=\(envEncoded(value))") }
         try write(lines.joined(separator: "\n"), to: url)
+    }
+
+    private func removeEnvValue(workspaceURL: URL, key: String) throws {
+        let url = envURL(for: workspaceURL)
+        var lines = (try? String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")) ?? []
+        let keyPattern = NSRegularExpression.escapedPattern(for: key)
+        let assignmentPattern = "^#?\\s*" + keyPattern + "\\s*="
+        lines.removeAll { line in
+            line.trimmingCharacters(in: .whitespacesAndNewlines).range(of: assignmentPattern, options: .regularExpression) != nil
+        }
+        try write(lines.joined(separator: "\n"), to: url)
+    }
+
+    private func envEncoded(_ value: String) -> String {
+        guard value.rangeOfCharacter(from: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "#'\""))) != nil else { return value }
+        return "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
     }
 
     private func readModelConfig(workspaceURL: URL) -> ProviderModelConfig {
@@ -199,7 +264,7 @@ final class CompanionProviderRegistry {
 
     private func readAuxiliaryModelConfigs(workspaceURL: URL) -> [RuntimeModelSlotConfig] {
         let content = (try? String(contentsOf: configURL(for: workspaceURL), encoding: .utf8)) ?? ""
-        return Self.auxiliaryModelSlots.map { slot in
+        return auxiliaryModelSlotDefinitions(content: content).map { slot in
             RuntimeModelSlotConfig(
                 id: "auxiliary.\(slot.key)",
                 label: slot.label,
@@ -209,6 +274,53 @@ final class CompanionProviderRegistry {
                 model: readYAMLScalar(content: content, section: "auxiliary", child: slot.key, key: "model") ?? ""
             )
         }
+    }
+
+    private func auxiliaryModelSlotDefinitions(content: String) -> [(key: String, label: String)] {
+        var slots = Self.auxiliaryModelSlots
+        let knownKeys = Set(slots.map(\.key))
+        let configuredKeys = configuredAuxiliaryModelKeys(content: content)
+        for key in configuredKeys where knownKeys.contains(key) == false {
+            slots.append((key, humanizedAuxiliaryLabel(for: key)))
+        }
+        return slots
+    }
+
+    private func configuredAuxiliaryModelKeys(content: String) -> [String] {
+        let lines = content.components(separatedBy: "\n")
+        guard let sectionIndex = lines.firstIndex(where: { $0.range(of: #"^auxiliary:\s*(#.*)?$"#, options: .regularExpression) != nil }) else { return [] }
+        let sectionIndent = indentation(of: lines[sectionIndex])
+        var keys: [String] = []
+        var index = sectionIndex + 1
+        while index < lines.count {
+            let line = lines[index]
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && indentation(of: line) <= sectionIndent { break }
+            if indentation(of: line) == sectionIndent + 2,
+               let key = mappingKey(from: line),
+               keys.contains(key) == false {
+                keys.append(key)
+            }
+            index += 1
+        }
+        return keys
+    }
+
+    private func mappingKey(from line: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*([A-Za-z0-9_-]+):\s*(#.*)?$"#),
+              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: line) else { return nil }
+        return String(line[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func humanizedAuxiliaryLabel(for key: String) -> String {
+        key.split(separator: "_")
+            .map { word in
+                guard let first = word.first else { return "" }
+                return String(first).uppercased() + String(word.dropFirst())
+            }
+            .joined(separator: " ")
     }
 
     private func writeModelConfig(workspaceURL: URL, provider: String, model: String, baseUrl: String) throws {

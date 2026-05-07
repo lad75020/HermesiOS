@@ -308,6 +308,7 @@ final class CompanionClientSession {
                         "remove_model",
                         "get_providers_config",
                         "set_provider_env",
+                        "remove_provider_env",
                         "set_provider_model_config",
                         "set_runtime_model_slot",
                         "set_credential_pool",
@@ -598,6 +599,17 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "set_provider_env_failed", message: error.localizedDescription)
+            }
+        case "remove_provider_env":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The remove_provider_env request requires a payload.")
+                }
+                let envPayload = try payload.decode(RemoveProviderEnvPayload.self)
+                let result = try providerRegistry.removeEnv(workspacePath: envPayload.workspacePath, key: envPayload.key)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "remove_provider_env_failed", message: error.localizedDescription)
             }
         case "set_provider_model_config":
             do {

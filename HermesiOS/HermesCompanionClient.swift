@@ -537,6 +537,19 @@ struct HermesCompanionSetProviderEnvResult: Codable {
     let envFilePath: String
 }
 
+struct HermesCompanionRemoveProviderEnvPayload: Codable {
+    let workspacePath: String
+    let key: String
+}
+
+struct HermesCompanionRemoveProviderEnvResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let key: String
+    let envFilePath: String
+    let env: [String: String]
+}
+
 struct HermesCompanionSetProviderModelConfigPayload: Codable {
     let workspacePath: String
     let provider: String
@@ -1695,6 +1708,30 @@ final class HermesCompanionRuntimeSession {
             self.providerEnvFilePath = result.envFilePath
             self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
             self.connectionStatus = "Provider Key Saved"
+        }
+    }
+
+    func removeProviderEnvValue(
+        key: String,
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        providerEnv.removeValue(forKey: key)
+        run {
+            self.connectionStatus = "Removing \(key)"
+            let result: HermesCompanionRemoveProviderEnvResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "remove_provider_env",
+                payload: HermesCompanionRemoveProviderEnvPayload(
+                    workspacePath: settings.hermesWorkspacePath,
+                    key: key
+                )
+            )
+            self.providerEnv = result.env
+            self.providerEnvFilePath = result.envFilePath
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = "Provider Removed"
         }
     }
 

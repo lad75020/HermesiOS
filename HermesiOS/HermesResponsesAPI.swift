@@ -65,6 +65,7 @@ final class HermesResponsesSession {
     var lastErrorMessage = ""
     var latestMessageType = ""
     var eventCount = 0
+    var rawStreamedJSON = ""
 
     var hasActiveConversation: Bool {
         !previousResponseID.isEmpty || !latestResponseID.isEmpty || !entries.isEmpty || isSending
@@ -100,6 +101,7 @@ final class HermesResponsesSession {
         lastErrorMessage = ""
         latestMessageType = ""
         eventCount = 0
+        rawStreamedJSON = ""
     }
 
     func terminateAndStartNewSession() {
@@ -119,6 +121,7 @@ final class HermesResponsesSession {
         lastErrorMessage = ""
         latestMessageType = "resumed session"
         eventCount = 0
+        rawStreamedJSON = ""
 
         let restoredEntries = result.messages
             .filter { message in
@@ -180,6 +183,7 @@ final class HermesResponsesSession {
         lastErrorMessage = ""
         latestMessageType = ""
         eventCount = 0
+        rawStreamedJSON = ""
         activeAssistantEntryID = nil
     }
 
@@ -236,6 +240,7 @@ final class HermesResponsesSession {
         try validate(response: response)
 
         let envelope = try JSONDecoder().decode(HermesResponseEnvelope.self, from: data)
+        rawStreamedJSON = Self.prettyPrintedJSON(from: data)
         latestResponseID = envelope.id ?? ""
         streamedText = envelope.assistantText
         updateActiveAssistantEntry(with: streamedText)
@@ -291,6 +296,8 @@ final class HermesResponsesSession {
     }
 
     private func handle(event: HermesSSEEvent) {
+        appendRawStreamedJSON(event)
+
         if event.data == "[DONE]" {
             connectionStatus = "Completed"
             return
@@ -322,6 +329,31 @@ final class HermesResponsesSession {
 
     }
 
+    private func appendRawStreamedJSON(_ event: HermesSSEEvent) {
+        let eventName = event.event ?? "message"
+        let payload = event.data == "[DONE]" ? "[DONE]" : Self.prettyPrintedJSON(from: event.data)
+        let block = "event: \(eventName)\n\(payload)"
+        rawStreamedJSON = rawStreamedJSON.isEmpty ? block : rawStreamedJSON + "\n\n" + block
+    }
+
+    private static func prettyPrintedJSON(from string: String) -> String {
+        guard let data = string.data(using: .utf8) else { return string }
+        return prettyPrintedJSON(from: data)
+    }
+
+    private static func prettyPrintedJSON(from data: Data) -> String {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let prettyData = try? JSONSerialization.data(
+                withJSONObject: object,
+                options: [.prettyPrinted, .sortedKeys]
+            ),
+            let pretty = String(data: prettyData, encoding: .utf8)
+        else {
+            return String(data: data, encoding: .utf8) ?? ""
+        }
+        return pretty
+    }
 }
 
 

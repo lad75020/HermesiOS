@@ -17,6 +17,7 @@ final class HermesChatSession {
     var connectionStatus = "Idle"
     var lastErrorMessage = ""
     var eventCount = 0
+    var rawStreamedJSON = ""
 
     private var requestTask: Task<Void, Never>?
 
@@ -43,6 +44,7 @@ final class HermesChatSession {
         connectionStatus = "Idle"
         lastErrorMessage = ""
         eventCount = 0
+        rawStreamedJSON = ""
     }
 
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft) async {
@@ -85,6 +87,7 @@ final class HermesChatSession {
         streamedText = ""
         lastErrorMessage = ""
         eventCount = 0
+        rawStreamedJSON = ""
     }
 
     private func streamResponse(apiSettings: HermesAPISettings, draft: HermesChatDraft, history: [HermesChatMessage]) async throws {
@@ -111,6 +114,7 @@ final class HermesChatSession {
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (data, response) = try await session.data(for: request)
         try validate(response: response)
+        rawStreamedJSON = Self.prettyPrintedJSON(from: data)
 
         if let envelope = try? JSONDecoder().decode(HermesChatCompletionEnvelope.self, from: data) {
             streamedText = envelope.assistantText
@@ -212,6 +216,8 @@ final class HermesChatSession {
     }
 
     private func handle(event: HermesChatSSEEvent) {
+        appendRawStreamedJSON(event)
+
         if event.data == "[DONE]" {
             connectionStatus = "Completed"
             return
@@ -234,6 +240,34 @@ final class HermesChatSession {
         } else {
             connectionStatus = "Processing chat chunks"
         }
+    }
+
+    private func appendRawStreamedJSON(_ event: HermesChatSSEEvent) {
+        let eventName = event.name ?? "message"
+        let payload = event.data == "[DONE]" ? "[DONE]" : Self.prettyPrintedJSON(from: event.data)
+        let block = "event: \(eventName)\n\(payload)"
+
+        if rawStreamedJSON.isEmpty {
+            rawStreamedJSON = block
+        } else {
+            rawStreamedJSON += "\n\n\(block)"
+        }
+    }
+
+    private static func prettyPrintedJSON(from string: String) -> String {
+        prettyPrintedJSON(from: Data(string.utf8))
+    }
+
+    private static func prettyPrintedJSON(from data: Data) -> String {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: data),
+            JSONSerialization.isValidJSONObject(object),
+            let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+            let prettyString = String(data: prettyData, encoding: .utf8)
+        else {
+            return String(data: data, encoding: .utf8) ?? ""
+        }
+        return prettyString
     }
 }
 

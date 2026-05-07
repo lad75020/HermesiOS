@@ -70,6 +70,10 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
 struct WorkspaceSidebar: View {
     @Binding var selection: WorkspaceSection?
     @Bindable var statusMonitor: HermesStatusMonitor
+    @Bindable var responseSession: HermesResponsesSession
+    @Bindable var chatSession: HermesChatSession
+    @Binding var isShowingStreamDebugJSON: Bool
+    var selectedDebugStreamSource: HermesStreamDebugSource = .responses
     var apiChannelActive = false
     var companionChannelActive = false
     var dashboardChannelActive = false
@@ -104,7 +108,153 @@ struct WorkspaceSidebar: View {
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
+
+            Divider()
+                .overlay(Color.hermesDivider.opacity(0.4))
+
+            Button {
+                isShowingStreamDebugJSON = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: isShowingStreamDebugJSON ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(isShowingStreamDebugJSON ? Color.igActionBlue : Color.hermesSecondaryText)
+                    Label("Debug stream JSON", systemImage: "ladybug")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .accessibilityLabel("Debug stream JSON checkbox")
+            .accessibilityValue(isShowingStreamDebugJSON ? "Checked" : "Unchecked")
+            .accessibilityHint("Shows a modal with raw JSON streamed by the Hermes Responses and Chat Completions APIs")
         }
         .background(Color.hermesCanvas)
+        .sheet(isPresented: $isShowingStreamDebugJSON) {
+            HermesStreamedJSONDebugSheet(
+                responseSession: responseSession,
+                chatSession: chatSession,
+                initialSource: selectedDebugStreamSource
+            )
+        }
+    }
+}
+
+enum HermesStreamDebugSource: String, CaseIterable, Identifiable {
+    case responses
+    case chat
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .responses:
+            "Responses"
+        case .chat:
+            "Chat Completions"
+        }
+    }
+}
+
+struct HermesStreamedJSONDebugSheet: View {
+    @Bindable var responseSession: HermesResponsesSession
+    @Bindable var chatSession: HermesChatSession
+    var initialSource: HermesStreamDebugSource = .responses
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedSource: HermesStreamDebugSource = .responses
+
+    private var debugText: String {
+        switch selectedSource {
+        case .responses:
+            if responseSession.rawStreamedJSON.isEmpty {
+                return "No Responses API JSON has been streamed yet. Send a Responses API request with streaming enabled to populate this debug view."
+            }
+            return responseSession.rawStreamedJSON
+        case .chat:
+            if chatSession.rawStreamedJSON.isEmpty {
+                return "No Chat Completions API JSON has been streamed yet. Send a Chat Completions request with streaming enabled to populate this debug view."
+            }
+            return chatSession.rawStreamedJSON
+        }
+    }
+
+    private var currentEventCount: Int {
+        switch selectedSource {
+        case .responses:
+            responseSession.eventCount
+        case .chat:
+            chatSession.eventCount
+        }
+    }
+
+    private var isCurrentDebugTextEmpty: Bool {
+        switch selectedSource {
+        case .responses:
+            responseSession.rawStreamedJSON.isEmpty
+        case .chat:
+            chatSession.rawStreamedJSON.isEmpty
+        }
+    }
+
+    private func clearCurrentDebugText() {
+        switch selectedSource {
+        case .responses:
+            responseSession.rawStreamedJSON = ""
+        case .chat:
+            chatSession.rawStreamedJSON = ""
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Debug stream", selection: $selectedSource) {
+                    ForEach(HermesStreamDebugSource.allCases) { source in
+                        Text(source.title).tag(source)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                HStack(spacing: 12) {
+                    Label("\(currentEventCount) events", systemImage: "timeline.selection")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    Spacer()
+
+                    Button {
+                        clearCurrentDebugText()
+                    } label: {
+                        Label("Clear", systemImage: "trash")
+                    }
+                    .hermesGlassButton()
+                    .disabled(isCurrentDebugTextEmpty)
+                }
+
+                TextEditor(text: .constant(debugText))
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 420)
+                    .padding(8)
+                    .igFieldBackground()
+            }
+            .padding()
+            .background(Color.hermesCanvas)
+            .navigationTitle("Streamed Hermes JSON")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .onAppear {
+            selectedSource = initialSource
+        }
     }
 }

@@ -33,6 +33,7 @@ struct ContentView: View {
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
     @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
     @State private var isShowingSplash = true
+    @State private var isShowingStreamDebugJSON = false
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -136,6 +137,10 @@ struct ContentView: View {
             WorkspaceSidebar(
                 selection: $selectedWorkspace,
                 statusMonitor: statusMonitor,
+                responseSession: responseSession,
+                chatSession: chatSession,
+                isShowingStreamDebugJSON: $isShowingStreamDebugJSON,
+                selectedDebugStreamSource: selectedWorkspace == .chat ? .chat : .responses,
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive

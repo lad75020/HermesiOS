@@ -66,7 +66,6 @@ final class HermesResponsesSession {
     var latestMessageType = ""
     var eventCount = 0
     var rawStreamedJSON = ""
-    var activeModel = ""
 
     var hasActiveConversation: Bool {
         !previousResponseID.isEmpty || !latestResponseID.isEmpty || !entries.isEmpty || isSending
@@ -103,7 +102,6 @@ final class HermesResponsesSession {
         latestMessageType = ""
         eventCount = 0
         rawStreamedJSON = ""
-        activeModel = ""
     }
 
     func terminateAndStartNewSession() {
@@ -124,7 +122,6 @@ final class HermesResponsesSession {
         latestMessageType = continuationID.isEmpty ? "loaded history" : "resumed response"
         eventCount = 0
         rawStreamedJSON = ""
-        activeModel = result.session.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         let restoredEntries = result.messages
             .filter { message in
@@ -153,10 +150,6 @@ final class HermesResponsesSession {
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft) async {
         let continuationID = previousResponseID
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sessionDraft = draft.locked(to: activeModel.isEmpty ? draft.model : activeModel)
-        if activeModel.isEmpty {
-            activeModel = sessionDraft.model
-        }
         resetForRequest()
         appendExchange(prompt: prompt)
         isSending = true
@@ -167,9 +160,9 @@ final class HermesResponsesSession {
         do {
             try await HermesBackgroundActivity.run(named: "Hermes Responses Request") {
                 if draft.stream {
-                    try await streamResponse(apiSettings: apiSettings, draft: sessionDraft, previousResponseID: continuationID)
+                    try await streamResponse(apiSettings: apiSettings, draft: draft, previousResponseID: continuationID)
                 } else {
-                    try await fetchResponse(apiSettings: apiSettings, draft: sessionDraft, previousResponseID: continuationID)
+                    try await fetchResponse(apiSettings: apiSettings, draft: draft, previousResponseID: continuationID)
                 }
             }
             if !latestResponseID.isEmpty {
@@ -272,7 +265,6 @@ final class HermesResponsesSession {
         }
 
         let payload = HermesResponsesRequestBody(
-            model: draft.model,
             input: draft.userPrompt,
             instructions: draft.instructions,
             stream: stream,
@@ -437,7 +429,6 @@ struct HermesRequestDraft: Codable, Equatable {
 }
 
 private struct HermesResponsesRequestBody: Encodable {
-    let model: String
     let input: String
     let instructions: String
     let stream: Bool
@@ -445,7 +436,6 @@ private struct HermesResponsesRequestBody: Encodable {
     let previousResponseID: String?
 
     enum CodingKeys: String, CodingKey {
-        case model
         case input
         case instructions
         case stream

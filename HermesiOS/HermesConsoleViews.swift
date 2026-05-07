@@ -30,7 +30,7 @@ struct HermesResponsesConsoleView: View {
                             selectedModel: $requestDraft.model,
                             savedModels: companionRuntime.hermesModels,
                             isEnabled: !responseSession.hasActiveConversation,
-                            lockedModel: responseSession.activeModel,
+                            lockedModel: "",
                             fallbackModel: "hermes-agent"
                         )
 
@@ -432,7 +432,7 @@ struct HermesChatConsoleView: View {
                             selectedModel: $chatDraft.model,
                             savedModels: companionRuntime.hermesModels,
                             isEnabled: chatSession.entries.isEmpty && !chatSession.isSending,
-                            lockedModel: chatSession.activeModel,
+                            lockedModel: "",
                             fallbackModel: "hermes-agent"
                         )
 

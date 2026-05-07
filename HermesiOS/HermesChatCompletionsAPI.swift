@@ -18,7 +18,6 @@ final class HermesChatSession {
     var lastErrorMessage = ""
     var eventCount = 0
     var rawStreamedJSON = ""
-    var activeModel = ""
 
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
@@ -48,16 +47,11 @@ final class HermesChatSession {
         lastErrorMessage = ""
         eventCount = 0
         rawStreamedJSON = ""
-        activeModel = ""
     }
 
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft) async {
         let history = entries
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sessionDraft = draft.locked(to: activeModel.isEmpty ? draft.model : activeModel)
-        if activeModel.isEmpty {
-            activeModel = sessionDraft.model
-        }
         resetForRequest()
         appendExchange(prompt: prompt)
         isSending = true
@@ -66,9 +60,9 @@ final class HermesChatSession {
         do {
             try await HermesBackgroundActivity.run(named: "Hermes Chat Request") {
                 if draft.stream {
-                    try await streamResponse(apiSettings: apiSettings, draft: sessionDraft, history: history)
+                    try await streamResponse(apiSettings: apiSettings, draft: draft, history: history)
                 } else {
-                    try await fetchResponse(apiSettings: apiSettings, draft: sessionDraft, history: history)
+                    try await fetchResponse(apiSettings: apiSettings, draft: draft, history: history)
                 }
             }
 
@@ -165,7 +159,6 @@ final class HermesChatSession {
             : [HermesChatRequestMessage(role: "system", content: draft.systemPrompt)] + historyMessages + [HermesChatRequestMessage(role: "user", content: draft.userPrompt)]
 
         let payload = HermesChatCompletionsRequestBody(
-            model: draft.model,
             messages: requestMessages,
             stream: stream
         )
@@ -374,7 +367,6 @@ struct HermesChatMessage: Identifiable {
 }
 
 private struct HermesChatCompletionsRequestBody: Encodable {
-    let model: String
     let messages: [HermesChatRequestMessage]
     let stream: Bool
 }

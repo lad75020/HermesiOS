@@ -733,6 +733,7 @@ struct HermesCompanionCreateProfilePayload: Codable {
     let baseUrl: String
     let createEnv: Bool
     let createSoul: Bool
+    let cloneSkills: Bool
 }
 
 struct HermesCompanionEditProfilePayload: Codable {
@@ -2032,14 +2033,14 @@ final class HermesCompanionRuntimeSession {
         }
     }
 
-    func createProfile(name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+    func createProfile(name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool, cloneSkills: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Creating Profile"
             let result: HermesCompanionProfileOperationResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
                 state: identityState,
                 type: "create_profile",
-                payload: HermesCompanionCreateProfilePayload(workspacePath: settings.hermesWorkspacePath, name: name, provider: provider, model: model, baseUrl: baseUrl, createEnv: createEnv, createSoul: createSoul)
+                payload: HermesCompanionCreateProfilePayload(workspacePath: settings.hermesWorkspacePath, name: name, provider: provider, model: model, baseUrl: baseUrl, createEnv: createEnv, createSoul: createSoul, cloneSkills: cloneSkills)
             )
             self.applyProfileOperation(result)
             self.connectionStatus = result.success ? "Profile Created" : "Profile Create Failed"

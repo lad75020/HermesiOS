@@ -13,6 +13,7 @@ private struct HermesProfileFormDraft: Equatable {
     var baseUrl = ""
     var createEnv = false
     var createSoul = false
+    var cloneSkills = false
 }
 
 struct HermesProfilesPanel: View {
@@ -208,7 +209,12 @@ struct HermesProfilesPanel: View {
                     .tint(.igActionBlue)
             }
 
-            Text("The form is seeded from the default profile. Creating a profile copies the default config as a template, writes the provider/model/base URL fields, and optionally creates or copies .env and SOUL.md. Editing uses the same fields; the default profile name cannot be changed.")
+            if case .create = mode {
+                Toggle("Clone default skills folder", isOn: draft.cloneSkills)
+                    .tint(.igActionBlue)
+            }
+
+            Text("The form is seeded from the default profile. Creating a profile copies the default config as a template, writes the provider/model/base URL fields, and optionally creates or copies .env, SOUL.md, and the default skills folder. Editing uses the same persistent fields; the default profile name cannot be changed.")
                 .font(.caption)
                 .foregroundStyle(.hermesSecondaryText)
 
@@ -224,6 +230,7 @@ struct HermesProfilesPanel: View {
                             baseUrl: trimmed.baseUrl,
                             createEnv: trimmed.createEnv,
                             createSoul: trimmed.createSoul,
+                            cloneSkills: trimmed.cloneSkills,
                             settings: companionSettings,
                             identityState: companionEnrollment.identityState
                         )
@@ -281,7 +288,8 @@ struct HermesProfilesPanel: View {
             model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines),
             baseUrl: draft.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines),
             createEnv: draft.createEnv,
-            createSoul: draft.createSoul
+            createSoul: draft.createSoul,
+            cloneSkills: draft.cloneSkills
         )
     }
 
@@ -289,6 +297,7 @@ struct HermesProfilesPanel: View {
         guard let defaultProfile else { return HermesProfileFormDraft(provider: "auto") }
         var draft = draftForProfile(defaultProfile)
         draft.name = ""
+        draft.cloneSkills = defaultProfile.skillCount > 0
         return draft
     }
 
@@ -299,7 +308,8 @@ struct HermesProfilesPanel: View {
             model: profile.model,
             baseUrl: profile.baseUrl,
             createEnv: profile.hasEnv,
-            createSoul: profile.hasSoul
+            createSoul: profile.hasSoul,
+            cloneSkills: false
         )
     }
 

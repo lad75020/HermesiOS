@@ -107,6 +107,7 @@ final class HermesSpeechTranscriptionSession {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var onTextChange: ((String) -> Void)?
+    private var shouldIgnoreRecognitionErrors = false
 
     func toggle(seedText: String, onTextChange: @escaping (String) -> Void) {
         if isRecording {
@@ -130,22 +131,39 @@ final class HermesSpeechTranscriptionSession {
             } catch {
                 self.lastErrorMessage = error.localizedDescription
                 self.statusMessage = "Dictation unavailable"
-                self.stop()
+                self.finishRecognition(status: nil, cancelTask: true)
             }
         }
     }
 
     func stop() {
+        finishRecognition(status: "Dictation stopped")
+    }
+
+    private func finishRecognition(status: String? = nil, cancelTask: Bool = false) {
+        shouldIgnoreRecognitionErrors = true
+
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
+        audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
-        recognitionTask?.cancel()
+
+        if cancelTask {
+            recognitionTask?.cancel()
+        } else {
+            recognitionTask?.finish()
+        }
+
         recognitionTask = nil
         recognitionRequest = nil
         isRecording = false
-        if statusMessage == "Listening…" {
+
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+
+        if let status {
+            statusMessage = status
+        } else if statusMessage == "Listening…" {
             statusMessage = "Dictation stopped"
         }
     }
@@ -178,6 +196,7 @@ final class HermesSpeechTranscriptionSession {
     }
 
     private func beginRecognition(seedText: String) throws {
+        shouldIgnoreRecognitionErrors = false
         recognitionTask?.cancel()
         recognitionTask = nil
 
@@ -191,6 +210,9 @@ final class HermesSpeechTranscriptionSession {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        if speechRecognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
+        }
         recognitionRequest = request
 
         let inputNode = audioEngine.inputNode
@@ -213,18 +235,27 @@ final class HermesSpeechTranscriptionSession {
                     self.liveText = transcription
                     self.onTextChange?(self.merge(seedText: seedText, transcription: transcription))
                     if result.isFinal {
-                        self.statusMessage = "Dictation complete"
-                        self.stop()
+                        self.finishRecognition(status: "Dictation complete")
                     }
                 }
 
                 if let error {
+                    guard !self.shouldSuppressRecognitionError(error) else { return }
                     self.lastErrorMessage = error.localizedDescription
                     self.statusMessage = "Dictation failed"
-                    self.stop()
+                    self.finishRecognition(status: nil, cancelTask: true)
                 }
             }
         }
+    }
+
+    private func shouldSuppressRecognitionError(_ error: Error) -> Bool {
+        guard shouldIgnoreRecognitionErrors else { return false }
+        let nsError = error as NSError
+        return nsError.domain == "kAFAssistantErrorDomain"
+            || nsError.domain == "KAFAssistantErrorDomain"
+            || nsError.domain == NSURLErrorDomain
+            || nsError.code == NSUserCancelledError
     }
 
     private func merge(seedText: String, transcription: String) -> String {

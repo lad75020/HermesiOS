@@ -782,7 +782,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The create_profile request requires a payload.") }
                 let createPayload = try payload.decode(CreateProfilePayload.self)
-                let result = try profileRegistry.create(workspacePath: createPayload.workspacePath, name: createPayload.name, provider: createPayload.provider, model: createPayload.model, baseUrl: createPayload.baseUrl, createEnv: createPayload.createEnv, createSoul: createPayload.createSoul)
+                let result = try profileRegistry.create(workspacePath: createPayload.workspacePath, name: createPayload.name, provider: createPayload.provider, model: createPayload.model, baseUrl: createPayload.baseUrl, createEnv: createPayload.createEnv, createSoul: createPayload.createSoul, cloneSkills: createPayload.cloneSkills)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "create_profile_failed", message: error.localizedDescription)

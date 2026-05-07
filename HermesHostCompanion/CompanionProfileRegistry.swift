@@ -62,7 +62,7 @@ final class CompanionProfileRegistry {
         )
     }
 
-    func create(workspacePath: String, name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool) throws -> ProfileOperationResult {
+    func create(workspacePath: String, name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool, cloneSkills: Bool) throws -> ProfileOperationResult {
         let trimmedName = try normalizedProfileName(name)
         guard trimmedName != "default" else { throw CompanionProfileRegistryError.profileAlreadyExists(trimmedName) }
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
@@ -73,6 +73,7 @@ final class CompanionProfileRegistry {
         }
         try FileManager.default.createDirectory(at: profileURL, withIntermediateDirectories: true)
         try seedProfileFiles(profileURL: profileURL, workspaceURL: workspaceURL, provider: provider, model: model, baseUrl: baseUrl, createEnv: createEnv, createSoul: createSoul)
+        if cloneSkills { try cloneDefaultSkills(profileURL: profileURL, workspaceURL: workspaceURL) }
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, output: "Created profile \(trimmedName) at \(profileURL.path)", error: nil)
     }
 
@@ -217,6 +218,17 @@ final class CompanionProfileRegistry {
         } else if FileManager.default.fileExists(atPath: destinationURL.path) {
             try FileManager.default.removeItem(at: destinationURL)
         }
+    }
+
+    private func cloneDefaultSkills(profileURL: URL, workspaceURL: URL) throws {
+        let sourceURL = workspaceURL.appendingPathComponent("skills", isDirectory: true)
+        let destinationURL = profileURL.appendingPathComponent("skills", isDirectory: true)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory), isDirectory.boolValue else { return }
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try FileManager.default.removeItem(at: destinationURL)
+        }
+        try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
     }
 
     private func writeModelFields(configURL: URL, provider: String, model: String, baseUrl: String) throws {

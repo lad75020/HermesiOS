@@ -671,6 +671,7 @@ struct CreateProfilePayload: Codable {
     let baseUrl: String
     let createEnv: Bool
     let createSoul: Bool
+    let cloneSkills: Bool
 }
 
 struct EditProfilePayload: Codable {

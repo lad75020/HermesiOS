@@ -6,18 +6,32 @@
 import Observation
 import SwiftUI
 
+private struct HermesProfileFormDraft: Equatable {
+    var name = ""
+    var provider = ""
+    var model = ""
+    var baseUrl = ""
+    var createEnv = false
+    var createSoul = false
+}
+
 struct HermesProfilesPanel: View {
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
 
     @State private var showCreateForm = false
-    @State private var newProfileName = ""
-    @State private var cloneCurrentProfile = true
+    @State private var createDraft = HermesProfileFormDraft()
+    @State private var editingProfileName: String?
+    @State private var editDraft = HermesProfileFormDraft()
     @State private var confirmDeleteProfileName: String?
 
     private var namedProfileCount: Int {
         companionRuntime.profiles.filter { !$0.isDefault }.count
+    }
+
+    private var defaultProfile: HermesCompanionProfileInfo? {
+        companionRuntime.profiles.first(where: { $0.isDefault })
     }
 
     var body: some View {
@@ -43,7 +57,7 @@ struct HermesProfilesPanel: View {
 
                 HermesSectionCard("Profile Controls") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Profiles mirror the desktop Hermes profile manager: list the default workspace, create named profiles, clone the current setup, switch the active profile, and delete named profiles.")
+                        Text("Profiles are read from the Hermes workspace and its profiles/ folder. Create and edit profile model settings from the default profile values, then refresh from the macOS host whenever the filesystem changes.")
                             .font(.subheadline)
                             .foregroundStyle(.hermesSecondaryText)
 
@@ -66,9 +80,11 @@ struct HermesProfilesPanel: View {
                             .disabled(companionRuntime.isBusy)
 
                             Button {
+                                createDraft = draftFromDefault()
+                                editingProfileName = nil
                                 showCreateForm.toggle()
                             } label: {
-                                Label(showCreateForm ? "Hide Form" : "New Profile", systemImage: showCreateForm ? "xmark" : "plus")
+                                Label(showCreateForm ? "Hide Form" : "Create", systemImage: showCreateForm ? "xmark" : "plus")
                             }
                             .buttonStyle(.bordered)
                             .disabled(companionRuntime.isBusy)
@@ -77,8 +93,26 @@ struct HermesProfilesPanel: View {
                 }
 
                 if showCreateForm {
-                    HermesSectionCard("New Profile") {
-                        createForm
+                    HermesSectionCard("Create Profile") {
+                        profileForm(
+                            draft: $createDraft,
+                            mode: .create,
+                            originalName: nil,
+                            submitTitle: "Create",
+                            submitIcon: "plus.circle.fill"
+                        )
+                    }
+                }
+
+                if let editingProfileName {
+                    HermesSectionCard("Edit Profile") {
+                        profileForm(
+                            draft: $editDraft,
+                            mode: .edit(isDefault: editingProfileName == "default"),
+                            originalName: editingProfileName,
+                            submitTitle: "Save",
+                            submitIcon: "square.and.pencil"
+                        )
                     }
                 }
 
@@ -87,7 +121,7 @@ struct HermesProfilesPanel: View {
                         ContentUnavailableView(
                             "No Profiles Loaded",
                             systemImage: "person.crop.rectangle.stack",
-                            description: Text("Refresh from the macOS host to list the default profile and any named profiles under the Hermes workspace.")
+                            description: Text("Refresh from the macOS host to list the default profile and every named directory under the Hermes profiles folder.")
                         )
                     } else {
                         VStack(alignment: .leading, spacing: 12) {
@@ -110,7 +144,7 @@ struct HermesProfilesPanel: View {
             }
         }
         .onAppear {
-            if companionEnrollment.identityState.isEnrolled, companionRuntime.profiles.isEmpty {
+            if companionEnrollment.identityState.isEnrolled {
                 companionRuntime.refreshProfiles(settings: companionSettings, identityState: companionEnrollment.identityState)
             }
         }
@@ -132,40 +166,141 @@ struct HermesProfilesPanel: View {
         }
     }
 
-    private var createForm: some View {
+    private enum FormMode: Equatable {
+        case create
+        case edit(isDefault: Bool)
+
+        var isEditingDefault: Bool {
+            if case .edit(let isDefault) = self { return isDefault }
+            return false
+        }
+    }
+
+    private func profileForm(draft: Binding<HermesProfileFormDraft>, mode: FormMode, originalName: String?, submitTitle: String, submitIcon: String) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            TextField("Profile name", text: $newProfileName)
+            TextField("Profile name", text: draft.name)
                 .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .disabled(mode.isEditingDefault)
 
-            Toggle("Clone current/default profile", isOn: $cloneCurrentProfile)
-                .tint(.igActionBlue)
+            HStack(spacing: 10) {
+                TextField("Provider", text: draft.provider)
+                    .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.22))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
 
-            Text("Use letters, numbers, dots, dashes, or underscores. Cloning copies the current profile's config, env, soul, and skills just like `hermes profile create --clone`.")
+                TextField("Model", text: draft.model)
+                    .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.22))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+
+            TextField("Base URL (optional)", text: draft.baseUrl)
+                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.06), border: Color.igActionBlue.opacity(0.18))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            HStack(spacing: 16) {
+                Toggle(".env file", isOn: draft.createEnv)
+                    .tint(.igActionBlue)
+                Toggle("SOUL.md", isOn: draft.createSoul)
+                    .tint(.igActionBlue)
+            }
+
+            Text("The form is seeded from the default profile. Creating a profile copies the default config as a template, writes the provider/model/base URL fields, and optionally creates or copies .env and SOUL.md. Editing uses the same fields; the default profile name cannot be changed.")
                 .font(.caption)
                 .foregroundStyle(.hermesSecondaryText)
 
             HStack {
                 Button {
-                    let name = newProfileName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    companionRuntime.createProfile(name: name, clone: cloneCurrentProfile, settings: companionSettings, identityState: companionEnrollment.identityState)
-                    newProfileName = ""
-                    cloneCurrentProfile = true
-                    showCreateForm = false
+                    let trimmed = normalized(draft.wrappedValue)
+                    switch mode {
+                    case .create:
+                        companionRuntime.createProfile(
+                            name: trimmed.name,
+                            provider: trimmed.provider,
+                            model: trimmed.model,
+                            baseUrl: trimmed.baseUrl,
+                            createEnv: trimmed.createEnv,
+                            createSoul: trimmed.createSoul,
+                            settings: companionSettings,
+                            identityState: companionEnrollment.identityState
+                        )
+                        createDraft = draftFromDefault()
+                        showCreateForm = false
+                    case .edit:
+                        companionRuntime.editProfile(
+                            originalName: originalName ?? trimmed.name,
+                            name: trimmed.name,
+                            provider: trimmed.provider,
+                            model: trimmed.model,
+                            baseUrl: trimmed.baseUrl,
+                            createEnv: trimmed.createEnv,
+                            createSoul: trimmed.createSoul,
+                            settings: companionSettings,
+                            identityState: companionEnrollment.identityState
+                        )
+                        editingProfileName = nil
+                    }
                 } label: {
-                    Label("Create", systemImage: "plus.circle.fill")
+                    Label(submitTitle, systemImage: submitIcon)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || companionRuntime.isBusy)
+                .disabled(draft.wrappedValue.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || companionRuntime.isBusy)
 
                 Button("Reset") {
-                    newProfileName = ""
-                    cloneCurrentProfile = true
+                    switch mode {
+                    case .create:
+                        createDraft = draftFromDefault()
+                    case .edit:
+                        if let originalName, let profile = companionRuntime.profiles.first(where: { $0.name == originalName }) {
+                            editDraft = draftForProfile(profile)
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+
+                Button("Cancel") {
+                    switch mode {
+                    case .create:
+                        showCreateForm = false
+                    case .edit:
+                        editingProfileName = nil
+                    }
                 }
                 .buttonStyle(.bordered)
             }
         }
+    }
+
+    private func normalized(_ draft: HermesProfileFormDraft) -> HermesProfileFormDraft {
+        HermesProfileFormDraft(
+            name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines),
+            provider: draft.provider.trimmingCharacters(in: .whitespacesAndNewlines),
+            model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines),
+            baseUrl: draft.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines),
+            createEnv: draft.createEnv,
+            createSoul: draft.createSoul
+        )
+    }
+
+    private func draftFromDefault() -> HermesProfileFormDraft {
+        guard let defaultProfile else { return HermesProfileFormDraft(provider: "auto") }
+        var draft = draftForProfile(defaultProfile)
+        draft.name = ""
+        return draft
+    }
+
+    private func draftForProfile(_ profile: HermesCompanionProfileInfo) -> HermesProfileFormDraft {
+        HermesProfileFormDraft(
+            name: profile.name,
+            provider: profile.provider.isEmpty ? "auto" : profile.provider,
+            model: profile.model,
+            baseUrl: profile.baseUrl,
+            createEnv: profile.hasEnv,
+            createSoul: profile.hasSoul
+        )
     }
 
     private func profileCard(_ profile: HermesCompanionProfileInfo) -> some View {
@@ -202,13 +337,25 @@ struct HermesProfilesPanel: View {
             HStack(spacing: 8) {
                 profileMetric("Provider", profile.provider.isEmpty ? "—" : profile.provider)
                 profileMetric("Model", profile.model.isEmpty ? "—" : profile.model)
+                profileMetric("Base URL", profile.baseUrl.isEmpty ? "—" : profile.baseUrl)
                 profileMetric("Skills", "\(profile.skillCount)")
             }
 
             HStack(spacing: 8) {
+                profileFlag("config.yaml", enabled: profile.hasConfig)
                 profileFlag(".env", enabled: profile.hasEnv)
                 profileFlag("SOUL.md", enabled: profile.hasSoul)
                 Spacer()
+                Button {
+                    editDraft = draftForProfile(profile)
+                    editingProfileName = profile.name
+                    showCreateForm = false
+                } label: {
+                    Label("Edit", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.bordered)
+                .disabled(companionRuntime.isBusy)
+
                 if !profile.isActive {
                     Button {
                         companionRuntime.setActiveProfile(name: profile.name, settings: companionSettings, identityState: companionEnrollment.identityState)

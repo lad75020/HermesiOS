@@ -7,6 +7,109 @@
 
 import Foundation
 import Observation
+import UniformTypeIdentifiers
+
+struct HermesPromptAttachment: Equatable {
+    let filename: String
+    let mimeType: String
+    let data: Data
+    let fileExtension: String
+
+    static let supportedFileExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp",
+        "pdf", "docx", "pptx", "xlsx",
+        "txt", "text", "json", "yaml", "yml", "toml", "swift"
+    ]
+
+    static let imageFileExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
+    static let utf8FileExtensions: Set<String> = ["txt", "text", "json", "yaml", "yml", "toml", "swift"]
+
+    init(filename: String, contentType: UTType?, data: Data) throws {
+        let normalizedName = filename.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "attachment" : filename
+        let ext = URL(fileURLWithPath: normalizedName).pathExtension.lowercased()
+        guard Self.supportedFileExtensions.contains(ext) else {
+            throw HermesAttachmentError.unsupportedFileType(ext.isEmpty ? normalizedName : ".\(ext)")
+        }
+
+        self.filename = normalizedName
+        self.fileExtension = ext
+        self.mimeType = Self.mimeType(forExtension: ext, contentType: contentType)
+        self.data = data
+    }
+
+    var isImage: Bool {
+        Self.imageFileExtensions.contains(fileExtension)
+    }
+
+    var isUTF8Text: Bool {
+        Self.utf8FileExtensions.contains(fileExtension)
+    }
+
+    var formattedByteCount: String {
+        ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
+    }
+
+    var base64DataURL: String {
+        "data:\(mimeType);base64,\(data.base64EncodedString())"
+    }
+
+    var textContent: String? {
+        guard isUTF8Text else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    var textAttachmentBlock: String {
+        if let textContent {
+            return """
+
+Attached file: \(filename) (\(mimeType), \(formattedByteCount))
+```\(fileExtension)
+\(textContent)
+```
+"""
+        }
+
+        return """
+
+Attached file: \(filename) (\(mimeType), \(formattedByteCount))
+The file is provided as a base64 data URL. Decode it if you need to inspect or process the document bytes:
+\(base64DataURL)
+"""
+    }
+
+    private static func mimeType(forExtension ext: String, contentType: UTType?) -> String {
+        if let preferred = contentType?.preferredMIMEType, !preferred.isEmpty {
+            return preferred
+        }
+
+        switch ext {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "pdf": return "application/pdf"
+        case "docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        case "pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        case "xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        case "json": return "application/json"
+        case "yaml", "yml": return "application/yaml"
+        case "toml": return "application/toml"
+        case "swift": return "text/x-swift"
+        default: return "text/plain"
+        }
+    }
+}
+
+enum HermesAttachmentError: LocalizedError {
+    case unsupportedFileType(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedFileType(let type):
+            return "Unsupported attachment type: \(type). Choose an image, PDF, Office document, text, JSON, YAML, TOML, or Swift file."
+        }
+    }
+}
 
 final class HermesNetworkSessionDelegate: NSObject, URLSessionDelegate {
     private let allowSelfSignedCertificates: Bool
@@ -80,7 +183,7 @@ final class HermesResponsesSession {
         lastKnownResponseID = HermesSettingsPersistence.loadLastResponsesSessionID()
     }
 
-    func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft) {
+    func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment? = nil) {
         requestTask?.cancel()
         let requestedModel = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
         if activeModel.isEmpty {
@@ -88,7 +191,7 @@ final class HermesResponsesSession {
         }
         let lockedDraft = draft.locked(to: activeModel)
         requestTask = Task {
-            await runRequest(apiSettings: apiSettings, draft: lockedDraft)
+            await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment)
         }
     }
 
@@ -195,11 +298,12 @@ final class HermesResponsesSession {
         HermesSettingsPersistence.saveLastResponsesSessionID(trimmed)
     }
 
-    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft) async {
+    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?) async {
         let continuationID = previousResponseID
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayPrompt = displayPrompt(prompt, attachment: attachment)
         resetForRequest()
-        appendExchange(prompt: prompt)
+        appendExchange(prompt: displayPrompt)
         isSending = true
         connectionStatus = continuationID.isEmpty
             ? (draft.stream ? "Connecting to SSE stream" : "Sending request")
@@ -208,9 +312,9 @@ final class HermesResponsesSession {
         do {
             try await HermesBackgroundActivity.run(named: "Hermes Responses Request") {
                 if draft.stream {
-                    try await streamResponse(apiSettings: apiSettings, draft: draft, previousResponseID: continuationID)
+                    try await streamResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID)
                 } else {
-                    try await fetchResponse(apiSettings: apiSettings, draft: draft, previousResponseID: continuationID)
+                    try await fetchResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID)
                 }
             }
             if !latestResponseID.isEmpty {
@@ -250,6 +354,13 @@ final class HermesResponsesSession {
         entries.append(assistant)
     }
 
+    private func displayPrompt(_ prompt: String, attachment: HermesPromptAttachment?) -> String {
+        guard let attachment else { return prompt }
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = "Attached: \(attachment.filename) (\(attachment.mimeType), \(attachment.formattedByteCount))"
+        return trimmedPrompt.isEmpty ? label : "\(trimmedPrompt)\n\n\(label)"
+    }
+
     private func updateActiveAssistantEntry(with content: String) {
         guard let activeAssistantEntryID,
               let index = entries.firstIndex(where: { $0.id == activeAssistantEntryID })
@@ -259,10 +370,11 @@ final class HermesResponsesSession {
         entries = updatedEntries
     }
 
-    private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, previousResponseID: String) async throws {
+    private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String) async throws {
         let request = try buildRequest(
             apiSettings: apiSettings,
             draft: draft,
+            attachment: attachment,
             stream: true,
             previousResponseID: previousResponseID
         )
@@ -283,10 +395,11 @@ final class HermesResponsesSession {
         }
     }
 
-    private func fetchResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, previousResponseID: String) async throws {
+    private func fetchResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String) async throws {
         let request = try buildRequest(
             apiSettings: apiSettings,
             draft: draft,
+            attachment: attachment,
             stream: false,
             previousResponseID: previousResponseID
         )
@@ -307,6 +420,7 @@ final class HermesResponsesSession {
     private func buildRequest(
         apiSettings: HermesAPISettings,
         draft: HermesRequestDraft,
+        attachment: HermesPromptAttachment?,
         stream: Bool,
         previousResponseID: String
     ) throws -> URLRequest {
@@ -316,7 +430,7 @@ final class HermesResponsesSession {
 
         let payload = HermesResponsesRequestBody(
             model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "hermes-agent" : draft.model,
-            input: draft.userPrompt,
+            input: HermesResponsesInput(prompt: draft.userPrompt, attachment: attachment),
             instructions: draft.instructions,
             stream: stream,
             store: true,
@@ -527,9 +641,76 @@ struct HermesRequestDraft: Codable, Equatable {
     }
 }
 
+private enum HermesResponsesInput: Encodable {
+    case text(String)
+    case message([HermesResponsesInputMessage])
+
+    init(prompt: String, attachment: HermesPromptAttachment?) {
+        guard let attachment else {
+            self = .text(prompt)
+            return
+        }
+
+        if attachment.isImage {
+            self = .message([
+                HermesResponsesInputMessage(
+                    role: "user",
+                    content: [
+                        .inputText(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Please inspect the attached image." : prompt),
+                        .inputImage(attachment.base64DataURL)
+                    ]
+                )
+            ])
+        } else {
+            let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            let basePrompt = trimmedPrompt.isEmpty ? "Please inspect the attached file." : trimmedPrompt
+            self = .text(basePrompt + attachment.textAttachmentBlock)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .text(let text):
+            var container = encoder.singleValueContainer()
+            try container.encode(text)
+        case .message(let messages):
+            var container = encoder.singleValueContainer()
+            try container.encode(messages)
+        }
+    }
+}
+
+private struct HermesResponsesInputMessage: Encodable {
+    let role: String
+    let content: [HermesResponsesInputContentPart]
+}
+
+private enum HermesResponsesInputContentPart: Encodable {
+    case inputText(String)
+    case inputImage(String)
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case imageURL = "image_url"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .inputText(let text):
+            try container.encode("input_text", forKey: .type)
+            try container.encode(text, forKey: .text)
+        case .inputImage(let dataURL):
+            try container.encode("input_image", forKey: .type)
+            try container.encode(dataURL, forKey: .imageURL)
+        }
+    }
+}
+
 private struct HermesResponsesRequestBody: Encodable {
     let model: String
-    let input: String
+    let input: HermesResponsesInput
     let instructions: String
     let stream: Bool
     let store: Bool

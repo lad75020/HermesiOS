@@ -327,6 +327,7 @@ final class CompanionClientSession {
                         "trigger_schedule",
                         "list_profiles",
                         "create_profile",
+                        "edit_profile",
                         "delete_profile",
                         "set_active_profile",
                         "get_gateway_config",
@@ -781,10 +782,19 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The create_profile request requires a payload.") }
                 let createPayload = try payload.decode(CreateProfilePayload.self)
-                let result = try profileRegistry.create(workspacePath: createPayload.workspacePath, name: createPayload.name, clone: createPayload.clone)
+                let result = try profileRegistry.create(workspacePath: createPayload.workspacePath, name: createPayload.name, provider: createPayload.provider, model: createPayload.model, baseUrl: createPayload.baseUrl, createEnv: createPayload.createEnv, createSoul: createPayload.createSoul)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "create_profile_failed", message: error.localizedDescription)
+            }
+        case "edit_profile":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The edit_profile request requires a payload.") }
+                let editPayload = try payload.decode(EditProfilePayload.self)
+                let result = try profileRegistry.edit(workspacePath: editPayload.workspacePath, originalName: editPayload.originalName, name: editPayload.name, provider: editPayload.provider, model: editPayload.model, baseUrl: editPayload.baseUrl, createEnv: editPayload.createEnv, createSoul: editPayload.createSoul)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "edit_profile_failed", message: error.localizedDescription)
             }
         case "delete_profile":
             do {

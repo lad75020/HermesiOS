@@ -29,7 +29,7 @@ final class HermesChatSession {
         lastKnownChatSessionID = HermesSettingsPersistence.loadLastChatSessionID()
     }
 
-    func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft) {
+    func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment? = nil) {
         requestTask?.cancel()
         let requestedModel = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
         if activeModel.isEmpty {
@@ -40,7 +40,7 @@ final class HermesChatSession {
         }
         let lockedDraft = draft.locked(to: activeModel)
         requestTask = Task {
-            await runRequest(apiSettings: apiSettings, draft: lockedDraft)
+            await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment)
         }
     }
 
@@ -103,20 +103,21 @@ final class HermesChatSession {
         HermesSettingsPersistence.saveLastChatSessionID(trimmed)
     }
 
-    private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft) async {
+    private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment?) async {
         let history = entries
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayPrompt = displayPrompt(prompt, attachment: attachment)
         resetForRequest()
-        appendExchange(prompt: prompt)
+        appendExchange(prompt: displayPrompt)
         isSending = true
         connectionStatus = draft.stream ? "Connecting to chat stream" : "Sending chat request"
 
         do {
             try await HermesBackgroundActivity.run(named: "Hermes Chat Request") {
                 if draft.stream {
-                    try await streamResponse(apiSettings: apiSettings, draft: draft, history: history)
+                    try await streamResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, history: history)
                 } else {
-                    try await fetchResponse(apiSettings: apiSettings, draft: draft, history: history)
+                    try await fetchResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, history: history)
                 }
             }
 
@@ -151,6 +152,13 @@ final class HermesChatSession {
         entries.append(assistant)
     }
 
+    private func displayPrompt(_ prompt: String, attachment: HermesPromptAttachment?) -> String {
+        guard let attachment else { return prompt }
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = "Attached: \(attachment.filename) (\(attachment.mimeType), \(attachment.formattedByteCount))"
+        return trimmedPrompt.isEmpty ? label : "\(trimmedPrompt)\n\n\(label)"
+    }
+
     private func updateActiveAssistantEntry(with content: String) {
         guard let activeAssistantEntryID,
               let index = entries.firstIndex(where: { $0.id == activeAssistantEntryID })
@@ -160,8 +168,8 @@ final class HermesChatSession {
         entries = updatedEntries
     }
 
-    private func streamResponse(apiSettings: HermesAPISettings, draft: HermesChatDraft, history: [HermesChatMessage]) async throws {
-        let request = try buildRequest(apiSettings: apiSettings, draft: draft, history: history, stream: true)
+    private func streamResponse(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment?, history: [HermesChatMessage]) async throws {
+        let request = try buildRequest(apiSettings: apiSettings, draft: draft, attachment: attachment, history: history, stream: true)
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (bytes, response) = try await session.bytes(for: request)
         try validate(response: response)
@@ -180,8 +188,8 @@ final class HermesChatSession {
         }
     }
 
-    private func fetchResponse(apiSettings: HermesAPISettings, draft: HermesChatDraft, history: [HermesChatMessage]) async throws {
-        let request = try buildRequest(apiSettings: apiSettings, draft: draft, history: history, stream: false)
+    private func fetchResponse(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment?, history: [HermesChatMessage]) async throws {
+        let request = try buildRequest(apiSettings: apiSettings, draft: draft, attachment: attachment, history: history, stream: false)
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (data, response) = try await session.data(for: request)
         try validate(response: response)
@@ -203,6 +211,7 @@ final class HermesChatSession {
     private func buildRequest(
         apiSettings: HermesAPISettings,
         draft: HermesChatDraft,
+        attachment: HermesPromptAttachment?,
         history: [HermesChatMessage],
         stream: Bool
     ) throws -> URLRequest {
@@ -210,10 +219,11 @@ final class HermesChatSession {
             throw HermesResponsesError.invalidURL
         }
 
-        let historyMessages = history.map { HermesChatRequestMessage(role: $0.role, content: $0.content) }
+        let historyMessages = history.map { HermesChatRequestMessage(role: $0.role, content: .text($0.content)) }
+        let userMessage = HermesChatRequestMessage(role: "user", content: HermesChatMessageContentPayload(prompt: draft.userPrompt, attachment: attachment))
         let requestMessages = draft.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? historyMessages + [HermesChatRequestMessage(role: "user", content: draft.userPrompt)]
-            : [HermesChatRequestMessage(role: "system", content: draft.systemPrompt)] + historyMessages + [HermesChatRequestMessage(role: "user", content: draft.userPrompt)]
+            ? historyMessages + [userMessage]
+            : [HermesChatRequestMessage(role: "system", content: .text(draft.systemPrompt))] + historyMessages + [userMessage]
 
         let payload = HermesChatCompletionsRequestBody(
             model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "hermes-agent" : draft.model,
@@ -247,29 +257,48 @@ final class HermesChatSession {
 
 
     private func extractChatText(from payload: HermesLooseJSON, eventName: String? = nil) -> String {
-        switch eventName {
-        case "response.output_text.delta":
-            return payload.string(at: ["delta"]) ?? ""
-        case "response.output_text.done":
-            return payload.string(at: ["text"]) ?? ""
-        default:
-            break
+        if let eventName {
+            switch eventName {
+            case "response.output_text.delta":
+                return payload.string(at: ["delta"]) ?? ""
+            case "response.output_text.done":
+                return payload.string(at: ["text"]) ?? ""
+            case "response.completed":
+                return preferredText(from: [
+                    payload.messageOutputTexts(at: ["response", "output"]),
+                    payload.messageOutputTexts(at: ["output"]),
+                    payload.texts(at: ["response", "output_text"]),
+                    payload.texts(at: ["output_text"]),
+                    payload.texts(at: ["choices", "0", "message", "content"]),
+                    payload.texts(at: ["choices", "0", "delta", "content"]),
+                    payload.texts(at: ["choices", "0", "text"])
+                ])
+            case "message", "completion", "chat.completion.chunk":
+                break
+            default:
+                // The Hermes agent can emit Responses-style events for
+                // reasoning, tool calls, tool results, and output-item state while
+                // the Chat Completions tab is streaming. Those chunks are useful
+                // for diagnostics, but assistant bubbles should only show the
+                // final assistant text.
+                if eventName.hasPrefix("response.") {
+                    return ""
+                }
+            }
         }
 
         let candidates = [
-            // OpenAI-compatible streaming and non-streaming shapes.
+            // OpenAI-compatible streaming and non-streaming shapes. Keep this
+            // intentionally narrow so generic `content`/`text` fields from tool
+            // or reasoning payloads never leak into assistant bubbles.
             payload.texts(at: ["choices", "0", "delta", "content"]),
             payload.texts(at: ["choices", "0", "message", "content"]),
             payload.texts(at: ["choices", "0", "text"]),
             payload.texts(at: ["delta", "content"]),
-            payload.texts(at: ["delta"]),
             payload.texts(at: ["message", "content"]),
-            payload.texts(at: ["content"]),
-            payload.texts(at: ["text"]),
             // Some Hermes/OpenAI-compatible gateways return a Responses-style
-            // envelope even from the chat endpoint, especially for final SSE
-            // events. Extract only message output first to avoid tool/reasoning
-            // chatter, then fall back to text-like output fields.
+            // final envelope even from the chat endpoint. Extract only message
+            // output so tool/reasoning items are ignored.
             payload.messageOutputTexts(at: ["output"]),
             payload.messageOutputTexts(at: ["response", "output"]),
             payload.texts(at: ["output_text"]),
@@ -277,13 +306,13 @@ final class HermesChatSession {
             payload.texts(at: ["response", "message", "content"])
         ]
 
-        if let preferred = candidates
-            .map({ $0.joined() })
-            .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-            return preferred
-        }
+        return preferredText(from: candidates)
+    }
 
-        return payload.chatCompletionFallbackText
+    private func preferredText(from candidates: [[String]]) -> String {
+        candidates
+            .map { $0.joined() }
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
     }
 
     private func validate(response: URLResponse) throws {
@@ -456,9 +485,72 @@ private struct HermesChatCompletionsRequestBody: Encodable {
     let user: String?
 }
 
+private enum HermesChatMessageContentPayload: Encodable {
+    case text(String)
+    case parts([HermesChatRequestContentPart])
+
+    init(prompt: String, attachment: HermesPromptAttachment?) {
+        guard let attachment else {
+            self = .text(prompt)
+            return
+        }
+
+        if attachment.isImage {
+            let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Please inspect the attached image." : prompt
+            self = .parts([
+                .text(text),
+                .imageURL(attachment.base64DataURL)
+            ])
+        } else {
+            let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            let basePrompt = trimmedPrompt.isEmpty ? "Please inspect the attached file." : trimmedPrompt
+            self = .text(basePrompt + attachment.textAttachmentBlock)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .text(let text):
+            var container = encoder.singleValueContainer()
+            try container.encode(text)
+        case .parts(let parts):
+            var container = encoder.singleValueContainer()
+            try container.encode(parts)
+        }
+    }
+}
+
+private enum HermesChatRequestContentPart: Encodable {
+    case text(String)
+    case imageURL(String)
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case imageURL = "image_url"
+    }
+
+    enum ImageURLKeys: String, CodingKey {
+        case url
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .text(let text):
+            try container.encode("text", forKey: .type)
+            try container.encode(text, forKey: .text)
+        case .imageURL(let dataURL):
+            try container.encode("image_url", forKey: .type)
+            var imageContainer = container.nestedContainer(keyedBy: ImageURLKeys.self, forKey: .imageURL)
+            try imageContainer.encode(dataURL, forKey: .url)
+        }
+    }
+}
+
 private struct HermesChatRequestMessage: Encodable {
     let role: String
-    let content: String
+    let content: HermesChatMessageContentPayload
 }
 
 private struct HermesChatCompletionEnvelope: Decodable {

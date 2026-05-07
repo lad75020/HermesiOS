@@ -3,13 +3,273 @@
 //  HermesiOS
 //
 
+import AVFoundation
 import Observation
+import Speech
 import SwiftUI
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
+
+extension HermesPromptAttachment {
+    static var supportedContentTypes: [UTType] {
+        var types: [UTType] = [
+            .pdf,
+            .plainText,
+            .text,
+            .json,
+            .sourceCode,
+            .swiftSource
+        ]
+
+        for identifier in [
+            "public.png",
+            "public.jpeg",
+            "com.compuserve.gif",
+            "org.webmproject.webp",
+            "public.yaml",
+            "public.toml",
+            "org.openxmlformats.wordprocessingml.document",
+            "org.openxmlformats.presentationml.presentation",
+            "org.openxmlformats.spreadsheetml.sheet"
+        ] {
+            if let type = UTType(identifier) {
+                types.append(type)
+            }
+        }
+
+        for extensionValue in Self.supportedFileExtensions {
+            if let type = UTType(filenameExtension: extensionValue) {
+                types.append(type)
+            }
+        }
+
+        return Array(Set(types))
+    }
+
+    static func load(from url: URL) throws -> HermesPromptAttachment {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { url.stopAccessingSecurityScopedResource() }
+        }
+
+        let resourceValues = try url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey, .nameKey])
+        let filename = resourceValues.name ?? url.lastPathComponent
+        let data = try Data(contentsOf: url)
+        return try HermesPromptAttachment(filename: filename, contentType: resourceValues.contentType, data: data)
+    }
+}
+
+private struct HermesAttachmentChip: View {
+    let attachment: HermesPromptAttachment
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: attachment.isImage ? "photo" : "doc.text")
+                .foregroundStyle(.igActionBlue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(attachment.filename)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text("\(attachment.mimeType) · \(attachment.formattedByteCount)")
+                    .font(.caption2)
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button(action: remove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove attachment")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .hermesLiquidGlass(cornerRadius: 14, tint: Color.igActionBlue.opacity(0.08))
+    }
+}
+
+@MainActor
+@Observable
+final class HermesSpeechTranscriptionSession {
+    var isRecording = false
+    var liveText = ""
+    var statusMessage = ""
+    var lastErrorMessage = ""
+
+    private let audioEngine = AVAudioEngine()
+    private let speechRecognizer = SFSpeechRecognizer()
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var onTextChange: ((String) -> Void)?
+
+    func toggle(seedText: String, onTextChange: @escaping (String) -> Void) {
+        if isRecording {
+            stop()
+        } else {
+            start(seedText: seedText, onTextChange: onTextChange)
+        }
+    }
+
+    func start(seedText: String, onTextChange: @escaping (String) -> Void) {
+        guard !isRecording else { return }
+        self.onTextChange = onTextChange
+        liveText = seedText
+        lastErrorMessage = ""
+        statusMessage = "Requesting speech access…"
+
+        Task {
+            do {
+                try await requestPermissions()
+                try beginRecognition(seedText: seedText)
+            } catch {
+                self.lastErrorMessage = error.localizedDescription
+                self.statusMessage = "Dictation unavailable"
+                self.stop()
+            }
+        }
+    }
+
+    func stop() {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest = nil
+        isRecording = false
+        if statusMessage == "Listening…" {
+            statusMessage = "Dictation stopped"
+        }
+    }
+
+    private func requestPermissions() async throws {
+        let speechStatus = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
+        guard speechStatus == .authorized else {
+            throw HermesSpeechError.speechNotAuthorized
+        }
+
+        let audioSession = AVAudioSession.sharedInstance()
+        let recordPermission = await withCheckedContinuation { continuation in
+            if #available(iOS 17.0, *) {
+                AVAudioApplication.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
+            } else {
+                audioSession.requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+        }
+        guard recordPermission else {
+            throw HermesSpeechError.microphoneNotAuthorized
+        }
+    }
+
+    private func beginRecognition(seedText: String) throws {
+        recognitionTask?.cancel()
+        recognitionTask = nil
+
+        guard let speechRecognizer, speechRecognizer.isAvailable else {
+            throw HermesSpeechError.recognizerUnavailable
+        }
+
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        recognitionRequest = request
+
+        let inputNode = audioEngine.inputNode
+        inputNode.removeTap(onBus: 0)
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak request] buffer, _ in
+            request?.append(buffer)
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+        isRecording = true
+        statusMessage = "Listening…"
+
+        recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let result {
+                    let transcription = result.bestTranscription.formattedString
+                    self.liveText = transcription
+                    self.onTextChange?(self.merge(seedText: seedText, transcription: transcription))
+                    if result.isFinal {
+                        self.statusMessage = "Dictation complete"
+                        self.stop()
+                    }
+                }
+
+                if let error {
+                    self.lastErrorMessage = error.localizedDescription
+                    self.statusMessage = "Dictation failed"
+                    self.stop()
+                }
+            }
+        }
+    }
+
+    private func merge(seedText: String, transcription: String) -> String {
+        let base = seedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let spoken = transcription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return spoken }
+        guard !spoken.isEmpty else { return base }
+        return base + "\n" + spoken
+    }
+}
+
+private enum HermesSpeechError: LocalizedError {
+    case speechNotAuthorized
+    case microphoneNotAuthorized
+    case recognizerUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .speechNotAuthorized:
+            return "Speech recognition permission is required to dictate prompts."
+        case .microphoneNotAuthorized:
+            return "Microphone permission is required to dictate prompts."
+        case .recognizerUnavailable:
+            return "Apple speech recognizer is not currently available."
+        }
+    }
+}
+
+private struct HermesMicrophoneButton: View {
+    let speechSession: HermesSpeechTranscriptionSession
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: speechSession.isRecording ? "mic.fill" : "mic")
+                .font(.headline)
+                .frame(width: 42, height: 42)
+                .foregroundStyle(speechSession.isRecording ? Color.igDestructive : Color.primary)
+        }
+        .hermesGlassButton()
+        .disabled(isDisabled)
+        .accessibilityLabel(speechSession.isRecording ? "Stop dictation" : "Start dictation")
+    }
+}
 
 struct HermesResponsesConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
@@ -19,6 +279,9 @@ struct HermesResponsesConsoleView: View {
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var responseSession: HermesResponsesSession
     @State private var apiServerModels: [HermesAPIServerModel] = []
+    @State private var selectedAttachment: HermesPromptAttachment?
+    @State private var isImportingAttachment = false
+    @State private var speechSession = HermesSpeechTranscriptionSession()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,6 +322,13 @@ struct HermesResponsesConsoleView: View {
         }
         .onChange(of: apiSettings) { _, _ in
             Task { await refreshAPIServerModels() }
+        }
+        .fileImporter(
+            isPresented: $isImportingAttachment,
+            allowedContentTypes: HermesPromptAttachment.supportedContentTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            handleAttachmentImport(result)
         }
     }
 
@@ -136,7 +406,34 @@ struct HermesResponsesConsoleView: View {
                     .foregroundStyle(.igDestructive)
             }
 
+            if !speechSession.statusMessage.isEmpty || !speechSession.lastErrorMessage.isEmpty {
+                Label(
+                    speechSession.lastErrorMessage.isEmpty ? speechSession.statusMessage : speechSession.lastErrorMessage,
+                    systemImage: speechSession.isRecording ? "waveform" : "mic"
+                )
+                .font(.caption)
+                .foregroundStyle(speechSession.lastErrorMessage.isEmpty ? Color.hermesSecondaryText : Color.igDestructive)
+            }
+
+            if let selectedAttachment {
+                HermesAttachmentChip(attachment: selectedAttachment) {
+                    self.selectedAttachment = nil
+                }
+                .disabled(responseSession.isSending)
+            }
+
             HStack(alignment: .bottom, spacing: 12) {
+                Button {
+                    isImportingAttachment = true
+                } label: {
+                    Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                        .font(.headline)
+                        .frame(width: 42, height: 42)
+                }
+                .hermesGlassButton()
+                .disabled(responseSession.isSending)
+                .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
+
                 TextEditor(text: $requestDraft.userPrompt)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 72, maxHeight: 130)
@@ -151,18 +448,32 @@ struct HermesResponsesConsoleView: View {
                         }
                     }
 
-                Button {
-                    let submittedDraft = requestDraft
-                    responseSession.submit(apiSettings: apiSettings, draft: submittedDraft)
-                    requestDraft.userPrompt = ""
-                } label: {
-                    Image(systemName: "paperplane.fill")
-                        .font(.headline)
-                        .frame(width: 42, height: 42)
+                VStack(spacing: 8) {
+                    HermesMicrophoneButton(
+                        speechSession: speechSession,
+                        isDisabled: responseSession.isSending
+                    ) {
+                        speechSession.toggle(seedText: requestDraft.userPrompt) { text in
+                            requestDraft.userPrompt = text
+                        }
+                    }
+
+                    Button {
+                        speechSession.stop()
+                        let submittedDraft = requestDraft
+                        let submittedAttachment = selectedAttachment
+                        responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment)
+                        requestDraft.userPrompt = ""
+                        selectedAttachment = nil
+                    } label: {
+                        Image(systemName: "paperplane.fill")
+                            .font(.headline)
+                            .frame(width: 42, height: 42)
+                    }
+                    .hermesGlassProminentButton()
+                    .disabled((requestDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
+                    .accessibilityLabel("Send prompt")
                 }
-                .hermesGlassProminentButton()
-                .disabled(requestDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || responseSession.isSending)
-                .accessibilityLabel("Send prompt")
             }
         }
         .padding(14)
@@ -184,6 +495,21 @@ struct HermesResponsesConsoleView: View {
 
     private var hasResponseComposerControls: Bool {
         canResumeLastResponseSession || responseSession.hasActiveConversation || responseSession.isSending
+    }
+
+    private func handleAttachmentImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            do {
+                selectedAttachment = try HermesPromptAttachment.load(from: url)
+                responseSession.lastErrorMessage = ""
+            } catch {
+                responseSession.lastErrorMessage = error.localizedDescription
+            }
+        case .failure(let error):
+            responseSession.lastErrorMessage = error.localizedDescription
+        }
     }
 
     private func refreshAPIServerModels() async {
@@ -440,6 +766,9 @@ struct HermesChatConsoleView: View {
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var chatSession: HermesChatSession
     @State private var apiServerModels: [HermesAPIServerModel] = []
+    @State private var selectedAttachment: HermesPromptAttachment?
+    @State private var isImportingAttachment = false
+    @State private var speechSession = HermesSpeechTranscriptionSession()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -481,6 +810,13 @@ struct HermesChatConsoleView: View {
         }
         .onChange(of: apiSettings) { _, _ in
             Task { await refreshAPIServerModels() }
+        }
+        .fileImporter(
+            isPresented: $isImportingAttachment,
+            allowedContentTypes: HermesPromptAttachment.supportedContentTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            handleAttachmentImport(result)
         }
     }
 
@@ -561,7 +897,34 @@ struct HermesChatConsoleView: View {
                     .foregroundStyle(.igDestructive)
             }
 
+            if !speechSession.statusMessage.isEmpty || !speechSession.lastErrorMessage.isEmpty {
+                Label(
+                    speechSession.lastErrorMessage.isEmpty ? speechSession.statusMessage : speechSession.lastErrorMessage,
+                    systemImage: speechSession.isRecording ? "waveform" : "mic"
+                )
+                .font(.caption)
+                .foregroundStyle(speechSession.lastErrorMessage.isEmpty ? Color.hermesSecondaryText : Color.igDestructive)
+            }
+
+            if let selectedAttachment {
+                HermesAttachmentChip(attachment: selectedAttachment) {
+                    self.selectedAttachment = nil
+                }
+                .disabled(chatSession.isSending)
+            }
+
             HStack(alignment: .bottom, spacing: 12) {
+                Button {
+                    isImportingAttachment = true
+                } label: {
+                    Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                        .font(.headline)
+                        .frame(width: 42, height: 42)
+                }
+                .hermesGlassButton()
+                .disabled(chatSession.isSending)
+                .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
+
                 TextEditor(text: $chatDraft.userPrompt)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 72, maxHeight: 130)
@@ -576,18 +939,32 @@ struct HermesChatConsoleView: View {
                         }
                     }
 
-                Button {
-                    let submittedDraft = chatDraft
-                    chatSession.submit(apiSettings: apiSettings, draft: submittedDraft)
-                    chatDraft.userPrompt = ""
-                } label: {
-                    Image(systemName: "paperplane.fill")
-                        .font(.headline)
-                        .frame(width: 42, height: 42)
+                VStack(spacing: 8) {
+                    HermesMicrophoneButton(
+                        speechSession: speechSession,
+                        isDisabled: chatSession.isSending
+                    ) {
+                        speechSession.toggle(seedText: chatDraft.userPrompt) { text in
+                            chatDraft.userPrompt = text
+                        }
+                    }
+
+                    Button {
+                        speechSession.stop()
+                        let submittedDraft = chatDraft
+                        let submittedAttachment = selectedAttachment
+                        chatSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment)
+                        chatDraft.userPrompt = ""
+                        selectedAttachment = nil
+                    } label: {
+                        Image(systemName: "paperplane.fill")
+                            .font(.headline)
+                            .frame(width: 42, height: 42)
+                    }
+                    .hermesGlassProminentButton()
+                    .disabled((chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
+                    .accessibilityLabel("Send chat message")
                 }
-                .hermesGlassProminentButton()
-                .disabled(chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatSession.isSending)
-                .accessibilityLabel("Send chat message")
             }
         }
         .padding(14)
@@ -605,6 +982,21 @@ struct HermesChatConsoleView: View {
         let last = chatSession.lastKnownChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !last.isEmpty else { return false }
         return chatSession.activeChatSessionID != last
+    }
+
+    private func handleAttachmentImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            do {
+                selectedAttachment = try HermesPromptAttachment.load(from: url)
+                chatSession.lastErrorMessage = ""
+            } catch {
+                chatSession.lastErrorMessage = error.localizedDescription
+            }
+        case .failure(let error):
+            chatSession.lastErrorMessage = error.localizedDescription
+        }
     }
 
     private func liveContent(for message: HermesChatMessage) -> String? {

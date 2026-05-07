@@ -705,6 +705,8 @@ struct HermesCompanionProfileInfo: Codable, Identifiable, Equatable {
     let isActive: Bool
     let model: String
     let provider: String
+    let baseUrl: String
+    let hasConfig: Bool
     let hasEnv: Bool
     let hasSoul: Bool
     let skillCount: Int
@@ -726,7 +728,22 @@ struct HermesCompanionListProfilesResult: Codable, Equatable {
 struct HermesCompanionCreateProfilePayload: Codable {
     let workspacePath: String
     let name: String
-    let clone: Bool
+    let provider: String
+    let model: String
+    let baseUrl: String
+    let createEnv: Bool
+    let createSoul: Bool
+}
+
+struct HermesCompanionEditProfilePayload: Codable {
+    let workspacePath: String
+    let originalName: String
+    let name: String
+    let provider: String
+    let model: String
+    let baseUrl: String
+    let createEnv: Bool
+    let createSoul: Bool
 }
 
 struct HermesCompanionProfileOperationPayload: Codable {
@@ -1979,6 +1996,8 @@ final class HermesCompanionRuntimeSession {
         resolvedHermesWorkspacePath = result.resolvedWorkspacePath
         if let error = result.error, !error.isEmpty {
             lastErrorMessage = error
+        } else if result.success {
+            lastErrorMessage = ""
         }
         if let memory = result.memory {
             applyMemoryConfig(memory)
@@ -2013,17 +2032,31 @@ final class HermesCompanionRuntimeSession {
         }
     }
 
-    func createProfile(name: String, clone: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+    func createProfile(name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Creating Profile"
             let result: HermesCompanionProfileOperationResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
                 state: identityState,
                 type: "create_profile",
-                payload: HermesCompanionCreateProfilePayload(workspacePath: settings.hermesWorkspacePath, name: name, clone: clone)
+                payload: HermesCompanionCreateProfilePayload(workspacePath: settings.hermesWorkspacePath, name: name, provider: provider, model: model, baseUrl: baseUrl, createEnv: createEnv, createSoul: createSoul)
             )
             self.applyProfileOperation(result)
             self.connectionStatus = result.success ? "Profile Created" : "Profile Create Failed"
+        }
+    }
+
+    func editProfile(originalName: String, name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Saving Profile"
+            let result: HermesCompanionProfileOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "edit_profile",
+                payload: HermesCompanionEditProfilePayload(workspacePath: settings.hermesWorkspacePath, originalName: originalName, name: name, provider: provider, model: model, baseUrl: baseUrl, createEnv: createEnv, createSoul: createSoul)
+            )
+            self.applyProfileOperation(result)
+            self.connectionStatus = result.success ? "Profile Saved" : "Profile Save Failed"
         }
     }
 
@@ -2069,6 +2102,8 @@ final class HermesCompanionRuntimeSession {
         resolvedHermesWorkspacePath = result.resolvedWorkspacePath
         if let error = result.error, !error.isEmpty {
             lastErrorMessage = error
+        } else if result.success {
+            lastErrorMessage = ""
         }
     }
 
@@ -2157,6 +2192,8 @@ final class HermesCompanionRuntimeSession {
         resolvedHermesWorkspacePath = result.resolvedWorkspacePath
         if let error = result.error, !error.isEmpty {
             lastErrorMessage = error
+        } else if result.success {
+            lastErrorMessage = ""
         }
     }
 

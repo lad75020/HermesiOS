@@ -643,6 +643,8 @@ struct ProfileInfo: Codable, Identifiable {
     let isActive: Bool
     let model: String
     let provider: String
+    let baseUrl: String
+    let hasConfig: Bool
     let hasEnv: Bool
     let hasSoul: Bool
     let skillCount: Int
@@ -664,7 +666,22 @@ struct ListProfilesResult: Codable {
 struct CreateProfilePayload: Codable {
     let workspacePath: String
     let name: String
-    let clone: Bool
+    let provider: String
+    let model: String
+    let baseUrl: String
+    let createEnv: Bool
+    let createSoul: Bool
+}
+
+struct EditProfilePayload: Codable {
+    let workspacePath: String
+    let originalName: String
+    let name: String
+    let provider: String
+    let model: String
+    let baseUrl: String
+    let createEnv: Bool
+    let createSoul: Bool
 }
 
 struct ProfileOperationPayload: Codable {

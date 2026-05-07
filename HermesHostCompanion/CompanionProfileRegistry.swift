@@ -10,6 +10,8 @@ enum CompanionProfileRegistryError: LocalizedError {
     case invalidWorkspace(String)
     case invalidProfileName
     case cannotDeleteDefault
+    case cannotEditDefaultName
+    case profileAlreadyExists(String)
     case commandFailed(String)
 
     var errorDescription: String? {
@@ -20,6 +22,10 @@ enum CompanionProfileRegistryError: LocalizedError {
             return "Enter a valid profile name."
         case .cannotDeleteDefault:
             return "Cannot delete the default profile."
+        case .cannotEditDefaultName:
+            return "Cannot rename the default profile."
+        case .profileAlreadyExists(let name):
+            return "A profile named '\(name)' already exists."
         case .commandFailed(let message):
             return message
         }
@@ -56,11 +62,37 @@ final class CompanionProfileRegistry {
         )
     }
 
-    func create(workspacePath: String, name: String, clone: Bool) throws -> ProfileOperationResult {
+    func create(workspacePath: String, name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool) throws -> ProfileOperationResult {
         let trimmedName = try normalizedProfileName(name)
+        guard trimmedName != "default" else { throw CompanionProfileRegistryError.profileAlreadyExists(trimmedName) }
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        let result = runProfileCommand(args: ["create", trimmedName] + (clone ? ["--clone"] : []), workspaceURL: workspaceURL)
-        return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: result.success, output: result.output, error: result.error)
+        let profileURL = profileURL(for: trimmedName, workspaceURL: workspaceURL)
+        var isDirectory: ObjCBool = false
+        guard !FileManager.default.fileExists(atPath: profileURL.path, isDirectory: &isDirectory) else {
+            throw CompanionProfileRegistryError.profileAlreadyExists(trimmedName)
+        }
+        try FileManager.default.createDirectory(at: profileURL, withIntermediateDirectories: true)
+        try seedProfileFiles(profileURL: profileURL, workspaceURL: workspaceURL, provider: provider, model: model, baseUrl: baseUrl, createEnv: createEnv, createSoul: createSoul)
+        return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, output: "Created profile \(trimmedName) at \(profileURL.path)", error: nil)
+    }
+
+    func edit(workspacePath: String, originalName: String, name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool) throws -> ProfileOperationResult {
+        let oldName = try normalizedProfileName(originalName)
+        let newName = try normalizedProfileName(name)
+        let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
+        var currentProfileURL = profileURL(for: oldName, workspaceURL: workspaceURL)
+        if oldName == "default" && newName != "default" { throw CompanionProfileRegistryError.cannotEditDefaultName }
+        if oldName != newName {
+            let destinationURL = profileURL(for: newName, workspaceURL: workspaceURL)
+            guard !FileManager.default.fileExists(atPath: destinationURL.path) else { throw CompanionProfileRegistryError.profileAlreadyExists(newName) }
+            try FileManager.default.moveItem(at: currentProfileURL, to: destinationURL)
+            currentProfileURL = destinationURL
+            if activeProfileName(workspaceURL: workspaceURL) == oldName {
+                try newName.write(to: workspaceURL.appendingPathComponent("active_profile"), atomically: true, encoding: .utf8)
+            }
+        }
+        try seedProfileFiles(profileURL: currentProfileURL, workspaceURL: workspaceURL, provider: provider, model: model, baseUrl: baseUrl, createEnv: createEnv, createSoul: createSoul)
+        return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, output: "Saved profile \(newName) at \(currentProfileURL.path)", error: nil)
     }
 
     func remove(workspacePath: String, name: String) throws -> ProfileOperationResult {
@@ -92,6 +124,7 @@ final class CompanionProfileRegistry {
     }
 
     private func profileInfo(name: String, profileURL: URL, workspaceURL: URL, isDefault: Bool, isActive: Bool) -> ProfileInfo {
+        let configURL = profileURL.appendingPathComponent("config.yaml")
         let config = readProfileConfig(profileURL: profileURL)
         return ProfileInfo(
             id: name,
@@ -101,6 +134,8 @@ final class CompanionProfileRegistry {
             isActive: isActive,
             model: config.model,
             provider: config.provider,
+            baseUrl: config.baseUrl,
+            hasConfig: FileManager.default.fileExists(atPath: configURL.path),
             hasEnv: FileManager.default.fileExists(atPath: profileURL.appendingPathComponent(".env").path),
             hasSoul: FileManager.default.fileExists(atPath: profileURL.appendingPathComponent("SOUL.md").path),
             skillCount: countSkills(profileURL: profileURL),
@@ -108,19 +143,119 @@ final class CompanionProfileRegistry {
         )
     }
 
-    private func readProfileConfig(profileURL: URL) -> (model: String, provider: String) {
+    private func readProfileConfig(profileURL: URL) -> (model: String, provider: String, baseUrl: String) {
         let configURL = profileURL.appendingPathComponent("config.yaml")
-        guard let content = try? String(contentsOf: configURL, encoding: .utf8) else { return ("", "") }
-        return (firstYAMLScalar(named: "default", in: content) ?? "", firstYAMLScalar(named: "provider", in: content) ?? "auto")
+        guard let content = try? String(contentsOf: configURL, encoding: .utf8) else { return ("", "", "") }
+        return (
+            readYAMLScalar(content: content, section: "model", key: "default") ?? firstTopLevelYAMLScalar(named: "default", in: content) ?? "",
+            readYAMLScalar(content: content, section: "model", key: "provider") ?? firstTopLevelYAMLScalar(named: "provider", in: content) ?? "auto",
+            readYAMLScalar(content: content, section: "model", key: "base_url") ?? firstTopLevelYAMLScalar(named: "base_url", in: content) ?? ""
+        )
     }
 
-    private func firstYAMLScalar(named key: String, in content: String) -> String? {
-        let pattern = #"(?m)^\s*\#(key):\s*["']?([^"'\n#]+)["']?"#
+    private func firstTopLevelYAMLScalar(named key: String, in content: String) -> String? {
+        firstMatch(in: content, pattern: #"^\#(key):\s*["']?([^"'\n#]+)["']?"#)
+    }
+
+    private func readYAMLScalar(content: String, section: String, key: String) -> String? {
+        let lines = content.components(separatedBy: "\n")
+        guard let sectionIndex = lines.firstIndex(where: { $0.range(of: #"^\#(section):\s*(#.*)?$"#, options: .regularExpression) != nil }) else { return nil }
+        let sectionIndent = indentation(of: lines[sectionIndex])
+        var index = sectionIndex + 1
+        while index < lines.count {
+            let line = lines[index]
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && indentation(of: line) <= sectionIndent { break }
+            if indentation(of: line) == sectionIndent + 2, let value = scalarValue(from: line, key: key) { return value }
+            index += 1
+        }
+        return nil
+    }
+
+    private func scalarValue(from line: String, key: String) -> String? {
+        firstMatch(in: line, pattern: #"^\s*\#(key):\s*["']?([^"'\n#]+)["']?"#)
+    }
+
+    private func firstMatch(in content: String, pattern: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(content.startIndex..<content.endIndex, in: content)
         guard let match = regex.firstMatch(in: content, range: range), match.numberOfRanges > 1,
               let valueRange = Range(match.range(at: 1), in: content) else { return nil }
         return String(content[valueRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func indentation(of line: String) -> Int {
+        line.prefix { $0 == " " }.count
+    }
+
+    private func profileURL(for name: String, workspaceURL: URL) -> URL {
+        name == "default" ? workspaceURL : workspaceURL.appendingPathComponent("profiles", isDirectory: true).appendingPathComponent(name, isDirectory: true)
+    }
+
+    private func seedProfileFiles(profileURL: URL, workspaceURL: URL, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool) throws {
+        try FileManager.default.createDirectory(at: profileURL, withIntermediateDirectories: true)
+        let defaultConfigURL = workspaceURL.appendingPathComponent("config.yaml")
+        let configURL = profileURL.appendingPathComponent("config.yaml")
+        if !FileManager.default.fileExists(atPath: configURL.path), FileManager.default.fileExists(atPath: defaultConfigURL.path) {
+            try FileManager.default.copyItem(at: defaultConfigURL, to: configURL)
+        }
+        try writeModelFields(configURL: configURL, provider: provider, model: model, baseUrl: baseUrl)
+        try syncOptionalFile(fileName: ".env", enabled: createEnv, profileURL: profileURL, workspaceURL: workspaceURL)
+        try syncOptionalFile(fileName: "SOUL.md", enabled: createSoul, profileURL: profileURL, workspaceURL: workspaceURL)
+    }
+
+    private func syncOptionalFile(fileName: String, enabled: Bool, profileURL: URL, workspaceURL: URL) throws {
+        let destinationURL = profileURL.appendingPathComponent(fileName)
+        if enabled {
+            if !FileManager.default.fileExists(atPath: destinationURL.path) {
+                let sourceURL = workspaceURL.appendingPathComponent(fileName)
+                if FileManager.default.fileExists(atPath: sourceURL.path) {
+                    try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+                } else {
+                    try "".write(to: destinationURL, atomically: true, encoding: .utf8)
+                }
+            }
+        } else if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try FileManager.default.removeItem(at: destinationURL)
+        }
+    }
+
+    private func writeModelFields(configURL: URL, provider: String, model: String, baseUrl: String) throws {
+        var content = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        content = setYAMLScalar(content: content, section: "model", key: "provider", value: provider)
+        content = setYAMLScalar(content: content, section: "model", key: "default", value: model)
+        content = setYAMLScalar(content: content, section: "model", key: "base_url", value: baseUrl)
+        try content.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    private func setYAMLScalar(content: String, section: String, key: String, value: String) -> String {
+        var lines = content.components(separatedBy: "\n")
+        if lines == [""] { lines = [] }
+        let sectionLine = "\(section):"
+        let keyLine = "  \(key): \(quotedYAML(value))"
+        guard let sectionIndex = lines.firstIndex(where: { $0.range(of: #"^\#(section):\s*(#.*)?$"#, options: .regularExpression) != nil }) else {
+            lines.append(sectionLine)
+            lines.append(keyLine)
+            return lines.joined(separator: "\n")
+        }
+        let sectionIndent = indentation(of: lines[sectionIndex])
+        var insertIndex = sectionIndex + 1
+        var index = sectionIndex + 1
+        while index < lines.count {
+            let line = lines[index]
+            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && indentation(of: line) <= sectionIndent { break }
+            if indentation(of: line) == sectionIndent + 2, scalarValue(from: line, key: key) != nil {
+                lines[index] = keyLine
+                return lines.joined(separator: "\n")
+            }
+            insertIndex = index + 1
+            index += 1
+        }
+        lines.insert(keyLine, at: insertIndex)
+        return lines.joined(separator: "\n")
+    }
+
+    private func quotedYAML(_ value: String) -> String {
+        "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
     }
 
     private func countSkills(profileURL: URL) -> Int {

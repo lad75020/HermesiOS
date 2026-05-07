@@ -14,7 +14,7 @@ struct HermesAgentConfigView: View {
 
     private var providerSummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
-            return "Enroll companion to edit provider keys and model defaults"
+            return "Authenticate companion to edit provider keys and model defaults"
         }
         let configuredKeys = companionRuntime.providerEnv.filter { !$0.value.isEmpty }.count
         let provider = companionRuntime.providerModelConfig.provider
@@ -27,7 +27,7 @@ struct HermesAgentConfigView: View {
 
     private var memorySummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
-            return "Enroll companion to manage host memory"
+            return "Authenticate companion to manage host memory"
         }
         if let config = companionRuntime.memoryConfig {
             let provider = config.provider.isEmpty ? "local" : config.provider
@@ -38,7 +38,7 @@ struct HermesAgentConfigView: View {
 
     private var schedulesSummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
-            return "Enroll companion to manage scheduled jobs"
+            return "Authenticate companion to manage scheduled jobs"
         }
         let active = companionRuntime.schedules.filter { $0.state == "active" }.count
         let paused = companionRuntime.schedules.filter { $0.state == "paused" }.count
@@ -111,7 +111,7 @@ struct HermesAgentConfigView: View {
 
                 HermesRuntimeAccordionPanel(
                     title: "Companion",
-                    subtitle: companionEnrollment.identityState.isEnrolled ? companionRuntime.connectionStatus : "Enroll an iOS client certificate to unlock host operations",
+                    subtitle: companionEnrollment.identityState.isEnrolled ? companionRuntime.connectionStatus : "Authenticate with the 4096-character companion token to unlock host operations",
                     systemImage: "lock.laptopcomputer",
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .companion },

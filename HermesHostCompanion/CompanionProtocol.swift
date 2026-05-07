@@ -10,6 +10,7 @@ import Foundation
 struct CompanionIncomingEnvelope: Codable {
     let id: String?
     let type: String
+    let authenticationToken: String?
     let payload: JSONValue?
 }
 
@@ -44,12 +45,6 @@ struct HelloResult: Codable {
     let capabilities: [String]
 }
 
-struct EnrollmentHelloResult: Codable {
-    let protocolVersion: String
-    let serverName: String
-    let capabilities: [String]
-    let requiresPairingCode: Bool
-}
 
 struct ListTargetsResult: Codable {
     let targets: [CompanionTargetSummary]
@@ -705,31 +700,6 @@ struct ScheduleOperationResult: Codable {
     let jobs: [ScheduleCronJob]
 }
 
-
-struct EnrollClientPayload: Codable {
-    let pairingID: String
-    let pairingSecret: String
-    let deviceName: String
-    let serverFingerprint: String?
-}
-
-struct EnrollClientResult: Codable {
-    let deviceID: String
-    let deviceName: String
-    let clientIdentityPKCS12Base64: String
-    let clientIdentityPassword: String
-    let caCertificatePEM: String
-    let serverEndpoint: String
-    let serverCertificateFingerprint: String
-}
-
-struct CompanionPairingSummary: Codable, Identifiable {
-    let id: String
-    let secret: String
-    let createdAt: Date
-    let expiresAt: Date
-    let displayCode: String
-}
 
 enum CompanionManagedServiceStatus: String, Codable {
     case running

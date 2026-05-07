@@ -5,22 +5,12 @@
 //  Created by Codex on 05/05/2026.
 //
 
-import CryptoKit
-import CoreImage
 import Foundation
 import Observation
-import Security
-import UIKit
-import Vision
-import VisionKit
 
 struct HermesCompanionSettings: Codable, Equatable {
-    var enrollmentURL = "wss://127.0.0.1:9212/enroll"
-    var apiURL = "wss://127.0.0.1:9112/ws"
-    var expectedServerFingerprint = ""
-    var deviceName = "Hermes iOS Device"
-    var pairingID = ""
-    var pairingSecret = ""
+    var apiURL = "ws://127.0.0.1:9112/ws"
+    var authenticationToken = ""
     var hermesWorkspacePath = "/Volumes/WDBlack4TB/Code/HermesiOS/.hermes"
 }
 
@@ -28,31 +18,17 @@ struct HermesCompanionIdentityState: Codable, Equatable {
     var deviceID = ""
     var deviceName = ""
     var serverEndpoint = ""
-    var serverCertificateFingerprint = ""
     var issuedAt = Date()
 
     var isEnrolled: Bool {
-        deviceID.isEmpty == false
+        serverEndpoint.isEmpty == false
     }
-}
-
-struct HermesCompanionPairingQRCodePayload: Codable {
-    let version: Int
-    let enrollmentURL: String
-    let apiURL: String
-    let serverFingerprint: String
-    let pairingID: String
-    let pairingSecret: String
-}
-
-struct HermesStoredCompanionIdentity: Codable {
-    let pkcs12Base64: String
-    let password: String
 }
 
 struct HermesCompanionIncomingEnvelope: Codable {
     let id: String?
     let type: String
+    let authenticationToken: String?
     let payload: HermesCompanionJSONValue?
 }
 
@@ -68,22 +44,6 @@ struct HermesCompanionErrorPayload: Codable {
     let message: String
 }
 
-struct HermesEnrollClientPayload: Codable {
-    let pairingID: String
-    let pairingSecret: String
-    let deviceName: String
-    let serverFingerprint: String
-}
-
-struct HermesEnrollClientResult: Codable {
-    let deviceID: String
-    let deviceName: String
-    let clientIdentityPKCS12Base64: String
-    let clientIdentityPassword: String
-    let caCertificatePEM: String
-    let serverEndpoint: String
-    let serverCertificateFingerprint: String
-}
 
 struct HermesCompanionHelloResult: Codable {
     let protocolVersion: String
@@ -905,32 +865,26 @@ enum HermesCompanionClientError: LocalizedError {
     case invalidResponse
     case serverRejected(String)
     case missingPayload
-    case missingPinnedFingerprint
-    case invalidIdentityBundle
-    case untrustedServer
+    case missingAuthenticationToken
+    case invalidAuthenticationTokenLength
     case notEnrolled
-    case invalidPairingQRCode
 
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            "The companion enrollment URL is invalid."
+            "The companion API URL is invalid."
         case .invalidResponse:
-            "The companion returned an invalid enrollment response."
+            "The companion returned an invalid authentication response."
         case .serverRejected(let message):
             message
         case .missingPayload:
-            "The companion enrollment response did not include an identity payload."
-        case .missingPinnedFingerprint:
-            "Enter the companion server fingerprint before attempting enrollment."
-        case .invalidIdentityBundle:
-            "The enrolled client identity could not be imported on this device."
-        case .untrustedServer:
-            "The companion server certificate fingerprint does not match the expected value."
+            "The companion authentication response did not include a payload."
+        case .missingAuthenticationToken:
+            "Enter the 4096-character Host Companion token before verifying the connection."
+        case .invalidAuthenticationTokenLength:
+            "The Host Companion token must be exactly 4096 characters."
         case .notEnrolled:
-            "Enroll this iOS device with the host companion before using runtime controls."
-        case .invalidPairingQRCode:
-            "The scanned QR code is not a valid Hermes companion pairing payload."
+            "Verify the Host Companion token before using runtime controls."
         }
     }
 }
@@ -939,7 +893,7 @@ enum HermesCompanionClientError: LocalizedError {
 @Observable
 final class HermesCompanionEnrollmentSession {
     var isEnrolling = false
-    var connectionStatus = "Not Enrolled"
+    var connectionStatus = "Not Authenticated"
     var lastErrorMessage = ""
     var identityState: HermesCompanionIdentityState
 
@@ -949,7 +903,7 @@ final class HermesCompanionEnrollmentSession {
         let persistedState = HermesSettingsPersistence.loadCompanionIdentityState()
         identityState = persistedState
         if persistedState.isEnrolled {
-            connectionStatus = "Enrolled"
+            connectionStatus = "Authenticated"
         }
     }
 
@@ -964,62 +918,58 @@ final class HermesCompanionEnrollmentSession {
         enrollmentTask?.cancel()
         enrollmentTask = nil
         identityState = HermesCompanionIdentityState()
-        connectionStatus = "Not Enrolled"
+        connectionStatus = "Not Authenticated"
         lastErrorMessage = ""
         HermesSettingsPersistence.clearCompanionIdentity()
     }
 
     private func runEnrollment(settings: HermesCompanionSettings) async {
-        let trimmedFingerprint = HermesCompanionSessionFactory.normalizedFingerprint(settings.expectedServerFingerprint)
-        guard trimmedFingerprint.isEmpty == false else {
-            lastErrorMessage = HermesCompanionClientError.missingPinnedFingerprint.localizedDescription
-            connectionStatus = "Enrollment Failed"
+        let token = settings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard token.isEmpty == false else {
+            lastErrorMessage = HermesCompanionClientError.missingAuthenticationToken.localizedDescription
+            connectionStatus = "Authentication Failed"
+            return
+        }
+        guard token.count == 4096 else {
+            lastErrorMessage = HermesCompanionClientError.invalidAuthenticationTokenLength.localizedDescription
+            connectionStatus = "Authentication Failed"
             return
         }
 
-        guard let url = URL(string: settings.enrollmentURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let url = URL(string: settings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             lastErrorMessage = HermesCompanionClientError.invalidURL.localizedDescription
-            connectionStatus = "Enrollment Failed"
+            connectionStatus = "Authentication Failed"
             return
         }
 
         isEnrolling = true
         lastErrorMessage = ""
-        connectionStatus = "Contacting Enrollment Endpoint"
+        connectionStatus = "Verifying Token"
 
         do {
-            let result = try await HermesCompanionSessionFactory.enroll(
+            let result: HermesCompanionHelloResult = try await HermesCompanionSessionFactory.request(
                 url: url,
-                expectedServerFingerprint: trimmedFingerprint,
-                payload: HermesEnrollClientPayload(
-                    pairingID: settings.pairingID.trimmingCharacters(in: .whitespacesAndNewlines),
-                    pairingSecret: settings.pairingSecret.trimmingCharacters(in: .whitespacesAndNewlines),
-                    deviceName: settings.deviceName.trimmingCharacters(in: .whitespacesAndNewlines),
-                    serverFingerprint: trimmedFingerprint
-                )
+                authenticationToken: token,
+                type: "hello",
+                payload: Optional<HermesCompanionEmptyPayload>.none
             )
-
             let newState = HermesCompanionIdentityState(
-                deviceID: result.deviceID,
-                deviceName: result.deviceName,
-                serverEndpoint: result.serverEndpoint,
-                serverCertificateFingerprint: HermesCompanionSessionFactory.normalizedFingerprint(result.serverCertificateFingerprint),
+                deviceID: "token-auth",
+                deviceName: result.serverName,
+                serverEndpoint: url.absoluteString,
                 issuedAt: Date()
             )
-            try HermesSettingsPersistence.saveCompanionIdentity(
-                pkcs12Base64: result.clientIdentityPKCS12Base64,
-                password: result.clientIdentityPassword,
-                state: newState
-            )
+            HermesSettingsPersistence.saveCompanionAuthenticationState(newState)
             identityState = newState
-            connectionStatus = "Enrolled"
+            connectionStatus = "Authenticated"
         } catch {
             lastErrorMessage = error.localizedDescription
-            connectionStatus = "Enrollment Failed"
+            connectionStatus = "Authentication Failed"
         }
 
         isEnrolling = false
     }
+
 }
 
 @MainActor
@@ -2119,103 +2069,24 @@ final class HermesCompanionRuntimeSession {
 }
 
 enum HermesCompanionSessionFactory {
-    static func makeSession(for settings: HermesCompanionSettings, state: HermesCompanionIdentityState) -> URLSession {
+    static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
         configuration.allowsExpensiveNetworkAccess = true
         configuration.allowsConstrainedNetworkAccess = true
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 300
-        let delegate = HermesCompanionURLSessionDelegate(
-            expectedServerFingerprint: normalizedFingerprint(
-                state.serverCertificateFingerprint.isEmpty ? settings.expectedServerFingerprint : state.serverCertificateFingerprint
-            ),
-            identityProvider: HermesCompanionIdentityLoader.loadCredential)
-        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-    }
-
-
-    static func enroll(
-        url: URL,
-        expectedServerFingerprint: String,
-        payload: HermesEnrollClientPayload
-    ) async throws -> HermesEnrollClientResult {
-        try await HermesBackgroundActivity.run(named: "Hermes Companion Enrollment") {
-            let delegate = HermesCompanionURLSessionDelegate(
-                expectedServerFingerprint: expectedServerFingerprint,
-                identityProvider: { nil }
-            )
-            let configuration = URLSessionConfiguration.default
-            configuration.waitsForConnectivity = true
-            configuration.allowsExpensiveNetworkAccess = true
-            configuration.allowsConstrainedNetworkAccess = true
-            configuration.timeoutIntervalForRequest = 30
-            configuration.timeoutIntervalForResource = 300
-            let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-            defer { session.invalidateAndCancel() }
-
-            let task = session.webSocketTask(with: url)
-            task.resume()
-
-            let envelope = HermesCompanionIncomingEnvelope(
-                id: UUID().uuidString,
-                type: "enroll_client",
-                payload: .encode(payload)
-            )
-            let requestData = try JSONEncoder().encode(envelope)
-            guard let requestString = String(data: requestData, encoding: .utf8) else {
-                throw HermesCompanionClientError.invalidResponse
-            }
-            try await task.send(.string(requestString))
-
-            let message = try await task.receive()
-            let responseData: Data
-            switch message {
-            case .data(let data):
-                responseData = data
-            case .string(let text):
-                responseData = Data(text.utf8)
-            @unknown default:
-                throw HermesCompanionClientError.invalidResponse
-            }
-
-            let response = try JSONDecoder().decode(HermesCompanionOutgoingEnvelope.self, from: responseData)
-            guard response.ok else {
-                throw HermesCompanionClientError.serverRejected(response.error?.message ?? "The companion rejected the enrollment request.")
-            }
-            guard let payload = response.payload else {
-                throw HermesCompanionClientError.missingPayload
-            }
-
-            return try payload.decode(HermesEnrollClientResult.self)
-        }
-    }
-
-    static func normalizedFingerprint(_ value: String) -> String {
-        value
-            .lowercased()
-            .replacingOccurrences(of: ":", with: "")
-            .replacingOccurrences(of: " ", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return URLSession(configuration: configuration)
     }
 
     static func request<Payload: Encodable, Response: Decodable>(
-        settings: HermesCompanionSettings,
-        state: HermesCompanionIdentityState,
+        url: URL,
+        authenticationToken: String,
         type: String,
         payload: Payload?
     ) async throws -> Response {
-        guard state.isEnrolled else {
-            throw HermesCompanionClientError.notEnrolled
-        }
-
-        let endpoint = state.serverEndpoint.isEmpty ? settings.apiURL : state.serverEndpoint
-        guard let url = URL(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            throw HermesCompanionClientError.invalidURL
-        }
-
-        return try await HermesBackgroundActivity.run(named: "Hermes Companion Request") {
-            let session = makeSession(for: settings, state: state)
+        try await HermesBackgroundActivity.run(named: "Hermes Companion Request") {
+            let session = makeSession()
             defer { session.invalidateAndCancel() }
 
             let task = session.webSocketTask(with: url)
@@ -2224,6 +2095,7 @@ enum HermesCompanionSessionFactory {
             let envelope = HermesCompanionIncomingEnvelope(
                 id: UUID().uuidString,
                 type: type,
+                authenticationToken: authenticationToken,
                 payload: payload.flatMap(HermesCompanionJSONValue.encode)
             )
             let data = try JSONEncoder().encode(envelope)
@@ -2253,140 +2125,30 @@ enum HermesCompanionSessionFactory {
             return try payload.decode(Response.self)
         }
     }
-}
 
-enum HermesCompanionPairingPayloadDecoder {
-    static func decode(_ rawValue: String) throws -> HermesCompanionPairingQRCodePayload {
-        guard let data = rawValue.data(using: .utf8) else {
-            throw HermesCompanionClientError.invalidPairingQRCode
+    static func request<Payload: Encodable, Response: Decodable>(
+        settings: HermesCompanionSettings,
+        state: HermesCompanionIdentityState,
+        type: String,
+        payload: Payload?
+    ) async throws -> Response {
+        guard state.isEnrolled else {
+            throw HermesCompanionClientError.notEnrolled
         }
-        let payload = try JSONDecoder().decode(HermesCompanionPairingQRCodePayload.self, from: data)
-        guard payload.version == 1 else {
-            throw HermesCompanionClientError.invalidPairingQRCode
+        let token = settings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard token.isEmpty == false else {
+            throw HermesCompanionClientError.missingAuthenticationToken
         }
-        return payload
+        guard token.count == 4096 else {
+            throw HermesCompanionClientError.invalidAuthenticationTokenLength
+        }
+        let endpoint = state.serverEndpoint.isEmpty ? settings.apiURL : state.serverEndpoint
+        guard let url = URL(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw HermesCompanionClientError.invalidURL
+        }
+        return try await request(url: url, authenticationToken: token, type: type, payload: payload)
     }
 }
 
-enum HermesPairingImageDecoder {
-    static func decode(from imageData: Data) throws -> HermesCompanionPairingQRCodePayload {
-        guard let ciImage = CIImage(data: imageData) else {
-            throw HermesCompanionClientError.invalidPairingQRCode
-        }
-
-        let detector = CIDetector(
-            ofType: CIDetectorTypeQRCode,
-            context: nil,
-            options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
-        )
-        guard
-            let features = detector?.features(in: ciImage) as? [CIQRCodeFeature],
-            let payload = features.compactMap(\.messageString).first
-        else {
-            throw HermesCompanionClientError.invalidPairingQRCode
-        }
-
-        return try HermesCompanionPairingPayloadDecoder.decode(payload)
-    }
-}
 
 private struct EmptyPayload: Encodable {}
-
-private final class HermesCompanionURLSessionDelegate: NSObject, URLSessionDelegate {
-    private let expectedServerFingerprint: String
-    private let identityProvider: () -> URLCredential?
-
-    init(expectedServerFingerprint: String, identityProvider: @escaping () -> URLCredential?) {
-        self.expectedServerFingerprint = expectedServerFingerprint
-        self.identityProvider = identityProvider
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        didReceive challenge: URLAuthenticationChallenge,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
-    ) {
-        switch challenge.protectionSpace.authenticationMethod {
-        case NSURLAuthenticationMethodServerTrust:
-            guard
-                let trust = challenge.protectionSpace.serverTrust,
-                let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
-                let certificate = certificates.first
-            else {
-                completionHandler(.cancelAuthenticationChallenge, nil)
-                return
-            }
-
-            let fingerprint = HermesCompanionSessionFactory.normalizedFingerprint(
-                CompanionCertificateFingerprint.fingerprint(for: certificate)
-            )
-            guard fingerprint == expectedServerFingerprint else {
-                completionHandler(.cancelAuthenticationChallenge, nil)
-                return
-            }
-
-            completionHandler(.useCredential, URLCredential(trust: trust))
-        case NSURLAuthenticationMethodClientCertificate:
-            if let credential = identityProvider() {
-                completionHandler(.useCredential, credential)
-            } else {
-                completionHandler(.rejectProtectionSpace, nil)
-            }
-        default:
-            completionHandler(.performDefaultHandling, nil)
-        }
-    }
-}
-
-private enum CompanionCertificateFingerprint {
-    static func fingerprint(for certificate: SecCertificate) -> String {
-        let data = SecCertificateCopyData(certificate) as Data
-        let digest = SHA256.hash(data: data)
-        return digest.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-private enum HermesCompanionIdentityLoader {
-    nonisolated static func loadCredential() -> URLCredential? {
-        struct StoredIdentity: Decodable {
-            let pkcs12Base64: String
-            let password: String
-        }
-
-        let service = "com.hermesios.companion"
-        let account = "clientIdentity"
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard
-            status == errSecSuccess,
-            let data = item as? Data,
-            let storedIdentity = try? JSONDecoder().decode(StoredIdentity.self, from: data),
-            let pkcs12Data = Data(base64Encoded: storedIdentity.pkcs12Base64)
-        else {
-            return nil
-        }
-
-        let options = [kSecImportExportPassphrase as String: storedIdentity.password]
-        var items: CFArray?
-        let importStatus = SecPKCS12Import(pkcs12Data as CFData, options as CFDictionary, &items)
-        guard
-            importStatus == errSecSuccess,
-            let array = items as? [[String: Any]],
-            let rawIdentity = array.first?[kSecImportItemIdentity as String],
-            let certificateChain = array.first?[kSecImportItemCertChain as String] as? [SecCertificate]
-        else {
-            return nil
-        }
-
-        let identity = rawIdentity as! SecIdentity
-        return URLCredential(identity: identity, certificates: certificateChain, persistence: .forSession)
-    }
-}

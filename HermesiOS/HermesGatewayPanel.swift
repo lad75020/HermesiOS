@@ -21,7 +21,7 @@ struct HermesGatewayPanel: View {
                 ContentUnavailableView(
                     "Host Companion Required",
                     systemImage: "lock.laptopcomputer",
-                    description: Text("Enroll the macOS companion before editing messaging credentials.")
+                    description: Text("Authenticate the macOS companion before editing messaging credentials.")
                 )
             } else {
                 HermesSectionCard("Platforms") {

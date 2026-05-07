@@ -44,9 +44,9 @@ struct HermesProvidersPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             if companionEnrollment.identityState.isEnrolled == false {
                 ContentUnavailableView(
-                    "Enrollment Required",
+                    "Authentication Required",
                     systemImage: "person.badge.key",
-                    description: Text("Use Settings → Host Companion to enroll this iOS device before editing Hermes provider keys, default model configuration, or credential pools on the macOS host.")
+                    description: Text("Use Settings → Host Companion to authenticate this iOS device before editing Hermes provider keys, default model configuration, or credential pools on the macOS host.")
                 )
             } else {
                 HermesSectionCard("Provider Model") {
@@ -172,7 +172,7 @@ struct HermesProvidersPanel: View {
 
                 HermesSectionCard("Environment") {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Edits the same provider and tool API keys as desktop Providers, writing to `.env` on the macOS host via the enrolled WebSocket companion.")
+                        Text("Edits the same provider and tool API keys as desktop Providers, writing to `.env` on the macOS host via the token-authenticated WebSocket companion.")
                             .font(.subheadline)
                             .foregroundStyle(.hermesSecondaryText)
                         companionSummaryRow(label: "Env File", value: companionRuntime.providerEnvFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/.env" : companionRuntime.providerEnvFilePath)

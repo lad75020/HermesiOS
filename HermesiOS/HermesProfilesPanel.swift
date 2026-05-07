@@ -24,9 +24,9 @@ struct HermesProfilesPanel: View {
         VStack(alignment: .leading, spacing: 16) {
             if companionEnrollment.identityState.isEnrolled == false {
                 ContentUnavailableView(
-                    "Enrollment Required",
+                    "Authentication Required",
                     systemImage: "person.badge.key",
-                    description: Text("Enroll this iOS device with HermesHostCompanion before managing Hermes runtime profiles on the macOS host.")
+                    description: Text("Authenticate with HermesHostCompanion before managing Hermes runtime profiles on the macOS host.")
                 )
             } else {
                 HermesStatusRow(items: [

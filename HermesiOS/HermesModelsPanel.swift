@@ -20,9 +20,9 @@ struct HermesModelsPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             if companionEnrollment.identityState.isEnrolled == false {
                 ContentUnavailableView(
-                    "Enrollment Required",
+                    "Authentication Required",
                     systemImage: "person.badge.key",
-                    description: Text("Use Settings → Host Companion to enroll this iOS device before editing Hermes saved models.")
+                    description: Text("Use Settings → Host Companion to verify the token before editing Hermes saved models.")
                 )
             } else {
                 HermesSectionCard("Saved Models") {

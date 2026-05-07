@@ -118,10 +118,10 @@ final class HermesResponsesSession {
         activeAssistantEntryID = nil
         isSending = false
         latestResponseID = ""
-        let continuationID = result.sessionID.isEmpty ? result.session.id : result.sessionID
+        let continuationID = Self.responseContinuationID(from: result)
         previousResponseID = continuationID
         lastErrorMessage = ""
-        latestMessageType = "resumed session"
+        latestMessageType = continuationID.isEmpty ? "loaded history" : "resumed response"
         eventCount = 0
         rawStreamedJSON = ""
         activeModel = result.session.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -139,9 +139,15 @@ final class HermesResponsesSession {
         let displayTitle = trimmedTitle.isEmpty ? continuationID : trimmedTitle
 
         entries = restoredEntries.isEmpty
-            ? [HermesResponseMessage(role: "assistant", content: "Resumed session \(displayTitle). Send a new prompt to continue it.")]
+            ? [HermesResponseMessage(role: "assistant", content: "Loaded session \(displayTitle). Send a new prompt to start a new Responses API turn.")]
             : restoredEntries
-        connectionStatus = "Resumed session"
+        connectionStatus = continuationID.isEmpty ? "Loaded history" : "Resumed response"
+    }
+
+    private static func responseContinuationID(from result: HermesDashboardConversationResult) -> String {
+        [result.sessionID, result.session.id]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { $0.hasPrefix("resp_") } ?? ""
     }
 
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft) async {

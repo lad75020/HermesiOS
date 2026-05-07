@@ -7,8 +7,6 @@
 
 import SwiftUI
 import Network
-import CoreImage
-import CoreImage.CIFilterBuiltins
 import AppKit
 
 @main
@@ -33,7 +31,7 @@ private struct HermesHostCompanionRootView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Hermes Host Companion")
                         .font(.largeTitle.bold())
-                    Text("Minimal V1 companion daemon shell for mTLS WebSocket access, allowlisted filesystem operations, validation, backups, and service restarts.")
+                    Text("Minimal V1 companion daemon shell for plain HTTP WebSocket access protected by one 4096-character token.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -42,8 +40,6 @@ private struct HermesHostCompanionRootView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         statusRow("State", controller.server.state.displayName)
                         statusRow("Endpoint", controller.server.listenerDescription)
-                        statusRow("Enrollment", controller.server.enrollmentListenerDescription)
-                        statusRow("Server Fingerprint", controller.serverFingerprint.isEmpty ? "Bootstraps on launch" : controller.serverFingerprint)
                         statusRow("Last Error", controller.server.lastErrorMessage.isEmpty ? "None" : controller.server.lastErrorMessage)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -53,16 +49,13 @@ private struct HermesHostCompanionRootView: View {
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Use your Tailscale hostname or stable IP here so enrollment and API endpoints target the right machine from elsewhere on the same Tailnet.")
+                        Text("Use your Tailscale hostname or stable IP here so the API endpoint targets the right machine from elsewhere on the same Tailnet.")
                             .foregroundStyle(.secondary)
 
                         TextField("Advertised host or IP", text: $controller.advertisedHost)
                             .autocorrectionDisabled()
 
-                        HStack {
-                            TextField("API port", text: $controller.apiPort)
-                            TextField("Enrollment port", text: $controller.enrollmentPort)
-                        }
+                        TextField("API port", text: $controller.apiPort)
 
                         HStack {
                             Button("Apply Network Target") {
@@ -70,12 +63,12 @@ private struct HermesHostCompanionRootView: View {
                             }
                             .buttonStyle(.borderedProminent)
 
-                            Text("The listener binds to local loopback; this advertised value controls the endpoints shown to iOS clients and may be served through Tailscale.")
+                            Text("The listener binds to local loopback; this advertised value controls the endpoint shown to iOS clients and may be served through Tailscale.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
 
-                        Text(controller.server.state == .running ? "Applying host or port changes will restart the running companion server automatically." : "Apply the network target before creating pairings for remote devices.")
+                        Text(controller.server.state == .running ? "Applying host or port changes will restart the running companion server automatically." : "Apply the network target before copying the endpoint to iOS.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -88,68 +81,33 @@ private struct HermesHostCompanionRootView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Authentication")
                             .font(.headline)
-                        Text("The companion bootstraps a local CA and server identity on first launch, exposes an authenticated API listener on port 9443, and a dedicated enrollment listener on port 9444 for CSR signing with a one-time pairing code.")
+                        Text("The companion uses a single 4096-character token over plain HTTP WebSocket. Copy this token into HermesiOS settings. No TLS, certificates, QR codes, enrollment ports, pairing IDs, or CA material are used.")
                             .foregroundStyle(.secondary)
 
+                        statusRow("API URL", controller.apiURL)
+
+                        Text("Token")
+                            .font(.subheadline.bold())
+                        Text(controller.authenticationToken)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                            .lineLimit(6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
                         HStack {
-                            Button("Create Pairing") {
-                                controller.createPairing()
+                            Button("Regenerate 4096-character Token", role: .destructive) {
+                                controller.regenerateToken()
                             }
                             .buttonStyle(.borderedProminent)
 
-                            if controller.activePairings.isEmpty == false {
-                                Text("\(controller.activePairings.count) active")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        if controller.activePairings.isEmpty {
-                            Text("No active pairings")
-                                .font(.subheadline)
+                            Text("Regenerating invalidates every iOS device until the new token is copied into settings.")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
-                        } else {
-                            if let qrImage = controller.pairingQRCodeImage {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Image(nsImage: qrImage)
-                                        .interpolation(.none)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 180, height: 180)
-                                        .padding(12)
-                                        .background(Color.white)
-                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                    Text("Scan this QR code from the iOS app to populate enrollment URL, API URL, fingerprint, pairing ID, and secret. If scanning is flaky, copy the fields below into the iOS enrollment form.")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            ForEach(controller.activePairings.prefix(3)) { pairing in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(pairing.displayCode)
-                                        .font(.headline.monospaced())
-                                        .textSelection(.enabled)
-                                    Text("Pairing ID: \(pairing.id)")
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-                                    Text("Secret: \(pairing.secret)")
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
-                                        .textSelection(.enabled)
-                                    Text("Expires \(pairing.expiresAt.formatted(date: .omitted, time: .shortened))")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 4)
-                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } label: {
-                    Label("Enrollment", systemImage: "person.badge.key")
+                    Label("Token Authentication", systemImage: "key")
                 }
 
                 HStack {
@@ -193,17 +151,14 @@ private struct HermesHostCompanionRootView: View {
 @Observable
 final class CompanionServerController {
     let server = CompanionServer()
-    private(set) var activePairings: [CompanionPairingSummary] = []
-    private(set) var serverFingerprint = ""
-    private let qrContext = CIContext()
+    private(set) var authenticationToken: String
     var advertisedHost: String
     var apiPort: String
-    var enrollmentPort: String
 
     init() {
         advertisedHost = server.currentConfiguration.host
         apiPort = String(server.currentConfiguration.port.rawValue)
-        enrollmentPort = String(server.currentConfiguration.enrollmentPort.rawValue)
+        authenticationToken = CompanionAuthenticationTokenStore.shared.token
 
         // Start even if SwiftUI restores the app without immediately mounting the
         // root view's `.task`; the view task remains as an idempotent fallback.
@@ -212,40 +167,13 @@ final class CompanionServerController {
         }
     }
 
-    var pairingQRCodeImage: NSImage? {
-        guard let pairing = activePairings.first else { return nil }
-        let payload = CompanionPairingQRCodePayload(
-            version: 1,
-            enrollmentURL: "wss://\(server.currentConfiguration.host):\(server.currentConfiguration.enrollmentPort.rawValue)/enroll",
-            apiURL: "wss://\(server.currentConfiguration.host):\(server.currentConfiguration.port.rawValue)/ws",
-            serverFingerprint: serverFingerprint,
-            pairingID: pairing.id,
-            pairingSecret: pairing.secret
-        )
-        guard
-            let data = try? JSONEncoder().encode(payload),
-            let qrFilter = CIFilter(name: "CIQRCodeGenerator")
-        else {
-            return nil
-        }
-
-        qrFilter.setValue(data, forKey: "inputMessage")
-        qrFilter.setValue("M", forKey: "inputCorrectionLevel")
-        guard
-            let outputImage = qrFilter.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
-            let cgImage = qrContext.createCGImage(outputImage, from: outputImage.extent)
-        else {
-            return nil
-        }
-
-        return NSImage(cgImage: cgImage, size: NSSize(width: 180, height: 180))
+    var apiURL: String {
+        "ws://\(server.currentConfiguration.host):\(server.currentConfiguration.port.rawValue)/ws"
     }
 
     func startServerIfNeeded() {
         guard server.state == .stopped else { return }
         applyNetworkConfiguration()
-        refreshFingerprint()
-        refreshPairings()
         startServer()
     }
 
@@ -263,54 +191,28 @@ final class CompanionServerController {
         server.stop()
     }
 
-    func createPairing() {
-        do {
-            _ = try CompanionAuthenticationStore.shared.createPairing()
-            refreshPairings()
-        } catch {
-            server.lastErrorMessage = error.localizedDescription
-        }
+    func regenerateToken() {
+        authenticationToken = CompanionAuthenticationTokenStore.shared.regenerateToken()
     }
 
     func applyNetworkConfiguration() {
         let trimmedHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = trimmedHost.isEmpty ? CompanionServerConfiguration.default.host : trimmedHost
         let resolvedAPIPort = UInt16(apiPort) ?? CompanionServerConfiguration.default.port.rawValue
-        let resolvedEnrollmentPort = UInt16(enrollmentPort) ?? CompanionServerConfiguration.default.enrollmentPort.rawValue
         let shouldRestart = server.state == .running
 
         advertisedHost = host
         apiPort = String(resolvedAPIPort)
-        enrollmentPort = String(resolvedEnrollmentPort)
         server.updateConfiguration(
             CompanionServerConfiguration(
                 host: host,
-                port: NWEndpoint.Port(rawValue: resolvedAPIPort) ?? CompanionServerConfiguration.default.port,
-                enrollmentPort: NWEndpoint.Port(rawValue: resolvedEnrollmentPort) ?? CompanionServerConfiguration.default.enrollmentPort
+                port: NWEndpoint.Port(rawValue: resolvedAPIPort) ?? CompanionServerConfiguration.default.port
             )
         )
-        refreshFingerprint()
 
         if shouldRestart {
             stopServer()
             startServer()
         }
     }
-
-    private func refreshPairings() {
-        activePairings = CompanionAuthenticationStore.shared.listActivePairings()
-    }
-
-    private func refreshFingerprint() {
-        serverFingerprint = (try? CompanionTLSIdentityStore.shared.loadServerIdentity(host: server.currentConfiguration.host).serverCertificateFingerprint) ?? ""
-    }
-}
-
-private struct CompanionPairingQRCodePayload: Codable {
-    let version: Int
-    let enrollmentURL: String
-    let apiURL: String
-    let serverFingerprint: String
-    let pairingID: String
-    let pairingSecret: String
 }

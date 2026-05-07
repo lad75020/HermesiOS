@@ -14,7 +14,7 @@ struct HermesToolsPanel: View {
 
     private var providerSummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
-            return "Enroll companion to edit provider keys and model defaults"
+            return "Authenticate companion to edit provider keys and model defaults"
         }
         let configuredKeys = companionRuntime.providerEnv.filter { !$0.value.isEmpty }.count
         let provider = companionRuntime.providerModelConfig.provider
@@ -27,7 +27,7 @@ struct HermesToolsPanel: View {
 
     private var memorySummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
-            return "Enroll companion to manage host memory"
+            return "Authenticate companion to manage host memory"
         }
         if let config = companionRuntime.memoryConfig {
             let provider = config.provider.isEmpty ? "local" : config.provider
@@ -38,7 +38,7 @@ struct HermesToolsPanel: View {
 
     private var schedulesSummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
-            return "Enroll companion to manage scheduled jobs"
+            return "Authenticate companion to manage scheduled jobs"
         }
         let active = companionRuntime.schedules.filter { $0.state == "active" }.count
         let paused = companionRuntime.schedules.filter { $0.state == "paused" }.count
@@ -49,9 +49,9 @@ struct HermesToolsPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             if companionEnrollment.identityState.isEnrolled == false {
                 ContentUnavailableView(
-                    "Enrollment Required",
+                    "Authentication Required",
                     systemImage: "person.badge.key",
-                    description: Text("Use Settings → Host Companion to enroll this iOS device before editing Hermes toolsets.")
+                    description: Text("Use Settings → Host Companion to authenticate this iOS device before editing Hermes toolsets.")
                 )
             } else {
                 HermesSectionCard("Hermes Toolsets") {
@@ -70,7 +70,7 @@ struct HermesToolsPanel: View {
                         }
 
                         if companionRuntime.hermesToolsets.isEmpty {
-                            Text("Open this panel after enrollment to load the toolsets declared by Hermes desktop semantics.")
+                            Text("Open this panel after Host Companion authentication to load the toolsets declared by Hermes desktop semantics.")
                                 .font(.subheadline)
                                 .foregroundStyle(.hermesSecondaryText)
                         } else {

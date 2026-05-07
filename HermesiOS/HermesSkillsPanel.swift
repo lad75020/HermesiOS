@@ -49,7 +49,7 @@ struct HermesSkillsPanel: View {
                 ContentUnavailableView(
                     "No Skills Found",
                     systemImage: "magnifyingglass",
-                    description: Text(companionEnrollment.identityState.isEnrolled ? "Enter the beginning of a skill name or verify the Hermes workspace path in Settings." : "Enroll the host companion first, then load skills from the Hermes workspace.")
+                    description: Text(companionEnrollment.identityState.isEnrolled ? "Enter the beginning of a skill name or verify the Hermes workspace path in Settings." : "Authenticate the host companion first, then load skills from the Hermes workspace.")
                 )
             } else {
                 HermesSectionCard("Skills Catalog") {

@@ -24,7 +24,7 @@ struct HermesMCPServersPanel: View {
                 ContentUnavailableView(
                     "Host Companion Required",
                     systemImage: "lock.laptopcomputer",
-                    description: Text("Enroll the macOS companion before listing or editing Hermes MCP servers.")
+                    description: Text("Authenticate the macOS companion before listing or editing Hermes MCP servers.")
                 )
             } else {
                 HermesSectionCard("Known MCP Servers") {

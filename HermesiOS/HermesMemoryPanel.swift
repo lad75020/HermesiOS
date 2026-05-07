@@ -35,9 +35,9 @@ struct HermesMemoryPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             if companionEnrollment.identityState.isEnrolled == false {
                 ContentUnavailableView(
-                    "Enrollment Required",
+                    "Authentication Required",
                     systemImage: "person.badge.key",
-                    description: Text("Use Settings → Host Companion to enroll this iOS device before editing Hermes memory files and provider configuration on the macOS host.")
+                    description: Text("Use Settings → Host Companion to authenticate this iOS device before editing Hermes memory files and provider configuration on the macOS host.")
                 )
             } else {
                 HermesSectionCard("Memory Overview") {

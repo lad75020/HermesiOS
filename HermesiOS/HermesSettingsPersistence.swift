@@ -17,7 +17,7 @@ enum HermesSettingsPersistence {
     private static let tokenService = "com.hermesios.api"
     private static let tokenAccount = "bearerToken"
     private static let companionService = "com.hermesios.companion"
-    private static let companionIdentityAccount = "clientIdentity"
+    private static let companionTokenAccount = "authenticationToken"
 
     static func loadAPISettings() -> HermesAPISettings {
         var settings = decode(HermesAPISettings.self, from: apiSettingsKey) ?? HermesAPISettings()
@@ -50,58 +50,30 @@ enum HermesSettingsPersistence {
 
     static func loadCompanionSettings() -> HermesCompanionSettings {
         var settings = decode(HermesCompanionSettings.self, from: companionSettingsKey) ?? HermesCompanionSettings()
-
-        // Migrate the original companion defaults to the current simulator-to-host ports.
-        // Keep user-edited values intact.
-        if settings.enrollmentURL == "wss://localhost:9444/enroll" {
-            settings.enrollmentURL = HermesCompanionSettings().enrollmentURL
+        if var components = URLComponents(string: settings.apiURL), components.scheme?.lowercased().hasSuffix("s") == true {
+            components.scheme = String(components.scheme?.dropLast() ?? "ws")
+            settings.apiURL = components.url?.absoluteString ?? HermesCompanionSettings().apiURL
         }
-        if let migratedURL = migrateLegacyEnrollmentPort(settings.enrollmentURL) {
-            settings.enrollmentURL = migratedURL
-        }
-        if settings.apiURL == "wss://localhost:9443/ws" {
-            settings.apiURL = HermesCompanionSettings().apiURL
-        }
+        settings.authenticationToken = loadKeychainString(service: companionService, account: companionTokenAccount)
         return settings
     }
 
-    private static func migrateLegacyEnrollmentPort(_ rawURL: String) -> String? {
-        guard
-            var components = URLComponents(string: rawURL),
-            components.scheme == "wss",
-            components.port == 9113,
-            components.path == "/enroll"
-        else { return nil }
-
-        // Port 9113 is commonly occupied by Tailscale Serve on Laurent's Mac, so
-        // stale pairing payloads/defaults hit the wrong TLS endpoint and fail before
-        // enrollment. Preserve the user's host while moving to the companion's
-        // dedicated enrollment port.
-        components.port = 9212
-        return components.url?.absoluteString
-    }
-
     static func saveCompanionSettings(_ settings: HermesCompanionSettings) {
-        encode(settings, to: companionSettingsKey)
+        var persistedSettings = settings
+        persistedSettings.authenticationToken = ""
+        encode(persistedSettings, to: companionSettingsKey)
+        saveKeychainString(settings.authenticationToken, service: companionService, account: companionTokenAccount)
     }
 
     static func loadCompanionIdentityState() -> HermesCompanionIdentityState {
         decode(HermesCompanionIdentityState.self, from: companionIdentityStateKey) ?? HermesCompanionIdentityState()
     }
 
-    static func saveCompanionIdentity(
-        pkcs12Base64: String,
-        password: String,
-        state: HermesCompanionIdentityState
-    ) throws {
-        let bundle = HermesStoredCompanionIdentity(pkcs12Base64: pkcs12Base64, password: password)
-        let data = try JSONEncoder().encode(bundle)
-        saveKeychainData(data, service: companionService, account: companionIdentityAccount)
+    static func saveCompanionAuthenticationState(_ state: HermesCompanionIdentityState) {
         encode(state, to: companionIdentityStateKey)
     }
 
     static func clearCompanionIdentity() {
-        deleteKeychainData(service: companionService, account: companionIdentityAccount)
         UserDefaults.standard.removeObject(forKey: companionIdentityStateKey)
     }
 
@@ -116,30 +88,6 @@ enum HermesSettingsPersistence {
         try? FileManager.default.removeItem(at: historyURL)
     }
 
-    static func loadCompanionClientCredential() -> URLCredential? {
-        guard
-            let data = loadKeychainData(service: companionService, account: companionIdentityAccount),
-            let storedIdentity = try? JSONDecoder().decode(HermesStoredCompanionIdentity.self, from: data),
-            let pkcs12Data = Data(base64Encoded: storedIdentity.pkcs12Base64)
-        else {
-            return nil
-        }
-
-        let options = [kSecImportExportPassphrase as String: storedIdentity.password]
-        var items: CFArray?
-        let status = SecPKCS12Import(pkcs12Data as CFData, options as CFDictionary, &items)
-        guard
-            status == errSecSuccess,
-            let array = items as? [[String: Any]],
-            let rawIdentity = array.first?[kSecImportItemIdentity as String],
-            let certificateChain = array.first?[kSecImportItemCertChain as String] as? [SecCertificate]
-        else {
-            return nil
-        }
-
-        let identity = rawIdentity as! SecIdentity
-        return URLCredential(identity: identity, certificates: certificateChain, persistence: .forSession)
-    }
 
     private static func encode<T: Encodable>(_ value: T, to key: String) {
         guard let data = try? JSONEncoder().encode(value) else { return }
@@ -152,17 +100,24 @@ enum HermesSettingsPersistence {
     }
 
     private static func loadBearerToken() -> String {
-        guard let data = loadKeychainData(service: tokenService, account: tokenAccount) else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
+        loadKeychainString(service: tokenService, account: tokenAccount)
     }
 
     private static func saveBearerToken(_ token: String) {
-        if token.isEmpty {
-            deleteKeychainData(service: tokenService, account: tokenAccount)
+        saveKeychainString(token, service: tokenService, account: tokenAccount)
+    }
+
+    private static func loadKeychainString(service: String, account: String) -> String {
+        guard let data = loadKeychainData(service: service, account: account) else { return "" }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private static func saveKeychainString(_ value: String, service: String, account: String) {
+        if value.isEmpty {
+            deleteKeychainData(service: service, account: account)
             return
         }
-
-        saveKeychainData(Data(token.utf8), service: tokenService, account: tokenAccount)
+        saveKeychainData(Data(value.utf8), service: service, account: account)
     }
 
     private static func loadKeychainData(service: String, account: String) -> Data? {

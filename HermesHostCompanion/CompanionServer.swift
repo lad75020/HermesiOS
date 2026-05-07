@@ -36,13 +36,10 @@ final class CompanionServer {
 
     private(set) var state: State = .stopped
     private(set) var listenerDescription = "Not listening"
-    private(set) var enrollmentListenerDescription = "Not listening"
     var lastErrorMessage = ""
 
     private var listener: NWListener?
-    private var enrollmentListener: NWListener?
     private var sessions: [UUID: CompanionClientSession] = [:]
-    private var enrollmentSessions: [UUID: CompanionEnrollmentSession] = [:]
     private var configuration = CompanionServerConfigurationStore.load()
 
     var currentConfiguration: CompanionServerConfiguration {
@@ -54,8 +51,7 @@ final class CompanionServer {
         CompanionServerConfigurationStore.save(configuration)
 
         if state == .running {
-            listenerDescription = "wss://\(configuration.host):\(configuration.port.rawValue)/ws"
-            enrollmentListenerDescription = "wss://\(configuration.host):\(configuration.enrollmentPort.rawValue)/enroll"
+            listenerDescription = "ws://\(configuration.host):\(configuration.port.rawValue)/ws"
         }
     }
 
@@ -64,29 +60,18 @@ final class CompanionServer {
         state = .starting
         lastErrorMessage = ""
 
-        let identity = try CompanionTLSIdentityStore.shared.loadServerIdentity(host: configuration.host)
-        let parameters = try CompanionServerParametersFactory.makeAuthenticatedParameters(
-            identity: identity,
-            allowedClientCA: identity.caCertificate,
-            authenticationStore: CompanionAuthenticationStore.shared
-        )
-        let enrollmentParameters = try CompanionServerParametersFactory.makeEnrollmentParameters(identity: identity)
+        let parameters = CompanionServerParametersFactory.makeAuthenticatedParameters()
 
-        // Bind the actual companion listeners to loopback. The advertised host can
-        // still be a Tailscale DNS name/IP; IPNExtension owns those tailnet
-        // addresses and forwards to the local loopback listener. Binding to
-        // configuration.host or all interfaces conflicts with Tailscale Serve.
+        // Bind the actual companion listener to loopback. The advertised host can
+        // still be a Tailscale DNS name/IP; IPNExtension owns tailnet addresses and
+        // forwards to the local loopback listener. Binding to configuration.host or
+        // all interfaces conflicts with Tailscale Serve.
         parameters.requiredLocalEndpoint = .hostPort(
             host: NWEndpoint.Host("127.0.0.1"),
             port: configuration.port
         )
-        enrollmentParameters.requiredLocalEndpoint = .hostPort(
-            host: NWEndpoint.Host("127.0.0.1"),
-            port: configuration.enrollmentPort
-        )
 
         let listener = try NWListener(using: parameters)
-        let enrollmentListener = try NWListener(using: enrollmentParameters)
         let logger = Logger.companion
 
         listener.stateUpdateHandler = { [weak self] newState in
@@ -95,9 +80,8 @@ final class CompanionServer {
                 switch newState {
                 case .ready:
                     self.state = .running
-                    self.listenerDescription = "wss://\(self.configuration.host):\(self.configuration.port.rawValue)/ws"
-                    self.enrollmentListenerDescription = "wss://\(self.configuration.host):\(self.configuration.enrollmentPort.rawValue)/enroll"
-                    logger.info("Companion API server ready on port \(self.configuration.port.rawValue)")
+                    self.listenerDescription = "ws://\(self.configuration.host):\(self.configuration.port.rawValue)/ws"
+                    logger.info("Companion HTTP/WebSocket server ready on port \(self.configuration.port.rawValue)")
                 case .failed(let error):
                     self.state = .failed
                     self.lastErrorMessage = "API listener failed on port \(self.configuration.port.rawValue): \(error.localizedDescription)"
@@ -106,27 +90,6 @@ final class CompanionServer {
                 case .cancelled:
                     self.state = .stopped
                     self.listenerDescription = "Not listening"
-                    self.enrollmentListenerDescription = "Not listening"
-                default:
-                    break
-                }
-            }
-        }
-
-        enrollmentListener.stateUpdateHandler = { [weak self] newState in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                switch newState {
-                case .ready:
-                    self.enrollmentListenerDescription = "wss://\(self.configuration.host):\(self.configuration.enrollmentPort.rawValue)/enroll"
-                    logger.info("Companion enrollment server ready on port \(self.configuration.enrollmentPort.rawValue)")
-                case .failed(let error):
-                    self.state = .failed
-                    self.lastErrorMessage = "Enrollment listener failed on port \(self.configuration.enrollmentPort.rawValue): \(error.localizedDescription)"
-                    self.enrollmentListenerDescription = "Enrollment listener failed"
-                    logger.error("Companion enrollment server failed: \(error.localizedDescription, privacy: .public)")
-                case .cancelled:
-                    self.enrollmentListenerDescription = "Not listening"
                 default:
                     break
                 }
@@ -139,49 +102,25 @@ final class CompanionServer {
             }
         }
 
-        enrollmentListener.newConnectionHandler = { [weak self] connection in
-            Task { @MainActor [weak self] in
-                self?.acceptEnrollment(connection: connection)
-            }
-        }
-
         listener.start(queue: .main)
-        enrollmentListener.start(queue: .main)
         self.listener = listener
-        self.enrollmentListener = enrollmentListener
     }
 
     func stop() {
         sessions.values.forEach { $0.stop() }
-        enrollmentSessions.values.forEach { $0.stop() }
         sessions.removeAll()
-        enrollmentSessions.removeAll()
         listener?.cancel()
-        enrollmentListener?.cancel()
         listener = nil
-        enrollmentListener = nil
         state = .stopped
         listenerDescription = "Not listening"
-        enrollmentListenerDescription = "Not listening"
     }
 
     private func accept(connection: NWConnection) {
-        let session = CompanionClientSession(connection: connection)
+        let session = CompanionClientSession(connection: connection, authenticationToken: CompanionAuthenticationTokenStore.shared.token)
         sessions[session.id] = session
         session.onStop = { [weak self] sessionID in
             Task { @MainActor [weak self] in
                 self?.sessions.removeValue(forKey: sessionID)
-            }
-        }
-        session.start()
-    }
-
-    private func acceptEnrollment(connection: NWConnection) {
-        let session = CompanionEnrollmentSession(connection: connection, configuration: configuration)
-        enrollmentSessions[session.id] = session
-        session.onStop = { [weak self] sessionID in
-            Task { @MainActor [weak self] in
-                self?.enrollmentSessions.removeValue(forKey: sessionID)
             }
         }
         session.start()
@@ -191,34 +130,29 @@ final class CompanionServer {
 struct CompanionServerConfiguration {
     let host: String
     let port: NWEndpoint.Port
-    let enrollmentPort: NWEndpoint.Port
 
-    static let `default` = CompanionServerConfiguration(host: "localhost", port: 9112, enrollmentPort: 9212)
+    static let `default` = CompanionServerConfiguration(host: "localhost", port: 9112)
 }
 
 private enum CompanionServerConfigurationStore {
     private static let hostKey = "companion.server.host"
     private static let portKey = "companion.server.port"
-    private static let enrollmentPortKey = "companion.server.enrollmentPort"
 
     static func load() -> CompanionServerConfiguration {
         let defaults = UserDefaults.standard
         let host = defaults.string(forKey: hostKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let portValue = defaults.integer(forKey: portKey)
-        let enrollmentPortValue = defaults.integer(forKey: enrollmentPortKey)
 
         let hostValue = (host?.isEmpty == false ? host! : CompanionServerConfiguration.default.host)
         let port = validPort(from: portValue) ?? CompanionServerConfiguration.default.port
-        let enrollmentPort = validPort(from: enrollmentPortValue) ?? CompanionServerConfiguration.default.enrollmentPort
 
-        return CompanionServerConfiguration(host: hostValue, port: port, enrollmentPort: enrollmentPort)
+        return CompanionServerConfiguration(host: hostValue, port: port)
     }
 
     static func save(_ configuration: CompanionServerConfiguration) {
         let defaults = UserDefaults.standard
         defaults.set(configuration.host, forKey: hostKey)
         defaults.set(Int(configuration.port.rawValue), forKey: portKey)
-        defaults.set(Int(configuration.enrollmentPort.rawValue), forKey: enrollmentPortKey)
     }
 
     private static func validPort(from value: Int) -> NWEndpoint.Port? {
@@ -228,62 +162,9 @@ private enum CompanionServerConfigurationStore {
 }
 
 private enum CompanionServerParametersFactory {
-    static func makeAuthenticatedParameters(
-        identity: CompanionServerIdentity,
-        allowedClientCA: SecCertificate,
-        authenticationStore: CompanionAuthenticationStore
-    ) throws -> NWParameters {
-        let tlsOptions = NWProtocolTLS.Options()
-        let secOptions = tlsOptions.securityProtocolOptions
-
-        sec_protocol_options_set_min_tls_protocol_version(secOptions, .TLSv12)
-
-        guard let identityRef = identity.secIdentity.asSecIdentityRef() else {
-            throw CompanionTLSIdentityStoreError.serverIdentityUnavailable
-        }
-        sec_protocol_options_set_local_identity(secOptions, identityRef)
-
-        guard let caRef = allowedClientCA.asSecCertificateRef() else {
-            throw CompanionTLSIdentityStoreError.certificateUnavailable
-        }
-        sec_protocol_options_set_verify_block(secOptions, { metadata, trust, completion in
-            let secTrust = sec_trust_copy_ref(trust).takeRetainedValue()
-            SecTrustSetAnchorCertificates(secTrust, [caRef] as CFArray)
-            SecTrustSetAnchorCertificatesOnly(secTrust, true)
-
-            var error: CFError?
-            let isTrusted = SecTrustEvaluateWithError(secTrust, &error)
-            guard isTrusted else {
-                completion(false)
-                return
-            }
-
-            do {
-                _ = try authenticationStore.authorizeClientTrust(secTrust)
-                completion(true)
-            } catch {
-                completion(false)
-            }
-        }, DispatchQueue.global(qos: .userInitiated))
-
-        return makeBaseParameters(tlsOptions: tlsOptions)
-    }
-
-    static func makeEnrollmentParameters(identity: CompanionServerIdentity) throws -> NWParameters {
-        let tlsOptions = NWProtocolTLS.Options()
-        let secOptions = tlsOptions.securityProtocolOptions
-
-        sec_protocol_options_set_min_tls_protocol_version(secOptions, .TLSv12)
-        guard let identityRef = identity.secIdentity.asSecIdentityRef() else {
-            throw CompanionTLSIdentityStoreError.serverIdentityUnavailable
-        }
-        sec_protocol_options_set_local_identity(secOptions, identityRef)
-        return makeBaseParameters(tlsOptions: tlsOptions)
-    }
-
-    private static func makeBaseParameters(tlsOptions: NWProtocolTLS.Options) -> NWParameters {
+    static func makeAuthenticatedParameters() -> NWParameters {
         let tcpOptions = NWProtocolTCP.Options()
-        let parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
+        let parameters = NWParameters(tls: nil, tcp: tcpOptions)
         let webSocketOptions = NWProtocolWebSocket.Options(.version13)
         webSocketOptions.autoReplyPing = true
         webSocketOptions.maximumMessageSize = 1 << 20
@@ -292,6 +173,7 @@ private enum CompanionServerParametersFactory {
         return parameters
     }
 }
+
 
 final class CompanionClientSession {
     let id = UUID()
@@ -311,9 +193,11 @@ final class CompanionClientSession {
     private let logRegistry = CompanionLogRegistry()
     private let profileRegistry = CompanionProfileRegistry()
     private let gatewayRegistry = CompanionGatewayRegistry()
+    private let authenticationToken: String
 
-    init(connection: NWConnection) {
+    init(connection: NWConnection, authenticationToken: String) {
         self.connection = connection
+        self.authenticationToken = authenticationToken
     }
 
     func start() {
@@ -361,7 +245,12 @@ final class CompanionClientSession {
 
             do {
                 let request = try self.decoder.decode(CompanionIncomingEnvelope.self, from: data)
-                let response = self.route(request: request)
+                let response: CompanionOutgoingEnvelope
+                if request.authenticationToken == self.authenticationToken {
+                    response = self.route(request: request)
+                } else {
+                    response = .error(id: request.id, code: "invalid_token", message: "The Host Companion authentication token is invalid.")
+                }
                 let responseData = try self.encoder.encode(response)
                 self.send(responseData)
             } catch {
@@ -949,155 +838,33 @@ final class CompanionClientSession {
     }
 }
 
-final class CompanionEnrollmentSession {
-    let id = UUID()
-    var onStop: ((UUID) -> Void)?
+final class CompanionAuthenticationTokenStore {
+    static let shared = CompanionAuthenticationTokenStore()
 
-    private let connection: NWConnection
-    private let configuration: CompanionServerConfiguration
-    private let decoder = JSONDecoder()
-    private let encoder = JSONEncoder()
+    private let defaults = UserDefaults.standard
+    private let tokenKey = "companion.authentication.token"
+    private let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
-    init(connection: NWConnection, configuration: CompanionServerConfiguration) {
-        self.connection = connection
-        self.configuration = configuration
-    }
+    private init() {}
 
-    func start() {
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                Logger.companion.info("Accepted enrollment session \(self.id.uuidString, privacy: .public)")
-                self.receiveNextMessage()
-            case .failed(let error):
-                Logger.companion.error("Enrollment session \(self.id.uuidString, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-                self.stop()
-            case .cancelled:
-                self.stop()
-            default:
-                break
-            }
+    var token: String {
+        let existing = defaults.string(forKey: tokenKey) ?? ""
+        guard existing.count == 4096 else {
+            return regenerateToken()
         }
-
-        connection.start(queue: .main)
+        return existing
     }
 
-    func stop() {
-        connection.cancel()
-        onStop?(id)
-        onStop = nil
-    }
-
-    private func receiveNextMessage() {
-        connection.receiveMessage { [weak self] data, _, _, error in
-            guard let self else { return }
-            if let error {
-                Logger.companion.error("Enrollment receive error for session \(self.id.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                self.stop()
-                return
-            }
-
-            guard let data, data.isEmpty == false else {
-                self.receiveNextMessage()
-                return
-            }
-
-            do {
-                let request = try self.decoder.decode(CompanionIncomingEnvelope.self, from: data)
-                let response = self.route(request: request)
-                let responseData = try self.encoder.encode(response)
-                self.send(responseData)
-            } catch {
-                let response = CompanionOutgoingEnvelope.error(
-                    id: nil,
-                    code: "invalid_request",
-                    message: error.localizedDescription
-                )
-                if let encoded = try? self.encoder.encode(response) {
-                    self.send(encoded)
-                }
-            }
-
-            self.receiveNextMessage()
+    @discardableResult
+    func regenerateToken() -> String {
+        var randomBytes = [UInt8](repeating: 0, count: 4096)
+        let status = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
+        if status != errSecSuccess {
+            randomBytes = (0..<4096).map { _ in UInt8.random(in: 0...255) }
         }
-    }
-
-    private func send(_ data: Data) {
-        let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
-        let context = NWConnection.ContentContext(identifier: "enrollment-response", metadata: [metadata])
-        connection.send(content: data, contentContext: context, isComplete: true, completion: .idempotent)
-    }
-
-    private func route(request: CompanionIncomingEnvelope) -> CompanionOutgoingEnvelope {
-        switch request.type {
-        case "hello":
-            return .success(
-                id: request.id,
-                payload: EnrollmentHelloResult(
-                    protocolVersion: "1",
-                    serverName: "HermesHostCompanionEnrollment",
-                    capabilities: ["hello", "enroll_client"],
-                    requiresPairingCode: true
-                )
-            )
-
-        case "enroll_client":
-            do {
-                guard let payload = request.payload else {
-                    return .error(id: request.id, code: "missing_payload", message: "The enroll_client request requires a payload.")
-                }
-                let enrollPayload = try payload.decode(EnrollClientPayload.self)
-                let serverIdentity = try CompanionTLSIdentityStore.shared.loadServerIdentity(host: configuration.host)
-                if let clientPinnedFingerprint = enrollPayload.serverFingerprint?.normalizedCompanionFingerprint(),
-                   clientPinnedFingerprint.isEmpty == false,
-                   clientPinnedFingerprint != serverIdentity.serverCertificateFingerprint.normalizedCompanionFingerprint() {
-                    return .error(
-                        id: request.id,
-                        code: "server_fingerprint_mismatch",
-                        message: "The enrollment request fingerprint does not match this companion's server certificate fingerprint."
-                    )
-                }
-                let signedIdentity = try CompanionTLSIdentityStore.shared.createSignedClientIdentity(
-                    commonName: enrollPayload.deviceName
-                )
-                let enrolledDevice = try CompanionAuthenticationStore.shared.enrollDevice(
-                    pairingID: enrollPayload.pairingID,
-                    pairingSecret: enrollPayload.pairingSecret,
-                    deviceName: enrollPayload.deviceName,
-                    clientCertificatePEM: signedIdentity.certificatePEM
-                )
-                return .success(
-                    id: request.id,
-                    payload: EnrollClientResult(
-                        deviceID: enrolledDevice.id,
-                        deviceName: enrolledDevice.commonName,
-                        clientIdentityPKCS12Base64: signedIdentity.identityPKCS12Base64,
-                        clientIdentityPassword: signedIdentity.identityPassword,
-                        caCertificatePEM: signedIdentity.caCertificatePEM,
-                        serverEndpoint: "wss://\(configuration.host):\(configuration.port.rawValue)/ws",
-                        serverCertificateFingerprint: serverIdentity.serverCertificateFingerprint
-                    )
-                )
-            } catch {
-                return .error(id: request.id, code: "enroll_client_failed", message: error.localizedDescription)
-            }
-        default:
-            return .error(
-                id: request.id,
-                code: "unsupported_operation",
-                message: "Operation '\(request.type)' is not available on the enrollment listener."
-            )
-        }
-    }
-}
-
-private extension String {
-    func normalizedCompanionFingerprint() -> String {
-        lowercased()
-            .replacingOccurrences(of: ":", with: "")
-            .replacingOccurrences(of: " ", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = String(randomBytes.map { alphabet[Int($0) % alphabet.count] })
+        defaults.set(token, forKey: tokenKey)
+        return token
     }
 }
 

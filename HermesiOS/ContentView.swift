@@ -125,10 +125,9 @@ struct ContentView: View {
             apiSettings.apiKey.isEmpty ? "no-api-key" : "api-key-set",
             String(apiSettings.allowSelfSignedCertificates),
             companionSettings.apiURL,
-            companionSettings.expectedServerFingerprint,
+            companionSettings.authenticationToken.isEmpty ? "no-companion-token" : "companion-token-set",
             companionEnrollment.identityState.deviceID,
-            companionEnrollment.identityState.serverEndpoint,
-            companionEnrollment.identityState.serverCertificateFingerprint
+            companionEnrollment.identityState.serverEndpoint
         ].joined(separator: "|")
     }
 

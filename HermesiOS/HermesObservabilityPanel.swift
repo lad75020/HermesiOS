@@ -19,7 +19,7 @@ struct HermesObservabilityPanel: View {
 
     private var displayedLogText: String {
         if companionRuntime.observabilityLogContent.isEmpty {
-            return canUseCompanion ? "Press Refresh to load Hermes logs." : "Enroll the macOS Host Companion to read Hermes logs."
+            return canUseCompanion ? "Press Refresh to load Hermes logs." : "Authenticate the macOS Host Companion to read Hermes logs."
         }
         return companionRuntime.observabilityLogContent
     }

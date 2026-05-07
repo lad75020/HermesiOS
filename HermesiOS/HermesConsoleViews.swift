@@ -216,9 +216,6 @@ final class HermesSpeechTranscriptionSession {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        if speechRecognizer.supportsOnDeviceRecognition {
-            request.requiresOnDeviceRecognition = true
-        }
         recognitionRequest = request
 
         let inputNode = audioEngine.inputNode
@@ -321,6 +318,7 @@ struct HermesResponsesConsoleView: View {
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
     @State private var speechSession = HermesSpeechTranscriptionSession()
+    @State private var promptText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -357,12 +355,19 @@ struct HermesResponsesConsoleView: View {
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: apiSettings.baseURL) {
+            if promptText.isEmpty {
+                promptText = requestDraft.userPrompt
+            }
             await refreshAPIServerModels()
         }
         .onChange(of: apiSettings) { _, _ in
             Task { await refreshAPIServerModels() }
         }
+        .onChange(of: promptText) { _, text in
+            requestDraft.userPrompt = text
+        }
         .onChange(of: speechSession.composedText) { _, text in
+            promptText = text
             requestDraft.userPrompt = text
         }
         .fileImporter(
@@ -476,12 +481,12 @@ struct HermesResponsesConsoleView: View {
                 .disabled(responseSession.isSending)
                 .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
 
-                TextEditor(text: responsePromptTextBinding)
+                TextEditor(text: $promptText)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 72, maxHeight: 130)
                     .igFieldBackground()
                     .overlay(alignment: .topLeading) {
-                        if requestDraft.userPrompt.isEmpty {
+                        if promptText.isEmpty {
                             Text("Ask Hermes something...")
                                 .foregroundStyle(.hermesSecondaryText)
                                 .padding(.horizontal, 6)
@@ -495,16 +500,19 @@ struct HermesResponsesConsoleView: View {
                         speechSession: speechSession,
                         isDisabled: responseSession.isSending
                     ) {
-                        speechSession.toggle(seedText: requestDraft.userPrompt) { text in
+                        speechSession.toggle(seedText: promptText) { text in
+                            promptText = text
                             requestDraft.userPrompt = text
                         }
                     }
 
                     Button {
                         speechSession.stop()
-                        let submittedDraft = requestDraft
+                        var submittedDraft = requestDraft
+                        submittedDraft.userPrompt = promptText
                         let submittedAttachment = selectedAttachment
                         responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment)
+                        promptText = ""
                         requestDraft.userPrompt = ""
                         selectedAttachment = nil
                     } label: {
@@ -513,27 +521,13 @@ struct HermesResponsesConsoleView: View {
                             .frame(width: 42, height: 42)
                     }
                     .hermesGlassProminentButton()
-                    .disabled((requestDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
+                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
                     .accessibilityLabel("Send prompt")
                 }
             }
         }
         .padding(14)
         .background(.ultraThinMaterial)
-    }
-
-    private var responsePromptTextBinding: Binding<String> {
-        Binding(
-            get: {
-                speechSession.isRecording ? speechSession.composedText : requestDraft.userPrompt
-            },
-            set: { newValue in
-                requestDraft.userPrompt = newValue
-                if speechSession.isRecording {
-                    speechSession.updateSeedText(newValue)
-                }
-            }
-        )
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
@@ -825,6 +819,7 @@ struct HermesChatConsoleView: View {
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
     @State private var speechSession = HermesSpeechTranscriptionSession()
+    @State private var promptText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -862,12 +857,19 @@ struct HermesChatConsoleView: View {
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: apiSettings.baseURL) {
+            if promptText.isEmpty {
+                promptText = chatDraft.userPrompt
+            }
             await refreshAPIServerModels()
         }
         .onChange(of: apiSettings) { _, _ in
             Task { await refreshAPIServerModels() }
         }
+        .onChange(of: promptText) { _, text in
+            chatDraft.userPrompt = text
+        }
         .onChange(of: speechSession.composedText) { _, text in
+            promptText = text
             chatDraft.userPrompt = text
         }
         .fileImporter(
@@ -984,12 +986,12 @@ struct HermesChatConsoleView: View {
                 .disabled(chatSession.isSending)
                 .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
 
-                TextEditor(text: chatPromptTextBinding)
+                TextEditor(text: $promptText)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 72, maxHeight: 130)
                     .igFieldBackground()
                     .overlay(alignment: .topLeading) {
-                        if chatDraft.userPrompt.isEmpty {
+                        if promptText.isEmpty {
                             Text("Ask Hermes something...")
                                 .foregroundStyle(.hermesSecondaryText)
                                 .padding(.horizontal, 6)
@@ -1003,16 +1005,19 @@ struct HermesChatConsoleView: View {
                         speechSession: speechSession,
                         isDisabled: chatSession.isSending
                     ) {
-                        speechSession.toggle(seedText: chatDraft.userPrompt) { text in
+                        speechSession.toggle(seedText: promptText) { text in
+                            promptText = text
                             chatDraft.userPrompt = text
                         }
                     }
 
                     Button {
                         speechSession.stop()
-                        let submittedDraft = chatDraft
+                        var submittedDraft = chatDraft
+                        submittedDraft.userPrompt = promptText
                         let submittedAttachment = selectedAttachment
                         chatSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment)
+                        promptText = ""
                         chatDraft.userPrompt = ""
                         selectedAttachment = nil
                     } label: {
@@ -1021,27 +1026,13 @@ struct HermesChatConsoleView: View {
                             .frame(width: 42, height: 42)
                     }
                     .hermesGlassProminentButton()
-                    .disabled((chatDraft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
+                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
                     .accessibilityLabel("Send chat message")
                 }
             }
         }
         .padding(14)
         .background(.ultraThinMaterial)
-    }
-
-    private var chatPromptTextBinding: Binding<String> {
-        Binding(
-            get: {
-                speechSession.isRecording ? speechSession.composedText : chatDraft.userPrompt
-            },
-            set: { newValue in
-                chatDraft.userPrompt = newValue
-                if speechSession.isRecording {
-                    speechSession.updateSeedText(newValue)
-                }
-            }
-        )
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {

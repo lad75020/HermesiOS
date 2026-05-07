@@ -72,12 +72,16 @@ final class CompanionServer {
         )
         let enrollmentParameters = try CompanionServerParametersFactory.makeEnrollmentParameters(identity: identity)
 
+        // Bind the actual companion listeners to loopback. The advertised host can
+        // still be a Tailscale DNS name/IP; IPNExtension owns those tailnet
+        // addresses and forwards to the local loopback listener. Binding to
+        // configuration.host or all interfaces conflicts with Tailscale Serve.
         parameters.requiredLocalEndpoint = .hostPort(
-            host: NWEndpoint.Host(configuration.host),
+            host: NWEndpoint.Host("127.0.0.1"),
             port: configuration.port
         )
         enrollmentParameters.requiredLocalEndpoint = .hostPort(
-            host: NWEndpoint.Host(configuration.host),
+            host: NWEndpoint.Host("127.0.0.1"),
             port: configuration.enrollmentPort
         )
 
@@ -189,7 +193,7 @@ struct CompanionServerConfiguration {
     let port: NWEndpoint.Port
     let enrollmentPort: NWEndpoint.Port
 
-    static let `default` = CompanionServerConfiguration(host: "localhost", port: 9112, enrollmentPort: 9113)
+    static let `default` = CompanionServerConfiguration(host: "localhost", port: 9112, enrollmentPort: 9212)
 }
 
 private enum CompanionServerConfigurationStore {

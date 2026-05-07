@@ -56,10 +56,29 @@ enum HermesSettingsPersistence {
         if settings.enrollmentURL == "wss://localhost:9444/enroll" {
             settings.enrollmentURL = HermesCompanionSettings().enrollmentURL
         }
+        if let migratedURL = migrateLegacyEnrollmentPort(settings.enrollmentURL) {
+            settings.enrollmentURL = migratedURL
+        }
         if settings.apiURL == "wss://localhost:9443/ws" {
             settings.apiURL = HermesCompanionSettings().apiURL
         }
         return settings
+    }
+
+    private static func migrateLegacyEnrollmentPort(_ rawURL: String) -> String? {
+        guard
+            var components = URLComponents(string: rawURL),
+            components.scheme == "wss",
+            components.port == 9113,
+            components.path == "/enroll"
+        else { return nil }
+
+        // Port 9113 is commonly occupied by Tailscale Serve on Laurent's Mac, so
+        // stale pairing payloads/defaults hit the wrong TLS endpoint and fail before
+        // enrollment. Preserve the user's host while moving to the companion's
+        // dedicated enrollment port.
+        components.port = 9212
+        return components.url?.absoluteString
     }
 
     static func saveCompanionSettings(_ settings: HermesCompanionSettings) {

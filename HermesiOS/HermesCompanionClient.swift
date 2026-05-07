@@ -15,7 +15,7 @@ import Vision
 import VisionKit
 
 struct HermesCompanionSettings: Codable, Equatable {
-    var enrollmentURL = "wss://127.0.0.1:9113/enroll"
+    var enrollmentURL = "wss://127.0.0.1:9212/enroll"
     var apiURL = "wss://127.0.0.1:9112/ws"
     var expectedServerFingerprint = ""
     var deviceName = "Hermes iOS Device"

@@ -70,7 +70,7 @@ private struct HermesHostCompanionRootView: View {
                             }
                             .buttonStyle(.borderedProminent)
 
-                            Text("The listener remains reachable on all interfaces. This value controls the published endpoints returned to iOS clients.")
+                            Text("The listener binds to local loopback; this advertised value controls the endpoints shown to iOS clients and may be served through Tailscale.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -204,6 +204,12 @@ final class CompanionServerController {
         advertisedHost = server.currentConfiguration.host
         apiPort = String(server.currentConfiguration.port.rawValue)
         enrollmentPort = String(server.currentConfiguration.enrollmentPort.rawValue)
+
+        // Start even if SwiftUI restores the app without immediately mounting the
+        // root view's `.task`; the view task remains as an idempotent fallback.
+        Task { @MainActor [weak self] in
+            self?.startServerIfNeeded()
+        }
     }
 
     var pairingQRCodeImage: NSImage? {

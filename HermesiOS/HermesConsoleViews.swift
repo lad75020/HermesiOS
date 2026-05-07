@@ -99,6 +99,7 @@ private struct HermesAttachmentChip: View {
 final class HermesSpeechTranscriptionSession {
     var isRecording = false
     var liveText = ""
+    var composedText = ""
     var statusMessage = ""
     var lastErrorMessage = ""
 
@@ -120,7 +121,8 @@ final class HermesSpeechTranscriptionSession {
     func start(seedText: String, onTextChange: @escaping (String) -> Void) {
         guard !isRecording else { return }
         self.onTextChange = onTextChange
-        liveText = seedText
+        liveText = ""
+        composedText = seedText
         lastErrorMessage = ""
         statusMessage = "Requesting speech access…"
 
@@ -138,6 +140,10 @@ final class HermesSpeechTranscriptionSession {
 
     func stop() {
         finishRecognition(status: "Dictation stopped")
+    }
+
+    func updateSeedText(_ text: String) {
+        composedText = merge(seedText: text, transcription: liveText)
     }
 
     private func finishRecognition(status: String? = nil, cancelTask: Bool = false) {
@@ -232,8 +238,10 @@ final class HermesSpeechTranscriptionSession {
                 guard let self else { return }
                 if let result {
                     let transcription = result.bestTranscription.formattedString
+                    let composed = self.merge(seedText: seedText, transcription: transcription)
                     self.liveText = transcription
-                    self.onTextChange?(self.merge(seedText: seedText, transcription: transcription))
+                    self.composedText = composed
+                    self.onTextChange?(composed)
                     if result.isFinal {
                         self.finishRecognition(status: "Dictation complete")
                     }
@@ -354,6 +362,9 @@ struct HermesResponsesConsoleView: View {
         .onChange(of: apiSettings) { _, _ in
             Task { await refreshAPIServerModels() }
         }
+        .onChange(of: speechSession.composedText) { _, text in
+            requestDraft.userPrompt = text
+        }
         .fileImporter(
             isPresented: $isImportingAttachment,
             allowedContentTypes: HermesPromptAttachment.supportedContentTypes,
@@ -465,7 +476,7 @@ struct HermesResponsesConsoleView: View {
                 .disabled(responseSession.isSending)
                 .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
 
-                TextEditor(text: $requestDraft.userPrompt)
+                TextEditor(text: responsePromptTextBinding)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 72, maxHeight: 130)
                     .igFieldBackground()
@@ -509,6 +520,20 @@ struct HermesResponsesConsoleView: View {
         }
         .padding(14)
         .background(.ultraThinMaterial)
+    }
+
+    private var responsePromptTextBinding: Binding<String> {
+        Binding(
+            get: {
+                speechSession.isRecording ? speechSession.composedText : requestDraft.userPrompt
+            },
+            set: { newValue in
+                requestDraft.userPrompt = newValue
+                if speechSession.isRecording {
+                    speechSession.updateSeedText(newValue)
+                }
+            }
+        )
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
@@ -842,6 +867,9 @@ struct HermesChatConsoleView: View {
         .onChange(of: apiSettings) { _, _ in
             Task { await refreshAPIServerModels() }
         }
+        .onChange(of: speechSession.composedText) { _, text in
+            chatDraft.userPrompt = text
+        }
         .fileImporter(
             isPresented: $isImportingAttachment,
             allowedContentTypes: HermesPromptAttachment.supportedContentTypes,
@@ -956,7 +984,7 @@ struct HermesChatConsoleView: View {
                 .disabled(chatSession.isSending)
                 .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
 
-                TextEditor(text: $chatDraft.userPrompt)
+                TextEditor(text: chatPromptTextBinding)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 72, maxHeight: 130)
                     .igFieldBackground()
@@ -1000,6 +1028,20 @@ struct HermesChatConsoleView: View {
         }
         .padding(14)
         .background(.ultraThinMaterial)
+    }
+
+    private var chatPromptTextBinding: Binding<String> {
+        Binding(
+            get: {
+                speechSession.isRecording ? speechSession.composedText : chatDraft.userPrompt
+            },
+            set: { newValue in
+                chatDraft.userPrompt = newValue
+                if speechSession.isRecording {
+                    speechSession.updateSeedText(newValue)
+                }
+            }
+        )
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {

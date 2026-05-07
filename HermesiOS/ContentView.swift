@@ -17,6 +17,7 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
+    @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
     @State private var selectedPhoneSection: WorkspaceSection = .responses
@@ -31,6 +32,8 @@ struct ContentView: View {
     @State private var companionRuntime = HermesCompanionRuntimeSession()
     @State private var statusMonitor = HermesStatusMonitor()
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
+    @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
+    @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
     @State private var isShowingStreamDebugJSON = false
 
@@ -81,6 +84,9 @@ struct ContentView: View {
                 isShowingSplash = false
             }
         }
+        .task(id: officePreloadKey) {
+            officeWebViewStore.preload(urlString: officeURLString, reloadID: officeReloadID)
+        }
         .task(id: statusLoopKey) {
             guard scenePhase == .active else { return }
             await statusMonitor.runStatusLoop(
@@ -116,6 +122,10 @@ struct ContentView: View {
 
     private var statusLoopKey: String {
         statusRefreshKey + "|scenePhase=\(scenePhase)"
+    }
+
+    private var officePreloadKey: String {
+        officeURLString + "|reload=\(officeReloadID.uuidString)"
     }
 
     private var statusRefreshKey: String {
@@ -263,7 +273,7 @@ struct ContentView: View {
                 onResumeConversation: resumeConversationInResponses
             )
         case .office:
-            HermesOfficeView()
+            HermesOfficeView(webViewStore: officeWebViewStore, reloadID: $officeReloadID)
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,

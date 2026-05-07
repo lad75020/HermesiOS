@@ -7,13 +7,13 @@ import Combine
 import SwiftUI
 import WebKit
 
-private let defaultHermesOfficeURL = "http://localhost:9116"
-private let hermesOfficeURLStorageKey = "hermes.office.url"
+let defaultHermesOfficeURL = "http://localhost:9116"
+let hermesOfficeURLStorageKey = "hermes.office.url"
 
 struct HermesOfficeView: View {
     @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
-    @State private var reloadID = UUID()
-    @StateObject private var webViewStore = HermesOfficeWebViewStore()
+    @ObservedObject var webViewStore: HermesOfficeWebViewStore
+    @Binding var reloadID: UUID
 
     private var officeURL: URL? {
         let trimmedURL = officeURLString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -104,6 +104,12 @@ final class HermesOfficeWebViewStore: ObservableObject {
         lastReloadID = reloadID
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         webView.load(request)
+    }
+
+    func preload(urlString: String, reloadID: UUID) {
+        let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmedURL) else { return }
+        loadIfNeeded(url: url, reloadID: reloadID)
     }
 }
 

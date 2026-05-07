@@ -156,14 +156,6 @@ struct HermesSettingsView: View {
                     .lineLimit(4, reservesSpace: true)
                 }
 
-                Section("Notes") {
-                    Text("Responses and Chat screens are now limited to message exchange and output.")
-                    Text("Use this screen for endpoint, auth, model, streaming, and prompt configuration.")
-                    Text("Keep self-signed certificate support off unless you trust the Hermes API server.")
-                    Text("For the host companion, copy the HTTP API URL and 4096-character token from the macOS app. No TLS certificate, QR code, or enrollment flow is required.")
-                    Text("Set the Hermes workspace path to the host-side `.hermes` directory you want the Skills panel to manage.")
-                }
-                .foregroundStyle(.hermesSecondaryText)
             }
             .scrollContentBackground(.hidden)
         }

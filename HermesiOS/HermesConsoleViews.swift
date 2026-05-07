@@ -104,11 +104,14 @@ final class HermesSpeechTranscriptionSession {
     var lastErrorMessage = ""
 
     private let audioEngine = AVAudioEngine()
-    private let speechRecognizer = SFSpeechRecognizer()
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
+    private var analyzer: SpeechAnalyzer?
+    private var transcriber: DictationTranscriber?
+    private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
+    private var analyzerTask: Task<Void, Never>?
+    private var resultsTask: Task<Void, Never>?
+    private var audioConverter: AVAudioConverter?
+    private var analyzerAudioFormat: AVAudioFormat?
     private var onTextChange: ((String) -> Void)?
-    private var shouldIgnoreRecognitionErrors = false
 
     func toggle(seedText: String, onTextChange: @escaping (String) -> Void) {
         if isRecording {
@@ -129,47 +132,58 @@ final class HermesSpeechTranscriptionSession {
         Task {
             do {
                 try await requestPermissions()
-                try beginRecognition(seedText: seedText)
+                try await beginRecognition(seedText: seedText)
             } catch {
                 self.lastErrorMessage = error.localizedDescription
                 self.statusMessage = "Dictation unavailable"
-                self.finishRecognition(status: nil, cancelTask: true)
+                self.finishRecognition(status: nil, cancelAnalysis: true)
             }
         }
     }
 
     func stop() {
-        finishRecognition(status: "Dictation stopped")
+        finishRecognition(status: liveText.isEmpty ? "Dictation stopped — no speech recognized" : "Dictation stopped")
     }
 
     func updateSeedText(_ text: String) {
         composedText = merge(seedText: text, transcription: liveText)
     }
 
-    private func finishRecognition(status: String? = nil, cancelTask: Bool = false) {
-        shouldIgnoreRecognitionErrors = true
-
+    private func finishRecognition(status: String? = nil, cancelAnalysis: Bool = false) {
         if audioEngine.isRunning {
             audioEngine.stop()
         }
         audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionRequest?.endAudio()
+        inputContinuation?.finish()
+        inputContinuation = nil
 
-        if cancelTask {
-            recognitionTask?.cancel()
-        } else {
-            recognitionTask?.finish()
+        if cancelAnalysis {
+            analyzerTask?.cancel()
+            resultsTask?.cancel()
         }
+        analyzerTask = nil
+        resultsTask = nil
 
-        recognitionTask = nil
-        recognitionRequest = nil
+        let analyzerToFinish = analyzer
+        analyzer = nil
+        transcriber = nil
+        audioConverter = nil
+        analyzerAudioFormat = nil
         isRecording = false
+
+        Task {
+            if cancelAnalysis {
+                await analyzerToFinish?.cancelAndFinishNow()
+            } else {
+                try? await analyzerToFinish?.finalizeAndFinishThroughEndOfInput()
+            }
+        }
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
         if let status {
             statusMessage = status
-        } else if statusMessage == "Listening…" {
+        } else if statusMessage.hasPrefix("Listening") {
             statusMessage = "Dictation stopped"
         }
     }
@@ -201,73 +215,130 @@ final class HermesSpeechTranscriptionSession {
         }
     }
 
-    private func beginRecognition(seedText: String) throws {
-        shouldIgnoreRecognitionErrors = false
-        recognitionTask?.cancel()
-        recognitionTask = nil
-
-        guard let speechRecognizer, speechRecognizer.isAvailable else {
+    private func beginRecognition(seedText: String) async throws {
+        guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: Locale.current)
+        else {
             throw HermesSpeechError.recognizerUnavailable
+        }
+
+        let transcriber = DictationTranscriber(locale: locale, preset: .progressiveLongDictation)
+        let modules: [any SpeechModule] = [transcriber]
+        statusMessage = "Preparing dictation…"
+
+        if let installationRequest = try await AssetInventory.assetInstallationRequest(supporting: modules) {
+            statusMessage = "Installing dictation assets…"
+            try await installationRequest.downloadAndInstall()
+        }
+
+        let inputNode = audioEngine.inputNode
+        inputNode.removeTap(onBus: 0)
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+        let preferredFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules, considering: inputFormat) ?? inputFormat
+        analyzerAudioFormat = preferredFormat
+
+        let analyzer = SpeechAnalyzer(modules: modules)
+        try await analyzer.prepareToAnalyze(in: preferredFormat)
+
+        let (inputStream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self, bufferingPolicy: .bufferingNewest(12))
+        self.inputContinuation = continuation
+        self.analyzer = analyzer
+        self.transcriber = transcriber
+
+        resultsTask = Task { [weak self, transcriber] in
+            do {
+                for try await result in transcriber.results {
+                    let text = String(result.text.characters)
+                    await MainActor.run {
+                        self?.applyTranscriptionText(text, seedText: seedText)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self?.lastErrorMessage = error.localizedDescription
+                    self?.statusMessage = "Dictation failed"
+                    self?.finishRecognition(status: nil, cancelAnalysis: true)
+                }
+            }
+        }
+
+        analyzerTask = Task { [weak self, analyzer] in
+            do {
+                let lastSampleTime = try await analyzer.analyzeSequence(inputStream)
+                if let lastSampleTime {
+                    try await analyzer.finalizeAndFinish(through: lastSampleTime)
+                }
+            } catch {
+                await MainActor.run {
+                    self?.lastErrorMessage = error.localizedDescription
+                    self?.statusMessage = "Dictation failed"
+                    self?.finishRecognition(status: nil, cancelAnalysis: true)
+                }
+            }
         }
 
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        request.taskHint = .dictation
-        recognitionRequest = request
-
-        let inputNode = audioEngine.inputNode
-        inputNode.removeTap(onBus: 0)
-
-        recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
             Task { @MainActor in
-                guard let self else { return }
-                if let result {
-                    self.applyRecognitionResult(result, seedText: seedText)
-                }
-
-                if let error {
-                    guard !self.shouldSuppressRecognitionError(error) else { return }
-                    self.lastErrorMessage = error.localizedDescription
-                    self.statusMessage = "Dictation failed"
-                    self.finishRecognition(status: nil, cancelTask: true)
-                }
+                self?.appendAudioBuffer(buffer)
             }
-        }
-
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak request] buffer, _ in
-            request?.append(buffer)
         }
 
         audioEngine.prepare()
         try audioEngine.start()
         isRecording = true
-        statusMessage = "Listening…"
+        statusMessage = "Listening… speak now"
     }
 
-    private func applyRecognitionResult(_ result: SFSpeechRecognitionResult, seedText: String) {
-        let transcription = result.bestTranscription.formattedString
+    private func appendAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard let inputContinuation else { return }
+        guard let converted = convertBufferForAnalyzer(buffer) else { return }
+        inputContinuation.yield(AnalyzerInput(buffer: converted))
+        if liveText.isEmpty {
+            statusMessage = "Listening… microphone audio received"
+        }
+    }
+
+    private func convertBufferForAnalyzer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let targetFormat = analyzerAudioFormat else { return buffer }
+        guard !buffer.format.isCompatibleForHermesSpeechAnalyzer(with: targetFormat) else { return buffer }
+
+        if audioConverter == nil {
+            audioConverter = AVAudioConverter(from: buffer.format, to: targetFormat)
+        }
+        guard let audioConverter else { return nil }
+
+        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
+        let frameCapacity = AVAudioFrameCount(max(1, Double(buffer.frameLength) * ratio).rounded(.up))
+        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCapacity) else { return nil }
+
+        var didProvideInput = false
+        var conversionError: NSError?
+        audioConverter.convert(to: convertedBuffer, error: &conversionError) { _, status in
+            if didProvideInput {
+                status.pointee = .noDataNow
+                return nil
+            }
+            didProvideInput = true
+            status.pointee = .haveData
+            return buffer
+        }
+
+        if let conversionError {
+            lastErrorMessage = conversionError.localizedDescription
+            return nil
+        }
+        return convertedBuffer.frameLength > 0 ? convertedBuffer : nil
+    }
+
+    private func applyTranscriptionText(_ transcription: String, seedText: String) {
         let composed = merge(seedText: seedText, transcription: transcription)
         liveText = transcription
         composedText = composed
         onTextChange?(composed)
         statusMessage = transcription.isEmpty ? "Listening…" : "Dictating: \(transcription)"
-        if result.isFinal {
-            finishRecognition(status: "Dictation complete")
-        }
-    }
-
-    private func shouldSuppressRecognitionError(_ error: Error) -> Bool {
-        guard shouldIgnoreRecognitionErrors else { return false }
-        let nsError = error as NSError
-        return nsError.domain == "kAFAssistantErrorDomain"
-            || nsError.domain == "KAFAssistantErrorDomain"
-            || nsError.domain == NSURLErrorDomain
-            || nsError.code == NSUserCancelledError
     }
 
     private func merge(seedText: String, transcription: String) -> String {
@@ -276,6 +347,15 @@ final class HermesSpeechTranscriptionSession {
         guard !base.isEmpty else { return spoken }
         guard !spoken.isEmpty else { return base }
         return base + "\n" + spoken
+    }
+}
+
+private extension AVAudioFormat {
+    func isCompatibleForHermesSpeechAnalyzer(with other: AVAudioFormat) -> Bool {
+        sampleRate == other.sampleRate
+            && channelCount == other.channelCount
+            && commonFormat == other.commonFormat
+            && isInterleaved == other.isInterleaved
     }
 }
 

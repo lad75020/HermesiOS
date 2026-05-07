@@ -742,12 +742,14 @@ private struct HermesProfileSelector: View {
 
             Picker("Profile", selection: selection) {
                 ForEach(pickerProfiles) { profile in
-                    Text(label(for: profile)).tag(profile.id)
+                    Text(label(for: profile))
+                        .font(.caption.weight(.semibold))
+                        .tag(profile.id)
                 }
             }
             .pickerStyle(.menu)
             .labelsHidden()
-            .font(.igUsername)
+            .font(.caption.weight(.semibold))
             .lineLimit(1)
             .tint(.primary)
         }

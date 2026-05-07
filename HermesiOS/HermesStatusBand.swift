@@ -132,6 +132,7 @@ struct HermesStatusBand: View {
             HStack(spacing: 10) {
                 HermesStatusLED(
                     label: "API",
+                    tooltip: "Hermes API",
                     showsLabel: showsLabels,
                     status: statusMonitor.apiServerStatus,
                     isActive: apiChannelActive || statusMonitor.isAPIProbeActive
@@ -140,6 +141,7 @@ struct HermesStatusBand: View {
 
                 HermesStatusLED(
                     label: "Mac",
+                    tooltip: "MacOS Companion",
                     showsLabel: showsLabels,
                     status: statusMonitor.companionStatus,
                     isActive: companionChannelActive || statusMonitor.isCompanionProbeActive
@@ -148,6 +150,7 @@ struct HermesStatusBand: View {
 
                 HermesStatusLED(
                     label: "DASH",
+                    tooltip: "Hermes Dashboard",
                     showsLabel: showsLabels,
                     status: .up,
                     isActive: dashboardChannelActive,
@@ -172,6 +175,7 @@ struct HermesStatusBand: View {
 
 private struct HermesStatusLED: View {
     let label: String
+    let tooltip: String
     var showsLabel = true
     let status: HermesServiceReachability
     let isActive: Bool
@@ -188,8 +192,9 @@ private struct HermesStatusLED: View {
                 ledContent(color: inactiveColor ?? status.color, isFlashing: false)
             }
         }
+        .help(tooltip)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label) status \(isActive ? "active" : status.accessibilityLabel)")
+        .accessibilityLabel("\(tooltip) status \(isActive ? "active" : status.accessibilityLabel)")
     }
 
     private func flashingColor(for date: Date) -> Color {

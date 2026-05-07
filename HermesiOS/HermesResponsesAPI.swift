@@ -352,6 +352,19 @@ struct HermesAPISettings: Codable, Equatable {
             return URL(string: trimmed)
         }
 
+        guard var components = URLComponents(string: trimmed) else { return nil }
+        let normalizedPath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        // The Hermes API server is documented as an OpenAI-compatible `/v1` endpoint,
+        // but it is easy to enter only the host/port in Settings (for example
+        // `http://127.0.0.1:8642`).  Without this guard the Responses tab posts to
+        // `/responses`, which the API server correctly reports as 404.  Treat a bare
+        // origin as the Hermes API root and add `/v1` before the endpoint suffix.
+        if normalizedPath.isEmpty {
+            components.path = "/v1/\(suffix)"
+            return components.url
+        }
+
         if trimmed.hasSuffix("/") {
             return URL(string: trimmed + suffix)
         }

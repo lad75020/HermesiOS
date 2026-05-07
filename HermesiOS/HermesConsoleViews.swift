@@ -5,10 +5,18 @@
 
 import Observation
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 struct HermesResponsesConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
     @Binding var requestDraft: HermesRequestDraft
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var responseSession: HermesResponsesSession
 
     var body: some View {
@@ -17,12 +25,22 @@ struct HermesResponsesConsoleView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HermesTabHeader("Responses API", systemImage: "dot.radiowaves.left.and.right")
 
-                    HermesStatusRow(
-                        items: [
-                            .init(title: "Thread", value: responseSession.previousResponseID.isEmpty ? "New response" : "Continuing thread", accent: .igGradPurple),
-                            .init(title: "Status", value: responseSession.connectionStatus, accent: .igGradOrange)
-                        ]
-                    )
+                    HStack(alignment: .top, spacing: 12) {
+                        HermesModelSelector(
+                            selectedModel: $requestDraft.model,
+                            savedModels: companionRuntime.hermesModels,
+                            isEnabled: !responseSession.hasActiveConversation,
+                            lockedModel: responseSession.activeModel,
+                            fallbackModel: "hermes-agent"
+                        )
+
+                        HermesStatusRow(
+                            items: [
+                                .init(title: "Thread", value: responseSession.previousResponseID.isEmpty ? "New response" : "Continuing thread", accent: .igGradPurple),
+                                .init(title: "Status", value: responseSession.connectionStatus, accent: .igGradOrange)
+                            ]
+                        )
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.top)
@@ -35,6 +53,12 @@ struct HermesResponsesConsoleView: View {
         }
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
+        .task(id: companionEnrollment.identityState.deviceID) {
+            refreshModelsIfAvailable()
+        }
+        .task(id: companionSettings.hermesWorkspacePath) {
+            refreshModelsIfAvailable()
+        }
     }
 
     private var responseTranscript: some View {
@@ -142,6 +166,100 @@ struct HermesResponsesConsoleView: View {
             proxy.scrollTo(lastID, anchor: .bottom)
         }
     }
+
+    private func refreshModelsIfAvailable() {
+        guard companionEnrollment.identityState.isEnrolled else { return }
+        companionRuntime.refreshHermesModels(
+            settings: companionSettings,
+            identityState: companionEnrollment.identityState
+        )
+    }
+}
+
+private struct HermesModelSelector: View {
+    @Binding var selectedModel: String
+    let savedModels: [HermesCompanionSavedModel]
+    let isEnabled: Bool
+    let lockedModel: String
+    let fallbackModel: String
+
+    private var currentModel: String {
+        let locked = lockedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !locked.isEmpty { return locked }
+        let selected = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return selected.isEmpty ? fallbackModel : selected
+    }
+
+    private var selection: Binding<String> {
+        Binding(
+            get: { currentModel },
+            set: { selectedModel = $0 }
+        )
+    }
+
+    private var pickerModels: [HermesCompanionSavedModel] {
+        var seen = Set<String>()
+        var unique = savedModels.filter { model in
+            let value = model.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty, !seen.contains(value) else { return false }
+            seen.insert(value)
+            return true
+        }
+
+        if !currentModel.isEmpty, !seen.contains(currentModel) {
+            unique.insert(
+                HermesCompanionSavedModel(
+                    id: "current-\(currentModel)",
+                    name: currentModel,
+                    provider: "manual",
+                    model: currentModel,
+                    baseURL: "",
+                    createdAt: 0
+                ),
+                at: 0
+            )
+        }
+
+        return unique
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("MODEL")
+                .font(.igBadge)
+                .tracking(0.6)
+                .foregroundStyle(.hermesSecondaryText)
+
+            Picker("Model", selection: selection) {
+                ForEach(pickerModels) { model in
+                    Text(label(for: model)).tag(model.model)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .disabled(!isEnabled)
+            .font(.igUsername)
+            .lineLimit(1)
+            .tint(.primary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(minWidth: 170, maxWidth: 260, alignment: .leading)
+        .hermesLiquidGlass(cornerRadius: 18, tint: Color.igActionBlue.opacity(0.08), interactive: isEnabled)
+        .opacity(isEnabled ? 1 : 0.72)
+        .accessibilityLabel(isEnabled ? "Choose model" : "Model locked for this session")
+    }
+
+    private func label(for savedModel: HermesCompanionSavedModel) -> String {
+        let name = savedModel.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let provider = savedModel.provider.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = savedModel.model.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if name.isEmpty || name == model {
+            return provider.isEmpty || provider == "manual" ? model : "\(model) · \(provider)"
+        }
+        return provider.isEmpty || provider == "manual" ? "\(name) · \(model)" : "\(name) · \(provider)"
+    }
 }
 
 struct HermesResponseBubble: View {
@@ -156,20 +274,11 @@ struct HermesResponseBubble: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.hermesSecondaryText)
 
-                Text(displayContent)
-                    .font(.body)
-                    .foregroundStyle(isUser ? .white : .primary)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(isUser ? Color.igActionBlue : Color.hermesSurfaceInput)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .strokeBorder(isUser ? Color.igActionBlue.opacity(0.45) : Color.hermesDivider.opacity(0.7), lineWidth: 1)
-                    )
+                HermesCopyableBubbleContent(
+                    text: displayContent,
+                    copyText: message.content,
+                    isUser: isUser
+                )
             }
             .frame(maxWidth: 620, alignment: isUser ? .trailing : .leading)
 
@@ -190,6 +299,7 @@ struct HermesResponseBubble: View {
 
 struct HermesChatBubble: View {
     let message: HermesChatMessage
+    var liveContent: String? = nil
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -200,20 +310,11 @@ struct HermesChatBubble: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.hermesSecondaryText)
 
-                Text(displayContent)
-                    .font(.body)
-                    .foregroundStyle(isUser ? .white : .primary)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(isUser ? Color.igActionBlue : Color.hermesSurfaceInput)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .strokeBorder(isUser ? Color.igActionBlue.opacity(0.45) : Color.hermesDivider.opacity(0.7), lineWidth: 1)
-                    )
+                HermesCopyableBubbleContent(
+                    text: displayContent,
+                    copyText: copyContent,
+                    isUser: isUser
+                )
             }
             .frame(maxWidth: 620, alignment: isUser ? .trailing : .leading)
 
@@ -224,17 +325,100 @@ struct HermesChatBubble: View {
 
     private var isUser: Bool { message.role == "user" }
 
+    private var resolvedContent: String {
+        let trimmedLiveContent = liveContent ?? ""
+        return trimmedLiveContent.isEmpty ? message.content : trimmedLiveContent
+    }
+
     private var displayContent: String {
-        if message.content.isEmpty, !isUser {
+        if resolvedContent.isEmpty, !isUser {
             return "…"
         }
-        return message.content
+        return resolvedContent
     }
+
+    private var copyContent: String {
+        resolvedContent
+    }
+}
+
+private struct HermesCopyableBubbleContent: View {
+    let text: String
+    let copyText: String
+    let isUser: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.body)
+            .foregroundStyle(isUser ? .white : .primary)
+            .textSelection(.enabled)
+            .padding(.leading, 14)
+            .padding(.trailing, 32)
+            .padding(.top, 11)
+            .padding(.bottom, 24)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isUser ? Color.igActionBlue : Color.hermesSurfaceInput)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(isUser ? Color.igActionBlue.opacity(0.45) : Color.hermesDivider.opacity(0.7), lineWidth: 1)
+            )
+            .overlay(alignment: .bottomTrailing) {
+                HermesBubbleCopyButton(text: copyText, isUserBubble: isUser)
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 6)
+            }
+    }
+}
+
+private struct HermesBubbleCopyButton: View {
+    let text: String
+    let isUserBubble: Bool
+    @State private var didCopy = false
+
+    var body: some View {
+        Button {
+            copyToClipboard(text)
+            didCopy = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.1))
+                didCopy = false
+            }
+        } label: {
+            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 18, height: 18)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isUserBubble ? Color.white.opacity(0.82) : Color.hermesSecondaryText)
+        .background(
+            Circle()
+                .fill(isUserBubble ? Color.white.opacity(0.16) : Color.hermesCanvas.opacity(0.72))
+        )
+        .accessibilityLabel(didCopy ? "Copied" : "Copy message")
+        .disabled(text.isEmpty)
+        .opacity(text.isEmpty ? 0.45 : 1)
+    }
+}
+
+@MainActor
+private func copyToClipboard(_ text: String) {
+#if canImport(UIKit)
+    UIPasteboard.general.string = text
+#elseif canImport(AppKit)
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+#endif
 }
 
 struct HermesChatConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
     @Binding var chatDraft: HermesChatDraft
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var chatSession: HermesChatSession
 
     var body: some View {
@@ -243,12 +427,22 @@ struct HermesChatConsoleView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HermesTabHeader("Chat Completions", systemImage: "text.bubble")
 
-                    HermesStatusRow(
-                        items: [
-                            .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .igGradPurple),
-                            .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange),
-                        ]
-                    )
+                    HStack(alignment: .top, spacing: 12) {
+                        HermesModelSelector(
+                            selectedModel: $chatDraft.model,
+                            savedModels: companionRuntime.hermesModels,
+                            isEnabled: chatSession.entries.isEmpty && !chatSession.isSending,
+                            lockedModel: chatSession.activeModel,
+                            fallbackModel: "hermes-agent"
+                        )
+
+                        HermesStatusRow(
+                            items: [
+                                .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .igGradPurple),
+                                .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange),
+                            ]
+                        )
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.top)
@@ -261,6 +455,12 @@ struct HermesChatConsoleView: View {
         }
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
+        .task(id: companionEnrollment.identityState.deviceID) {
+            refreshModelsIfAvailable()
+        }
+        .task(id: companionSettings.hermesWorkspacePath) {
+            refreshModelsIfAvailable()
+        }
     }
 
     private var chatTranscript: some View {
@@ -280,8 +480,11 @@ struct HermesChatConsoleView: View {
                         .hermesLiquidGlass(cornerRadius: 22, tint: Color.igActionBlue.opacity(0.06))
                     } else {
                         ForEach(chatSession.entries) { message in
-                            HermesChatBubble(message: message)
-                                .id(message.id)
+                            HermesChatBubble(
+                                message: message,
+                                liveContent: liveContent(for: message)
+                            )
+                            .id(message.id)
                         }
                     }
                 }
@@ -365,5 +568,23 @@ struct HermesChatConsoleView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             proxy.scrollTo(lastID, anchor: .bottom)
         }
+    }
+
+    private func liveContent(for message: HermesChatMessage) -> String? {
+        guard chatSession.isSending,
+              message.role != "user",
+              message.id == chatSession.entries.last(where: { $0.role != "user" })?.id,
+              !chatSession.streamedText.isEmpty
+        else { return nil }
+
+        return chatSession.streamedText
+    }
+
+    private func refreshModelsIfAvailable() {
+        guard companionEnrollment.identityState.isEnrolled else { return }
+        companionRuntime.refreshHermesModels(
+            settings: companionSettings,
+            identityState: companionEnrollment.identityState
+        )
     }
 }

@@ -167,6 +167,9 @@ struct ContentView: View {
                     HermesResponsesConsoleView(
                         apiSettings: $apiSettings,
                         requestDraft: $responsesDraft,
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime,
                         responseSession: responseSession
                     )
                 }
@@ -179,6 +182,9 @@ struct ContentView: View {
                     HermesChatConsoleView(
                         apiSettings: $apiSettings,
                         chatDraft: $chatDraft,
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime,
                         chatSession: chatSession
                     )
                 }
@@ -246,12 +252,18 @@ struct ContentView: View {
             HermesResponsesConsoleView(
                 apiSettings: $apiSettings,
                 requestDraft: $responsesDraft,
+                companionSettings: companionSettings,
+                companionEnrollment: companionEnrollment,
+                companionRuntime: companionRuntime,
                 responseSession: responseSession
             )
         case .chat:
             HermesChatConsoleView(
                 apiSettings: $apiSettings,
                 chatDraft: $chatDraft,
+                companionSettings: companionSettings,
+                companionEnrollment: companionEnrollment,
+                companionRuntime: companionRuntime,
                 chatSession: chatSession
             )
         case .history:

@@ -1044,6 +1044,16 @@ final class CompanionEnrollmentSession {
                     return .error(id: request.id, code: "missing_payload", message: "The enroll_client request requires a payload.")
                 }
                 let enrollPayload = try payload.decode(EnrollClientPayload.self)
+                let serverIdentity = try CompanionTLSIdentityStore.shared.loadServerIdentity(host: configuration.host)
+                if let clientPinnedFingerprint = enrollPayload.serverFingerprint?.normalizedCompanionFingerprint(),
+                   clientPinnedFingerprint.isEmpty == false,
+                   clientPinnedFingerprint != serverIdentity.serverCertificateFingerprint.normalizedCompanionFingerprint() {
+                    return .error(
+                        id: request.id,
+                        code: "server_fingerprint_mismatch",
+                        message: "The enrollment request fingerprint does not match this companion's server certificate fingerprint."
+                    )
+                }
                 let signedIdentity = try CompanionTLSIdentityStore.shared.createSignedClientIdentity(
                     commonName: enrollPayload.deviceName
                 )
@@ -1053,7 +1063,6 @@ final class CompanionEnrollmentSession {
                     deviceName: enrollPayload.deviceName,
                     clientCertificatePEM: signedIdentity.certificatePEM
                 )
-                let serverIdentity = try CompanionTLSIdentityStore.shared.loadServerIdentity(host: configuration.host)
                 return .success(
                     id: request.id,
                     payload: EnrollClientResult(
@@ -1076,6 +1085,15 @@ final class CompanionEnrollmentSession {
                 message: "Operation '\(request.type)' is not available on the enrollment listener."
             )
         }
+    }
+}
+
+private extension String {
+    func normalizedCompanionFingerprint() -> String {
+        lowercased()
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

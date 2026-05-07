@@ -72,6 +72,7 @@ struct HermesEnrollClientPayload: Codable {
     let pairingID: String
     let pairingSecret: String
     let deviceName: String
+    let serverFingerprint: String
 }
 
 struct HermesEnrollClientResult: Codable {
@@ -993,7 +994,8 @@ final class HermesCompanionEnrollmentSession {
                 payload: HermesEnrollClientPayload(
                     pairingID: settings.pairingID.trimmingCharacters(in: .whitespacesAndNewlines),
                     pairingSecret: settings.pairingSecret.trimmingCharacters(in: .whitespacesAndNewlines),
-                    deviceName: settings.deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    deviceName: settings.deviceName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    serverFingerprint: trimmedFingerprint
                 )
             )
 

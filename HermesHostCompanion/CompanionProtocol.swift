@@ -710,6 +710,7 @@ struct EnrollClientPayload: Codable {
     let pairingID: String
     let pairingSecret: String
     let deviceName: String
+    let serverFingerprint: String?
 }
 
 struct EnrollClientResult: Codable {

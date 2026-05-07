@@ -16,6 +16,8 @@ final class HermesChatSession {
     var isSending = false
     var activeModel = ""
     var connectionStatus = "Idle"
+    var activeChatSessionID = ""
+    var lastKnownChatSessionID = ""
     var lastErrorMessage = ""
     var eventCount = 0
     var rawStreamedJSON = ""
@@ -23,11 +25,18 @@ final class HermesChatSession {
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
 
+    init() {
+        lastKnownChatSessionID = HermesSettingsPersistence.loadLastChatSessionID()
+    }
+
     func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft) {
         requestTask?.cancel()
         let requestedModel = draft.model.trimmingCharacters(in: .whitespacesAndNewlines)
         if activeModel.isEmpty {
             activeModel = requestedModel.isEmpty ? "hermes-agent" : requestedModel
+        }
+        if activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            persistLastChatSessionID(Self.makeChatSessionID())
         }
         let lockedDraft = draft.locked(to: activeModel)
         requestTask = Task {
@@ -50,10 +59,48 @@ final class HermesChatSession {
         activeAssistantEntryID = nil
         isSending = false
         activeModel = ""
+        activeChatSessionID = ""
         connectionStatus = "Idle"
         lastErrorMessage = ""
         eventCount = 0
         rawStreamedJSON = ""
+    }
+
+    func resumeLastKnownChatSession() {
+        let sessionID = lastKnownChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sessionID.isEmpty else {
+            connectionStatus = "No previous chat"
+            return
+        }
+
+        requestTask?.cancel()
+        requestTask = nil
+        entries = [HermesChatMessage(role: "assistant", content: "Resumed last Chat Completions session \(Self.shortSessionID(sessionID)). Send a new prompt to continue.")]
+        streamedText = ""
+        activeAssistantEntryID = nil
+        isSending = false
+        activeChatSessionID = sessionID
+        lastErrorMessage = ""
+        eventCount = 0
+        rawStreamedJSON = ""
+        connectionStatus = "Resumed last chat"
+    }
+
+    private static func makeChatSessionID() -> String {
+        "hermes-ios-chat-\(UUID().uuidString.lowercased())"
+    }
+
+    private static func shortSessionID(_ sessionID: String) -> String {
+        guard sessionID.count > 24 else { return sessionID }
+        return String(sessionID.prefix(24)) + "…"
+    }
+
+    private func persistLastChatSessionID(_ sessionID: String) {
+        let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        activeChatSessionID = trimmed
+        lastKnownChatSessionID = trimmed
+        HermesSettingsPersistence.saveLastChatSessionID(trimmed)
     }
 
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft) async {
@@ -118,6 +165,7 @@ final class HermesChatSession {
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (bytes, response) = try await session.bytes(for: request)
         try validate(response: response)
+        persistChatSessionID(from: response)
 
         var parser = HermesChatSSEParser()
         for try await line in bytes.lines {
@@ -137,9 +185,11 @@ final class HermesChatSession {
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (data, response) = try await session.data(for: request)
         try validate(response: response)
+        persistChatSessionID(from: response)
         rawStreamedJSON = Self.prettyPrintedJSON(from: data)
 
         if let envelope = try? JSONDecoder().decode(HermesChatCompletionEnvelope.self, from: data) {
+            persistLastChatSessionID(envelope.resolvedSessionID)
             streamedText = envelope.assistantText
         }
         eventCount = 1
@@ -168,7 +218,8 @@ final class HermesChatSession {
         let payload = HermesChatCompletionsRequestBody(
             model: draft.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "hermes-agent" : draft.model,
             messages: requestMessages,
-            stream: stream
+            stream: stream,
+            user: activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : activeChatSessionID
         )
 
         var request = URLRequest(url: url)
@@ -178,6 +229,12 @@ final class HermesChatSession {
 
         if stream {
             request.timeoutInterval = 0
+        }
+
+        let chatSessionID = activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !chatSessionID.isEmpty {
+            request.setValue(chatSessionID, forHTTPHeaderField: "x-hermes-session-id")
+            request.setValue(chatSessionID, forHTTPHeaderField: "x-openclaw-session-key")
         }
 
         if !apiSettings.apiKey.isEmpty {
@@ -239,6 +296,21 @@ final class HermesChatSession {
         }
     }
 
+    private func persistChatSessionID(from response: URLResponse) {
+        guard let httpResponse = response as? HTTPURLResponse else { return }
+        let candidates = [
+            httpResponse.value(forHTTPHeaderField: "x-hermes-session-id"),
+            httpResponse.value(forHTTPHeaderField: "x-openclaw-session-key")
+        ]
+
+        for candidate in candidates {
+            if let value = candidate, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                persistLastChatSessionID(value)
+                return
+            }
+        }
+    }
+
     private func handle(event: HermesChatSSEEvent) {
         appendRawStreamedJSON(event)
 
@@ -251,6 +323,9 @@ final class HermesChatSession {
         for payloadString in Self.jsonPayloadStrings(from: event.data) {
             eventCount += 1
             let payload = HermesLooseJSON(json: payloadString)
+            if let sessionID = payload.string(at: ["session_id"]) ?? payload.string(at: ["session", "id"]) {
+                persistLastChatSessionID(sessionID)
+            }
             let delta = extractChatText(from: payload, eventName: event.name)
 
             guard !delta.isEmpty else { continue }
@@ -378,6 +453,7 @@ private struct HermesChatCompletionsRequestBody: Encodable {
     let model: String
     let messages: [HermesChatRequestMessage]
     let stream: Bool
+    let user: String?
 }
 
 private struct HermesChatRequestMessage: Encodable {
@@ -386,10 +462,22 @@ private struct HermesChatRequestMessage: Encodable {
 }
 
 private struct HermesChatCompletionEnvelope: Decodable {
+    let id: String?
+    let sessionID: String?
     let choices: [HermesChatChoice]
 
     var assistantText: String {
         choices.compactMap(\.message?.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    var resolvedSessionID: String {
+        sessionID ?? ""
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sessionID = "session_id"
+        case choices
     }
 }
 

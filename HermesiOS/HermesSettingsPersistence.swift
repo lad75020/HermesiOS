@@ -11,7 +11,9 @@ import Security
 enum HermesSettingsPersistence {
     private static let apiSettingsKey = "hermes.apiSettings"
     private static let responsesDraftKey = "hermes.responsesDraft"
+    private static let lastResponsesSessionIDKey = "hermes.lastResponsesSessionID"
     private static let chatDraftKey = "hermes.chatDraft"
+    private static let lastChatSessionIDKey = "hermes.lastChatSessionID"
     private static let companionSettingsKey = "hermes.companionSettings"
     private static let companionIdentityStateKey = "hermes.companionIdentityState"
     private static let tokenService = "com.hermesios.api"
@@ -40,12 +42,38 @@ enum HermesSettingsPersistence {
         encode(draft, to: responsesDraftKey)
     }
 
+    static func loadLastResponsesSessionID() -> String {
+        UserDefaults.standard.string(forKey: lastResponsesSessionIDKey) ?? ""
+    }
+
+    static func saveLastResponsesSessionID(_ sessionID: String) {
+        let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: lastResponsesSessionIDKey)
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: lastResponsesSessionIDKey)
+        }
+    }
+
     static func loadChatDraft() -> HermesChatDraft {
         decode(HermesChatDraft.self, from: chatDraftKey) ?? HermesChatDraft()
     }
 
     static func saveChatDraft(_ draft: HermesChatDraft) {
         encode(draft, to: chatDraftKey)
+    }
+
+    static func loadLastChatSessionID() -> String {
+        UserDefaults.standard.string(forKey: lastChatSessionIDKey) ?? ""
+    }
+
+    static func saveLastChatSessionID(_ sessionID: String) {
+        let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: lastChatSessionIDKey)
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: lastChatSessionIDKey)
+        }
     }
 
     static func loadCompanionSettings() -> HermesCompanionSettings {

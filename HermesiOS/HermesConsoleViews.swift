@@ -98,27 +98,35 @@ struct HermesResponsesConsoleView: View {
 
     private var responseComposer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Label("Message type: \(responseSession.latestMessageType.isEmpty ? "waiting" : responseSession.latestMessageType)", systemImage: "tag")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.hermesSecondaryText)
+            if hasResponseComposerControls {
+                HStack(spacing: 10) {
+                    Spacer()
 
-                Spacer()
-
-                if responseSession.hasActiveConversation {
-                    Button {
-                        responseSession.terminateAndStartNewSession()
-                    } label: {
-                        Label("End Session", systemImage: "xmark.circle")
+                    if canResumeLastResponseSession {
+                        Button {
+                            responseSession.resumeLastKnownResponseSession()
+                        } label: {
+                            Label("Resume last", systemImage: "arrow.uturn.forward.circle")
+                        }
+                        .hermesGlassButton()
+                        .disabled(responseSession.isSending)
                     }
-                    .hermesGlassButton()
-                }
 
-                if responseSession.isSending {
-                    Button("Cancel") {
-                        responseSession.cancel()
+                    if responseSession.hasActiveConversation {
+                        Button {
+                            responseSession.terminateAndStartNewSession()
+                        } label: {
+                            Label("End Session", systemImage: "xmark.circle")
+                        }
+                        .hermesGlassButton()
                     }
-                    .hermesGlassButton()
+
+                    if responseSession.isSending {
+                        Button("Cancel") {
+                            responseSession.cancel()
+                        }
+                        .hermesGlassButton()
+                    }
                 }
             }
 
@@ -166,6 +174,16 @@ struct HermesResponsesConsoleView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             proxy.scrollTo(lastID, anchor: .bottom)
         }
+    }
+
+    private var canResumeLastResponseSession: Bool {
+        let last = responseSession.lastKnownResponseID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !last.isEmpty else { return false }
+        return responseSession.previousResponseID != last && responseSession.latestResponseID != last
+    }
+
+    private var hasResponseComposerControls: Bool {
+        canResumeLastResponseSession || responseSession.hasActiveConversation || responseSession.isSending
     }
 
     private func refreshAPIServerModels() async {
@@ -441,6 +459,7 @@ struct HermesChatConsoleView: View {
                         HermesStatusRow(
                             items: [
                                 .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .igGradPurple),
+                                .init(title: "Session", value: chatSession.activeChatSessionID.isEmpty ? "New chat" : "Continuing chat", accent: .igActionBlue),
                                 .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange),
                             ]
                         )
@@ -511,6 +530,16 @@ struct HermesChatConsoleView: View {
 
                 Spacer()
 
+                if canResumeLastChatSession {
+                    Button {
+                        chatSession.resumeLastKnownChatSession()
+                    } label: {
+                        Label("Resume last", systemImage: "arrow.uturn.forward.circle")
+                    }
+                    .hermesGlassButton()
+                    .disabled(chatSession.isSending)
+                }
+
                 if !chatSession.entries.isEmpty && !chatSession.isSending {
                     Button("New Chat") {
                         chatSession.resetConversation()
@@ -570,6 +599,12 @@ struct HermesChatConsoleView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             proxy.scrollTo(lastID, anchor: .bottom)
         }
+    }
+
+    private var canResumeLastChatSession: Bool {
+        let last = chatSession.lastKnownChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !last.isEmpty else { return false }
+        return chatSession.activeChatSessionID != last
     }
 
     private func liveContent(for message: HermesChatMessage) -> String? {

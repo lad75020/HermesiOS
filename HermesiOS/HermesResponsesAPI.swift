@@ -63,6 +63,7 @@ final class HermesResponsesSession {
     var connectionStatus = "Idle"
     var latestResponseID = ""
     var previousResponseID = ""
+    var lastKnownResponseID = ""
     var lastErrorMessage = ""
     var latestMessageType = ""
     var eventCount = 0
@@ -74,6 +75,10 @@ final class HermesResponsesSession {
 
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
+
+    init() {
+        lastKnownResponseID = HermesSettingsPersistence.loadLastResponsesSessionID()
+    }
 
     func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft) {
         requestTask?.cancel()
@@ -116,6 +121,28 @@ final class HermesResponsesSession {
         connectionStatus = "New session ready"
     }
 
+    func resumeLastKnownResponseSession() {
+        let sessionID = lastKnownResponseID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sessionID.isEmpty else {
+            connectionStatus = "No previous session"
+            return
+        }
+
+        requestTask?.cancel()
+        requestTask = nil
+        entries = [HermesResponseMessage(role: "assistant", content: "Resumed last Responses session \(Self.shortResponseID(sessionID)). Send a new prompt to continue.")]
+        streamedText = ""
+        activeAssistantEntryID = nil
+        isSending = false
+        latestResponseID = ""
+        previousResponseID = sessionID
+        lastErrorMessage = ""
+        latestMessageType = "resumed response"
+        eventCount = 0
+        rawStreamedJSON = ""
+        connectionStatus = "Resumed last response"
+    }
+
     func resumeConversation(from result: HermesDashboardConversationResult) {
         requestTask?.cancel()
         requestTask = nil
@@ -126,6 +153,7 @@ final class HermesResponsesSession {
         activeModel = result.session.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let continuationID = Self.responseContinuationID(from: result)
         previousResponseID = continuationID
+        persistLastResponseID(continuationID)
         lastErrorMessage = ""
         latestMessageType = continuationID.isEmpty ? "loaded history" : "resumed response"
         eventCount = 0
@@ -155,6 +183,18 @@ final class HermesResponsesSession {
             .first { $0.hasPrefix("resp_") } ?? ""
     }
 
+    private static func shortResponseID(_ responseID: String) -> String {
+        guard responseID.count > 18 else { return responseID }
+        return String(responseID.prefix(18)) + "…"
+    }
+
+    private func persistLastResponseID(_ responseID: String) {
+        let trimmed = responseID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        lastKnownResponseID = trimmed
+        HermesSettingsPersistence.saveLastResponsesSessionID(trimmed)
+    }
+
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft) async {
         let continuationID = previousResponseID
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -175,6 +215,7 @@ final class HermesResponsesSession {
             }
             if !latestResponseID.isEmpty {
                 previousResponseID = latestResponseID
+                persistLastResponseID(latestResponseID)
             }
             if !Task.isCancelled {
                 connectionStatus = "Completed"
@@ -256,6 +297,7 @@ final class HermesResponsesSession {
         let envelope = try JSONDecoder().decode(HermesResponseEnvelope.self, from: data)
         rawStreamedJSON = Self.prettyPrintedJSON(from: data)
         latestResponseID = envelope.id ?? ""
+        persistLastResponseID(latestResponseID)
         streamedText = envelope.assistantText
         updateActiveAssistantEntry(with: streamedText)
         latestMessageType = envelope.outputMessageType
@@ -323,6 +365,7 @@ final class HermesResponsesSession {
 
         if let responseID = summary.responseID, !responseID.isEmpty {
             latestResponseID = responseID
+            persistLastResponseID(responseID)
         }
 
         if let delta = summary.outputDelta, !delta.isEmpty {

@@ -166,6 +166,7 @@ final class HermesResponsesSession {
     var connectionStatus = "Idle"
     var latestResponseID = ""
     var previousResponseID = ""
+    var activeHermesSessionID = ""
     var lastKnownResponseID = ""
     var lastErrorMessage = ""
     var latestMessageType = ""
@@ -178,11 +179,11 @@ final class HermesResponsesSession {
         if !trimmedTitle.isEmpty {
             return trimmedTitle
         }
-        return previousResponseID.isEmpty ? "New response" : "Continuing response"
+        return previousResponseID.isEmpty && activeHermesSessionID.isEmpty ? "New response" : "Continuing response"
     }
 
     var hasActiveConversation: Bool {
-        !previousResponseID.isEmpty || !latestResponseID.isEmpty || !entries.isEmpty || isSending
+        !previousResponseID.isEmpty || !latestResponseID.isEmpty || !activeHermesSessionID.isEmpty || !entries.isEmpty || isSending
     }
 
     private var requestTask: Task<Void, Never>?
@@ -222,6 +223,7 @@ final class HermesResponsesSession {
         connectionStatus = "Idle"
         latestResponseID = ""
         previousResponseID = ""
+        activeHermesSessionID = ""
         lastErrorMessage = ""
         latestMessageType = ""
         eventCount = 0
@@ -249,6 +251,7 @@ final class HermesResponsesSession {
         isSending = false
         latestResponseID = ""
         previousResponseID = sessionID
+        activeHermesSessionID = ""
         lastErrorMessage = ""
         latestMessageType = "resumed response"
         eventCount = 0
@@ -265,11 +268,12 @@ final class HermesResponsesSession {
         isSending = false
         latestResponseID = ""
         activeProfile = ""
+        activeHermesSessionID = Self.hermesSessionID(from: result)
         let continuationID = Self.responseContinuationID(from: result)
         previousResponseID = continuationID
         persistLastResponseID(continuationID)
         lastErrorMessage = ""
-        latestMessageType = continuationID.isEmpty ? "loaded history" : "resumed response"
+        latestMessageType = continuationID.isEmpty ? (activeHermesSessionID.isEmpty ? "loaded history" : "resumed session") : "resumed response"
         eventCount = 0
         rawStreamedJSON = ""
 
@@ -284,13 +288,19 @@ final class HermesResponsesSession {
 
         let trimmedTitle = result.session.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let firstUserPrompt = restoredEntries.first { $0.role == "user" }?.content ?? ""
-        let displayTitle = trimmedTitle.isEmpty ? (firstUserPrompt.isEmpty ? continuationID : firstUserPrompt) : trimmedTitle
-        sessionTitle = Self.userFriendlySessionTitle(from: displayTitle, fallback: continuationID.isEmpty ? "Loaded history" : continuationID)
+        let displayTitle = trimmedTitle.isEmpty ? (firstUserPrompt.isEmpty ? (activeHermesSessionID.isEmpty ? continuationID : activeHermesSessionID) : firstUserPrompt) : trimmedTitle
+        sessionTitle = Self.userFriendlySessionTitle(from: displayTitle, fallback: continuationID.isEmpty ? (activeHermesSessionID.isEmpty ? "Loaded history" : activeHermesSessionID) : continuationID)
 
         entries = restoredEntries.isEmpty
             ? [HermesResponseMessage(role: "assistant", content: "Loaded session \(displayTitle). Send a new prompt to start a new Responses API turn.")]
             : restoredEntries
-        connectionStatus = continuationID.isEmpty ? "Loaded history" : "Resumed response"
+        connectionStatus = continuationID.isEmpty ? (activeHermesSessionID.isEmpty ? "Loaded history" : "Resumed session") : "Resumed response"
+    }
+
+    private static func hermesSessionID(from result: HermesDashboardConversationResult) -> String {
+        [result.sessionID, result.session.id]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
     }
 
     private static func responseContinuationID(from result: HermesDashboardConversationResult) -> String {
@@ -329,6 +339,7 @@ final class HermesResponsesSession {
 
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?) async {
         let continuationID = previousResponseID
+        let hermesSessionID = activeHermesSessionID
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayPrompt = displayPrompt(prompt, attachment: attachment)
         if sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -344,9 +355,9 @@ final class HermesResponsesSession {
         do {
             try await HermesBackgroundActivity.run(named: "Hermes Responses Request") {
                 if draft.stream {
-                    try await streamResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID)
+                    try await streamResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID, hermesSessionID: hermesSessionID)
                 } else {
-                    try await fetchResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID)
+                    try await fetchResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID, hermesSessionID: hermesSessionID)
                 }
             }
             if !latestResponseID.isEmpty {
@@ -402,17 +413,19 @@ final class HermesResponsesSession {
         entries = updatedEntries
     }
 
-    private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String) async throws {
+    private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String, hermesSessionID: String) async throws {
         let request = try buildRequest(
             apiSettings: apiSettings,
             draft: draft,
             attachment: attachment,
             stream: true,
-            previousResponseID: previousResponseID
+            previousResponseID: previousResponseID,
+            hermesSessionID: hermesSessionID
         )
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (bytes, response) = try await session.bytes(for: request)
         try validate(response: response)
+        persistHermesSessionID(from: response)
 
         var parser = HermesSSEParser()
         for try await line in bytes.lines {
@@ -427,17 +440,19 @@ final class HermesResponsesSession {
         }
     }
 
-    private func fetchResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String) async throws {
+    private func fetchResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String, hermesSessionID: String) async throws {
         let request = try buildRequest(
             apiSettings: apiSettings,
             draft: draft,
             attachment: attachment,
             stream: false,
-            previousResponseID: previousResponseID
+            previousResponseID: previousResponseID,
+            hermesSessionID: hermesSessionID
         )
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (data, response) = try await session.data(for: request)
         try validate(response: response)
+        persistHermesSessionID(from: response)
 
         let envelope = try JSONDecoder().decode(HermesResponseEnvelope.self, from: data)
         rawStreamedJSON = Self.prettyPrintedJSON(from: data)
@@ -454,7 +469,8 @@ final class HermesResponsesSession {
         draft: HermesRequestDraft,
         attachment: HermesPromptAttachment?,
         stream: Bool,
-        previousResponseID: String
+        previousResponseID: String,
+        hermesSessionID: String
     ) throws -> URLRequest {
         guard let url = HermesAPISettings.responseURL(from: apiSettings.baseURL) else {
             throw HermesResponsesError.invalidURL
@@ -482,12 +498,33 @@ final class HermesResponsesSession {
         let profile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
         request.setValue(profile.isEmpty ? "default" : profile, forHTTPHeaderField: "X-Hermes-Profile")
 
+        let trimmedHermesSessionID = hermesSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedHermesSessionID.isEmpty {
+            request.setValue(trimmedHermesSessionID, forHTTPHeaderField: "X-Hermes-Session-Id")
+            request.setValue(trimmedHermesSessionID, forHTTPHeaderField: "x-openclaw-session-key")
+        }
+
         if !apiSettings.apiKey.isEmpty {
             request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
         }
 
         request.httpBody = try JSONEncoder().encode(payload)
         return request
+    }
+
+    private func persistHermesSessionID(from response: URLResponse) {
+        guard let httpResponse = response as? HTTPURLResponse else { return }
+        let candidates = [
+            httpResponse.value(forHTTPHeaderField: "X-Hermes-Session-Id"),
+            httpResponse.value(forHTTPHeaderField: "x-openclaw-session-key")
+        ]
+
+        for candidate in candidates {
+            let trimmed = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !trimmed.isEmpty else { continue }
+            activeHermesSessionID = trimmed
+            return
+        }
     }
 
     private func validate(response: URLResponse) throws {

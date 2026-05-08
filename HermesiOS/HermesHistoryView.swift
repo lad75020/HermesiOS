@@ -9,7 +9,10 @@ import SwiftUI
 struct HermesHistoryView: View {
     @Binding var apiSettings: HermesAPISettings
     @Bindable var searchSession: HermesDashboardHistorySearchSession
-    let onResumeConversation: (HermesDashboardConversationResult) -> Void
+    let isResponsesStreaming: Bool
+    let isChatStreaming: Bool
+    let onResumeResponses: (HermesDashboardConversationResult) -> Void
+    let onResumeChat: (HermesDashboardConversationResult) -> Void
 
     @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
     @State private var expandedConversationIDs: Set<String> = []
@@ -141,7 +144,10 @@ struct HermesHistoryView: View {
                     HermesDashboardConversationDisclosure(
                         result: result,
                         isExpanded: bindingForConversation(result.id),
-                        onResume: onResumeConversation
+                        isResumeResponsesDisabled: isResponsesStreaming,
+                        isResumeChatDisabled: isChatStreaming,
+                        onResumeResponses: onResumeResponses,
+                        onResumeChat: onResumeChat
                     )
                 }
             }
@@ -224,18 +230,34 @@ private extension HermesDashboardHistorySearchSession {
 private struct HermesDashboardConversationDisclosure: View {
     let result: HermesDashboardConversationResult
     @Binding var isExpanded: Bool
-    let onResume: (HermesDashboardConversationResult) -> Void
+    let isResumeResponsesDisabled: Bool
+    let isResumeChatDisabled: Bool
+    let onResumeResponses: (HermesDashboardConversationResult) -> Void
+    let onResumeChat: (HermesDashboardConversationResult) -> Void
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 10) {
-                Button {
-                    onResume(result)
-                } label: {
-                    Label("Resume in Responses", systemImage: "arrow.uturn.forward.circle")
+                HStack(spacing: 10) {
+                    Button {
+                        onResumeResponses(result)
+                    } label: {
+                        Label("Resume in Responses", systemImage: "arrow.uturn.forward.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.igActionBlue)
+                    .disabled(isResumeResponsesDisabled)
+                    .help(isResumeResponsesDisabled ? "Ask Hermes is streaming a response" : "Resume this conversation in Ask Hermes")
+
+                    Button {
+                        onResumeChat(result)
+                    } label: {
+                        Label("Resume in Chat", systemImage: "text.bubble")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isResumeChatDisabled)
+                    .help(isResumeChatDisabled ? "Chat with Hermes is streaming a response" : "Resume this conversation in Chat with Hermes")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.igActionBlue)
 
                 ForEach(result.displayMessages) { message in
                     HermesDashboardConversationMessageRow(message: message)
@@ -248,8 +270,20 @@ private struct HermesDashboardConversationDisclosure: View {
 
                 Spacer(minLength: 8)
 
-                Button {
-                    onResume(result)
+                Menu {
+                    Button {
+                        onResumeResponses(result)
+                    } label: {
+                        Label("Resume in Responses", systemImage: "arrow.uturn.forward.circle")
+                    }
+                    .disabled(isResumeResponsesDisabled)
+
+                    Button {
+                        onResumeChat(result)
+                    } label: {
+                        Label("Resume in Chat", systemImage: "text.bubble")
+                    }
+                    .disabled(isResumeChatDisabled)
                 } label: {
                     Label("Resume", systemImage: "arrow.uturn.forward")
                         .labelStyle(.titleAndIcon)

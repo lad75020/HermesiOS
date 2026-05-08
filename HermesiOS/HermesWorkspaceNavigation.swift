@@ -77,6 +77,30 @@ struct WorkspaceSidebar: View {
     var apiChannelActive = false
     var companionChannelActive = false
     var dashboardChannelActive = false
+    @Binding var isResponsesCompletionUnread: Bool
+    @Binding var isChatCompletionUnread: Bool
+
+    private func completionUnread(for section: WorkspaceSection) -> Bool {
+        switch section {
+        case .responses:
+            isResponsesCompletionUnread
+        case .chat:
+            isChatCompletionUnread
+        case .history, .office, .settings, .runtime:
+            false
+        }
+    }
+
+    private func clearCompletionUnread(for section: WorkspaceSection) {
+        switch section {
+        case .responses:
+            isResponsesCompletionUnread = false
+        case .chat:
+            isChatCompletionUnread = false
+        case .history, .office, .settings, .runtime:
+            break
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,14 +121,23 @@ struct WorkspaceSidebar: View {
             )
 
             List(WorkspaceSection.allCases, selection: $selection) { section in
+                let hasUnreadCompletion = completionUnread(for: section)
                 NavigationLink(value: section) {
                     Image(systemName: section.systemImage)
                         .font(.title3.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 36)
-                        .foregroundStyle(selection == section ? Color.igActionBlue : Color.hermesSecondaryText)
+                        .foregroundStyle(hasUnreadCompletion ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(hasUnreadCompletion ? Color.green.opacity(0.85) : Color.clear)
+                        )
                         .contentShape(Rectangle())
                         .accessibilityLabel(section.title)
+                        .accessibilityHint(hasUnreadCompletion ? "Completed. Tap to mark as seen." : "")
                 }
+                .simultaneousGesture(TapGesture().onEnded {
+                    clearCompletionUnread(for: section)
+                })
                 .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
                 .listRowBackground(
                     selection == section

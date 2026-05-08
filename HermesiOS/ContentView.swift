@@ -36,6 +36,8 @@ struct ContentView: View {
     @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
     @State private var isShowingStreamDebugJSON = false
+    @State private var isResponsesCompletionUnread = false
+    @State private var isChatCompletionUnread = false
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -107,6 +109,14 @@ struct ContentView: View {
                 )
             }
         }
+        .onChange(of: responseSession.connectionStatus) { _, newValue in
+            guard newValue == "Completed" else { return }
+            isResponsesCompletionUnread = true
+        }
+        .onChange(of: chatSession.connectionStatus) { _, newValue in
+            guard newValue == "Completed" else { return }
+            isChatCompletionUnread = true
+        }
     }
 
 
@@ -153,7 +163,9 @@ struct ContentView: View {
                 selectedDebugStreamSource: selectedWorkspace == .chat ? .chat : .responses,
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
-                dashboardChannelActive: dashboardChannelActive
+                dashboardChannelActive: dashboardChannelActive,
+                isResponsesCompletionUnread: $isResponsesCompletionUnread,
+                isChatCompletionUnread: $isChatCompletionUnread
             )
             .toolbar(.hidden, for: .navigationBar)
             .navigationSplitViewColumnWidth(min: 72, ideal: 84, max: 96)
@@ -207,7 +219,10 @@ struct ContentView: View {
                     HermesHistoryView(
                         apiSettings: $apiSettings,
                         searchSession: dashboardHistorySearchSession,
-                        onResumeConversation: resumeConversationInResponses
+                        isResponsesStreaming: responseSession.isSending,
+                        isChatStreaming: chatSession.isSending,
+                        onResumeResponses: resumeConversationInResponses,
+                        onResumeChat: resumeConversationInChat
                     )
                 }
                 .tabItem {
@@ -272,7 +287,10 @@ struct ContentView: View {
             HermesHistoryView(
                 apiSettings: $apiSettings,
                 searchSession: dashboardHistorySearchSession,
-                onResumeConversation: resumeConversationInResponses
+                isResponsesStreaming: responseSession.isSending,
+                isChatStreaming: chatSession.isSending,
+                onResumeResponses: resumeConversationInResponses,
+                onResumeChat: resumeConversationInChat
             )
         case .office:
             HermesOfficeView(webViewStore: officeWebViewStore, reloadID: $officeReloadID)
@@ -297,8 +315,16 @@ struct ContentView: View {
     }
 
     private func resumeConversationInResponses(_ result: HermesDashboardConversationResult) {
+        guard !responseSession.isSending else { return }
         responseSession.resumeConversation(from: result)
         selectedWorkspace = .responses
         selectedPhoneSection = .responses
+    }
+
+    private func resumeConversationInChat(_ result: HermesDashboardConversationResult) {
+        guard !chatSession.isSending else { return }
+        chatSession.resumeConversation(from: result)
+        selectedWorkspace = .chat
+        selectedPhoneSection = .chat
     }
 }

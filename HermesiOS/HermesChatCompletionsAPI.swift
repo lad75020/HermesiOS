@@ -97,6 +97,48 @@ final class HermesChatSession {
         connectionStatus = "Resumed last chat"
     }
 
+    func resumeConversation(from result: HermesDashboardConversationResult) {
+        let sessionID = Self.hermesSessionID(from: result)
+        requestTask?.cancel()
+        requestTask = nil
+        streamedText = ""
+        activeAssistantEntryID = nil
+        isSending = false
+        activeProfile = ""
+        activeChatSessionID = sessionID
+        if !sessionID.isEmpty {
+            persistLastChatSessionID(sessionID)
+        }
+        lastErrorMessage = ""
+        eventCount = 0
+        rawStreamedJSON = ""
+
+        let restoredEntries = result.messages
+            .filter { message in
+                let role = message.role.lowercased()
+                return (role == "user" || role == "assistant") && !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            .map { message in
+                HermesChatMessage(role: message.role.lowercased(), content: message.content)
+            }
+
+        let trimmedTitle = result.session.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let firstUserPrompt = restoredEntries.first { $0.role == "user" }?.content ?? ""
+        let displayTitle = trimmedTitle.isEmpty ? (firstUserPrompt.isEmpty ? sessionID : firstUserPrompt) : trimmedTitle
+        sessionTitle = Self.userFriendlySessionTitle(from: displayTitle, fallback: sessionID.isEmpty ? "Loaded history" : sessionID)
+
+        entries = restoredEntries.isEmpty
+            ? [HermesChatMessage(role: "assistant", content: "Loaded session \(displayTitle). Send a new prompt to continue in Chat Completions.")]
+            : restoredEntries
+        connectionStatus = sessionID.isEmpty ? "Loaded history" : "Resumed chat"
+    }
+
+    private static func hermesSessionID(from result: HermesDashboardConversationResult) -> String {
+        [result.sessionID, result.session.id]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
+    }
+
     private static func makeChatSessionID() -> String {
         "hermes-ios-chat-\(UUID().uuidString.lowercased())"
     }

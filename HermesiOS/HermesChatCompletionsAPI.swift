@@ -271,12 +271,12 @@ final class HermesChatSession {
         for try await line in bytes.lines {
             try Task.checkCancellation()
             if let event = parser.consume(line: line) {
-                handle(event: event)
+                await handle(event: event)
             }
         }
 
         if let event = parser.finish() {
-            handle(event: event)
+            await handle(event: event)
         }
     }
 
@@ -435,20 +435,23 @@ final class HermesChatSession {
         }
     }
 
-    private func handle(event: HermesChatSSEEvent) {
-        appendRawStreamedJSON(event)
-        appendDebugEventText(event)
-
+    private func handle(event: HermesChatSSEEvent) async {
         if event.data == "[DONE]" {
-            connectionStatus = "Completed"
+            connectionStatus = Self.shortStatus("Completed")
+            await Task.yield()
+            appendRawStreamedJSON(event)
+            appendDebugEventText(event)
             return
         }
 
+        let payloadStrings = Self.jsonPayloadStrings(from: event.data)
+        let payloads = payloadStrings.map { HermesLooseJSON(json: $0) }
         var didExtractText = false
         var latestStatus = statusMessage(for: event, payload: nil, didExtractText: false)
-        for payloadString in Self.jsonPayloadStrings(from: event.data) {
+        var extractedDeltas: [String] = []
+
+        for payload in payloads {
             eventCount += 1
-            let payload = HermesLooseJSON(json: payloadString)
             if let sessionID = payload.string(at: ["session_id"]) ?? payload.string(at: ["session", "id"]) {
                 persistLastChatSessionID(sessionID)
             }
@@ -458,10 +461,22 @@ final class HermesChatSession {
             if !eventStatus.isEmpty {
                 latestStatus = eventStatus
             }
+            if extractedTextFromPayload {
+                didExtractText = true
+                extractedDeltas.append(delta)
+            }
+        }
 
-            guard extractedTextFromPayload else { continue }
-            didExtractText = true
+        // Update the visible status pill before doing heavier debug-log work.
+        // Tool/reasoning events intentionally stay out of the chat bubble.
+        let fallbackStatus = didExtractText ? "Streaming output" : "Processing stream"
+        connectionStatus = Self.shortStatus(latestStatus.isEmpty ? fallbackStatus : latestStatus)
+        await Task.yield()
 
+        appendRawStreamedJSON(event)
+        appendDebugEventText(event)
+
+        for delta in extractedDeltas {
             switch event.name {
             case "response.output_text.done", "response.completed":
                 if streamedText.isEmpty {
@@ -474,8 +489,6 @@ final class HermesChatSession {
             }
             updateActiveAssistantEntry(with: streamedText)
         }
-
-        connectionStatus = latestStatus.isEmpty ? (didExtractText ? "Streaming output" : "Processing chat chunks") : latestStatus
     }
 
     private func statusMessage(for event: HermesChatSSEEvent, payload: HermesLooseJSON?, didExtractText: Bool) -> String {
@@ -489,10 +502,10 @@ final class HermesChatSession {
         case "hermes.tool.progress":
             let tool = payload?.string(at: ["tool"]) ?? "tool"
             let status = payload?.string(at: ["status"]) ?? "progress"
-            return "Tool \(status): \(tool)"
+            return status == "running" ? "Running \(tool)" : "\(status.capitalized) \(tool)"
         case "hermes.tool.output":
             let tool = payload?.string(at: ["tool"]) ?? "tool"
-            return "Tool output: \(tool)"
+            return "Output from \(tool)"
         case "hermes.reasoning.summary":
             return "Reasoning"
         case "response.created", "response.in_progress":
@@ -504,16 +517,16 @@ final class HermesChatSession {
         case "response.content_part.added", "response.content_part.done":
             return "Receiving content"
         case "response.output_text.delta":
-            return didExtractText ? "Streaming output" : "Receiving assistant text"
+            return didExtractText ? "Streaming output" : "Receiving text"
         case "response.output_text.done":
-            return "Assistant text complete"
+            return "Text complete"
         case "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done", "response.reasoning.delta", "response.reasoning.done":
             return "Reasoning"
         case "response.function_call_arguments.delta", "response.function_call_arguments.done":
             let name = payload?.string(at: ["name"])
                 ?? payload?.string(at: ["item", "name"])
                 ?? payload?.string(at: ["output_item", "name"])
-            return name.map { "Preparing tool call: \($0)" } ?? "Preparing tool call"
+            return name.map { "Calling \($0)" } ?? "Preparing tool call"
         case "response.completed":
             return "Completed"
         case "response.failed", "response.incomplete":
@@ -523,9 +536,11 @@ final class HermesChatSession {
                 return "Streaming output"
             }
             if eventName.lowercased().hasPrefix("response.") {
-                return "Event: \(eventName)"
+                return eventName
+                    .replacingOccurrences(of: "response.", with: "")
+                    .replacingOccurrences(of: "_", with: " ")
             }
-            return "Event: \(eventName)"
+            return eventName.replacingOccurrences(of: "_", with: " ")
         }
     }
 
@@ -543,7 +558,19 @@ final class HermesChatSession {
         if let type, !type.isEmpty {
             return "\(prefix) \(type.replacingOccurrences(of: "_", with: " "))"
         }
-        return "\(prefix) output item"
+        return "\(prefix) output"
+    }
+
+    private static func shortStatus(_ status: String, maxCharacters: Int = 40) -> String {
+        let normalized = status
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > maxCharacters else { return normalized }
+        guard maxCharacters > 1 else { return String(normalized.prefix(maxCharacters)) }
+        return String(normalized.prefix(maxCharacters - 1)) + "…"
     }
 
     private static func jsonPayloadStrings(from data: String) -> [String] {

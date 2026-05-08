@@ -171,6 +171,15 @@ final class HermesResponsesSession {
     var latestMessageType = ""
     var eventCount = 0
     var rawStreamedJSON = ""
+    var sessionTitle = ""
+
+    var displaySessionTitle: String {
+        let trimmedTitle = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTitle.isEmpty {
+            return trimmedTitle
+        }
+        return previousResponseID.isEmpty ? "New response" : "Continuing response"
+    }
 
     var hasActiveConversation: Bool {
         !previousResponseID.isEmpty || !latestResponseID.isEmpty || !entries.isEmpty || isSending
@@ -217,6 +226,7 @@ final class HermesResponsesSession {
         latestMessageType = ""
         eventCount = 0
         rawStreamedJSON = ""
+        sessionTitle = ""
     }
 
     func terminateAndStartNewSession() {
@@ -243,6 +253,7 @@ final class HermesResponsesSession {
         latestMessageType = "resumed response"
         eventCount = 0
         rawStreamedJSON = ""
+        sessionTitle = "Last response"
         connectionStatus = "Resumed last response"
     }
 
@@ -272,7 +283,9 @@ final class HermesResponsesSession {
             }
 
         let trimmedTitle = result.session.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let displayTitle = trimmedTitle.isEmpty ? continuationID : trimmedTitle
+        let firstUserPrompt = restoredEntries.first { $0.role == "user" }?.content ?? ""
+        let displayTitle = trimmedTitle.isEmpty ? (firstUserPrompt.isEmpty ? continuationID : firstUserPrompt) : trimmedTitle
+        sessionTitle = Self.userFriendlySessionTitle(from: displayTitle, fallback: continuationID.isEmpty ? "Loaded history" : continuationID)
 
         entries = restoredEntries.isEmpty
             ? [HermesResponseMessage(role: "assistant", content: "Loaded session \(displayTitle). Send a new prompt to start a new Responses API turn.")]
@@ -291,6 +304,22 @@ final class HermesResponsesSession {
         return String(responseID.prefix(18)) + "…"
     }
 
+    private static func userFriendlySessionTitle(from title: String, fallback: String) -> String {
+        let normalized = title
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !normalized.isEmpty {
+            return normalized
+        }
+
+        let normalizedFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedFallback.isEmpty ? "New response" : normalizedFallback
+    }
+
     private func persistLastResponseID(_ responseID: String) {
         let trimmed = responseID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -302,6 +331,9 @@ final class HermesResponsesSession {
         let continuationID = previousResponseID
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayPrompt = displayPrompt(prompt, attachment: attachment)
+        if sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            sessionTitle = Self.userFriendlySessionTitle(from: prompt, fallback: attachment?.filename ?? "New response")
+        }
         resetForRequest()
         appendExchange(prompt: displayPrompt)
         isSending = true

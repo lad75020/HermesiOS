@@ -158,16 +158,70 @@ struct HermesStatusPill: View {
                     .font(.igBadge)
                     .tracking(0.6)
                     .foregroundStyle(.hermesSecondaryText)
-                Text(item.value)
-                    .font(.igUsername)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                if let marqueeCharacterLimit = item.marqueeCharacterLimit,
+                   item.value.count > marqueeCharacterLimit {
+                    HermesMarqueeText(text: item.value, visibleCharacterLimit: marqueeCharacterLimit)
+                        .font(.igUsername)
+                        .foregroundStyle(.primary)
+                } else {
+                    Text(item.value)
+                        .font(.igUsername)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .hermesLiquidGlass(cornerRadius: 18, tint: item.accent.opacity(0.08), interactive: false)
+    }
+}
+
+struct HermesMarqueeText: View {
+    let text: String
+    let visibleCharacterLimit: Int
+    @State private var isAnimating = false
+
+    private var estimatedCharacterWidth: CGFloat { 8.6 }
+    private var gap: CGFloat { 28 }
+    private var viewportWidth: CGFloat {
+        CGFloat(max(1, visibleCharacterLimit)) * estimatedCharacterWidth
+    }
+    private var scrollDistance: CGFloat {
+        CGFloat(text.count) * estimatedCharacterWidth + gap
+    }
+    private var animationDuration: Double {
+        max(4.0, Double(text.count) * 0.18)
+    }
+
+    var body: some View {
+        HStack(spacing: gap) {
+            Text(text)
+                .lineLimit(1)
+            Text(text)
+                .lineLimit(1)
+                .accessibilityHidden(true)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .offset(x: isAnimating ? -scrollDistance : 0)
+        .frame(width: viewportWidth, alignment: .leading)
+        .clipped()
+        .onAppear {
+            guard !isAnimating else { return }
+            withAnimation(.linear(duration: animationDuration).repeatForever(autoreverses: false)) {
+                isAnimating = true
+            }
+        }
+        .onChange(of: text) { _, _ in
+            isAnimating = false
+            DispatchQueue.main.async {
+                withAnimation(.linear(duration: animationDuration).repeatForever(autoreverses: false)) {
+                    isAnimating = true
+                }
+            }
+        }
+        .accessibilityLabel(text)
     }
 }
 
@@ -210,4 +264,12 @@ struct HermesStatusItem: Identifiable {
     let title: String
     let value: String
     let accent: Color
+    let marqueeCharacterLimit: Int?
+
+    init(title: String, value: String, accent: Color, marqueeCharacterLimit: Int? = nil) {
+        self.title = title
+        self.value = value
+        self.accent = accent
+        self.marqueeCharacterLimit = marqueeCharacterLimit
+    }
 }

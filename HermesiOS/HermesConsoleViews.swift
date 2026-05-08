@@ -420,7 +420,8 @@ struct HermesResponsesConsoleView: View {
                         HermesProfileSelector(
                             selectedProfile: $requestDraft.profile,
                             apiProfiles: apiProfiles,
-                            lockedProfile: responseSession.activeProfile
+                            lockedProfile: responseSession.activeProfile,
+                            isDisabled: responseSession.isSending
                         ) { newProfile in
                             if responseSession.activeProfile != newProfile {
                                 responseSession.terminateAndStartNewSession()
@@ -429,7 +430,7 @@ struct HermesResponsesConsoleView: View {
 
                         HermesStatusRow(
                             items: [
-                                .init(title: "Thread", value: responseSession.previousResponseID.isEmpty ? "New response" : "Continuing thread", accent: .igGradPurple),
+                                .init(title: "Session", value: responseSession.displaySessionTitle, accent: .igGradPurple, marqueeCharacterLimit: 20),
                                 .init(title: "Status", value: responseSession.connectionStatus, accent: .igGradOrange)
                             ]
                         )
@@ -690,6 +691,7 @@ private struct HermesProfileSelector: View {
     @Binding var selectedProfile: String
     let apiProfiles: [HermesAPIProfile]
     let lockedProfile: String
+    let isDisabled: Bool
     let onProfileSelected: (String) -> Void
 
     private var currentProfile: String {
@@ -752,6 +754,8 @@ private struct HermesProfileSelector: View {
             .font(.caption.weight(.semibold))
             .lineLimit(1)
             .tint(.primary)
+            .disabled(isDisabled)
+            .opacity(isDisabled ? 0.55 : 1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -977,7 +981,8 @@ struct HermesChatConsoleView: View {
                         HermesProfileSelector(
                             selectedProfile: $chatDraft.profile,
                             apiProfiles: apiProfiles,
-                            lockedProfile: chatSession.activeProfile
+                            lockedProfile: chatSession.activeProfile,
+                            isDisabled: chatSession.isSending
                         ) { newProfile in
                             if chatSession.activeProfile != newProfile {
                                 chatSession.resetConversation()
@@ -986,8 +991,7 @@ struct HermesChatConsoleView: View {
 
                         HermesStatusRow(
                             items: [
-                                .init(title: "History", value: "\(chatSession.entries.count) messages", accent: .igGradPurple),
-                                .init(title: "Session", value: chatSession.activeChatSessionID.isEmpty ? "New chat" : "Continuing chat", accent: .igActionBlue),
+                                .init(title: "Session", value: chatSession.displaySessionTitle, accent: .igActionBlue, marqueeCharacterLimit: 20),
                                 .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange),
                             ]
                         )

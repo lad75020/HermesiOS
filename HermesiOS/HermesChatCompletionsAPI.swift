@@ -21,6 +21,15 @@ final class HermesChatSession {
     var lastErrorMessage = ""
     var eventCount = 0
     var rawStreamedJSON = ""
+    var sessionTitle = ""
+
+    var displaySessionTitle: String {
+        let trimmedTitle = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTitle.isEmpty {
+            return trimmedTitle
+        }
+        return activeChatSessionID.isEmpty ? "New chat" : "Continuing chat"
+    }
 
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
@@ -64,6 +73,7 @@ final class HermesChatSession {
         lastErrorMessage = ""
         eventCount = 0
         rawStreamedJSON = ""
+        sessionTitle = ""
     }
 
     func resumeLastKnownChatSession() {
@@ -83,6 +93,7 @@ final class HermesChatSession {
         lastErrorMessage = ""
         eventCount = 0
         rawStreamedJSON = ""
+        sessionTitle = "Last chat"
         connectionStatus = "Resumed last chat"
     }
 
@@ -93,6 +104,22 @@ final class HermesChatSession {
     private static func shortSessionID(_ sessionID: String) -> String {
         guard sessionID.count > 24 else { return sessionID }
         return String(sessionID.prefix(24)) + "…"
+    }
+
+    private static func userFriendlySessionTitle(from title: String, fallback: String) -> String {
+        let normalized = title
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !normalized.isEmpty {
+            return normalized
+        }
+
+        let normalizedFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedFallback.isEmpty ? "New chat" : normalizedFallback
     }
 
     private func persistLastChatSessionID(_ sessionID: String) {
@@ -107,6 +134,9 @@ final class HermesChatSession {
         let history = entries
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayPrompt = displayPrompt(prompt, attachment: attachment)
+        if sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            sessionTitle = Self.userFriendlySessionTitle(from: prompt, fallback: attachment?.filename ?? "New chat")
+        }
         resetForRequest()
         appendExchange(prompt: displayPrompt)
         isSending = true

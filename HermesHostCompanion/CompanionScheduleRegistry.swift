@@ -34,15 +34,17 @@ final class CompanionScheduleRegistry {
         guard trimmedSchedule.isEmpty == false else { throw CompanionScheduleRegistryError.missingSchedule }
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         var args = ["create", trimmedSchedule]
+        if let prompt, prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            // `hermes cron create` defines the prompt as an optional positional
+            // argument immediately after the schedule. Passing it after options
+            // with `--` makes argparse report it as an unrecognized argument.
+            args.append(prompt.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
         if let name, name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             args.append(contentsOf: ["--name", name.trimmingCharacters(in: .whitespacesAndNewlines)])
         }
         if let deliver, deliver.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false, deliver != "local" {
             args.append(contentsOf: ["--deliver", deliver.trimmingCharacters(in: .whitespacesAndNewlines)])
-        }
-        if let prompt, prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-            args.append("--")
-            args.append(prompt.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         let result = runCronCommand(args: args, workspaceURL: workspaceURL)
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, result: result)

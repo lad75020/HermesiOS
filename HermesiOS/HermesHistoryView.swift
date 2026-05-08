@@ -59,14 +59,23 @@ struct HermesHistoryView: View {
                     .hermesRuntimeInput()
 
                 HStack(spacing: 10) {
-                    Picker("Profile", selection: $selectedProfileFilter) {
-                        ForEach(profileFilterOptions, id: \.value) { option in
-                            Text(option.title).tag(option.value)
+                    HStack(spacing: 6) {
+                        Text("Profile")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+
+                        Picker("Profile", selection: $selectedProfileFilter) {
+                            ForEach(profileFilterOptions, id: \.value) { option in
+                                Text(option.title).tag(option.value)
+                            }
                         }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .disabled(searchSession.isSearching)
                     }
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                    .disabled(searchSession.isSearching)
+                    .fixedSize()
+                    .accessibilityElement(children: .combine)
                     .accessibilityLabel("History profile filter")
 
                     Button(action: runDashboardSearch) {

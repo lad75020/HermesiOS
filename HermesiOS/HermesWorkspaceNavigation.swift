@@ -77,6 +77,7 @@ struct WorkspaceSidebar: View {
     var apiChannelActive = false
     var companionChannelActive = false
     var dashboardChannelActive = false
+    var isHistorySearchActive = false
     @Binding var isResponsesCompletionUnread: Bool
     @Binding var isChatCompletionUnread: Bool
     @Binding var isHistorySearchCompletionUnread: Bool
@@ -116,7 +117,9 @@ struct WorkspaceSidebar: View {
             responseSession.isSending
         case .chat:
             chatSession.isSending
-        case .history, .office, .settings, .runtime:
+        case .history:
+            isHistorySearchActive
+        case .office, .settings, .runtime:
             false
         }
     }

@@ -183,6 +183,7 @@ struct ContentView: View {
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive,
+                isHistorySearchActive: dashboardHistorySearchSession.isSearching,
                 isResponsesCompletionUnread: $isResponsesCompletionUnread,
                 isChatCompletionUnread: $isChatCompletionUnread,
                 isHistorySearchCompletionUnread: $isHistorySearchCompletionUnread,

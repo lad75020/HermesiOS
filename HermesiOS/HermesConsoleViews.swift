@@ -430,7 +430,7 @@ struct HermesResponsesConsoleView: View {
 
                         HermesStatusRow(
                             items: [
-                                .init(title: "Session", value: responseSession.displaySessionTitle, accent: .igGradPurple, marqueeCharacterLimit: 20),
+                                .init(title: "Session", value: responseSession.displaySessionTitle, accent: .igGradPurple, marqueeCharacterLimit: 40),
                                 .init(title: "Status", value: responseSession.connectionStatus, accent: .igGradOrange)
                             ]
                         )
@@ -991,7 +991,7 @@ struct HermesChatConsoleView: View {
 
                         HermesStatusRow(
                             items: [
-                                .init(title: "Session", value: chatSession.displaySessionTitle, accent: .igActionBlue, marqueeCharacterLimit: 20),
+                                .init(title: "Session", value: chatSession.displaySessionTitle, accent: .igActionBlue, marqueeCharacterLimit: 40),
                                 .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange),
                             ]
                         )

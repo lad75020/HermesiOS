@@ -3,6 +3,7 @@
 //  HermesiOS
 //
 
+import Foundation
 import Observation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -58,8 +59,8 @@ struct HermesMemoryPanel: View {
                         memoryCapacityBar(label: "User Profile", used: companionRuntime.memoryConfig?.user.charCount ?? 0, limit: companionRuntime.memoryConfig?.user.charLimit ?? 1_375)
 
                         companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
-                        companionSummaryRow(label: "Memory File", value: companionRuntime.memoryFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/memories/MEMORY.md" : companionRuntime.memoryFilePath)
-                        companionSummaryRow(label: "User File", value: companionRuntime.memoryUserFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/memories/USER.md" : companionRuntime.memoryUserFilePath)
+                        memoryFileSummaryRow(label: "Memory File", value: companionRuntime.memoryFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/memories/MEMORY.md" : companionRuntime.memoryFilePath, sizeOnDiskBytes: companionRuntime.memoryConfig?.memory.sizeOnDiskBytes)
+                        memoryFileSummaryRow(label: "User File", value: companionRuntime.memoryUserFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/memories/USER.md" : companionRuntime.memoryUserFilePath, sizeOnDiskBytes: companionRuntime.memoryConfig?.user.sizeOnDiskBytes)
 
                         if !companionRuntime.lastErrorMessage.isEmpty {
                             Text(companionRuntime.lastErrorMessage)
@@ -208,8 +209,8 @@ struct HermesMemoryPanel: View {
                     .font(.subheadline)
                     .foregroundStyle(.hermesSecondaryText)
 
-                companionSummaryRow(label: "Config", value: companionRuntime.memoryConfigPath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/config.yaml" : companionRuntime.memoryConfigPath)
-                companionSummaryRow(label: "Env File", value: companionRuntime.memoryEnvFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/.env" : companionRuntime.memoryEnvFilePath)
+                memoryFileSummaryRow(label: "Config", value: companionRuntime.memoryConfigPath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/config.yaml" : companionRuntime.memoryConfigPath, sizeOnDiskBytes: companionRuntime.memoryConfig?.configSizeOnDiskBytes)
+                memoryFileSummaryRow(label: "Env File", value: companionRuntime.memoryEnvFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/.env" : companionRuntime.memoryEnvFilePath, sizeOnDiskBytes: companionRuntime.memoryConfig?.envSizeOnDiskBytes)
 
                 if companionRuntime.memoryProviders.isEmpty {
                     Text("Refresh memory to discover memory providers from the host Hermes installation.")
@@ -406,6 +407,29 @@ struct HermesMemoryPanel: View {
             }
             .frame(height: 8)
         }
+    }
+
+    private func memoryFileSummaryRow(label: String, value: String, sizeOnDiskBytes: Int64?) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .fontWeight(.semibold)
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(value)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(.hermesSecondaryText)
+                    .textSelection(.enabled)
+                Text("Size on disk: \(formattedDiskSize(sizeOnDiskBytes))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+        }
+        .font(.subheadline)
+    }
+
+    private func formattedDiskSize(_ byteCount: Int64?) -> String {
+        guard let byteCount else { return "not found" }
+        return ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
     }
 
     private func companionSummaryRow(label: String, value: String) -> some View {

@@ -156,6 +156,66 @@ enum HermesNetworkSessionFactory {
     }
 }
 
+enum HermesRequestFailureClassifier {
+    static func isTimeoutOrNetworkLoss(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            return isTimeoutOrNetworkLoss(urlError.code)
+        }
+
+        if case HermesResponsesError.httpError(let statusCode) = error {
+            return isTimeoutHTTPStatus(statusCode)
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return isTimeoutOrNetworkLoss(URLError.Code(rawValue: nsError.code))
+        }
+
+        return isTimeoutOrNetworkLoss(error.localizedDescription)
+    }
+
+    static func isTimeoutOrNetworkLoss(_ message: String) -> Bool {
+        let normalized = message.lowercased()
+        return normalized.contains("timed out")
+            || normalized.contains("timeout")
+            || normalized.contains("network connection was lost")
+            || normalized.contains("network connection lost")
+            || normalized.contains("not connected to the internet")
+            || normalized.contains("internet connection appears to be offline")
+            || normalized.contains("cannot connect to the host")
+            || normalized.contains("could not connect to the server")
+            || normalized.contains("cannot find host")
+            || normalized.contains("dns")
+            || normalized.contains("http 408")
+            || normalized.contains("http 504")
+    }
+
+    private static func isTimeoutHTTPStatus(_ statusCode: Int) -> Bool {
+        switch statusCode {
+        case 408, 504:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isTimeoutOrNetworkLoss(_ code: URLError.Code) -> Bool {
+        switch code {
+        case .timedOut,
+             .networkConnectionLost,
+             .notConnectedToInternet,
+             .cannotConnectToHost,
+             .cannotFindHost,
+             .dnsLookupFailed,
+             .internationalRoamingOff,
+             .dataNotAllowed:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class HermesResponsesSession {
@@ -169,6 +229,7 @@ final class HermesResponsesSession {
     var activeHermesSessionID = ""
     var lastKnownResponseID = ""
     var lastErrorMessage = ""
+    var lastErrorWasTimeoutOrNetworkLoss = false
     var latestMessageType = ""
     var eventCount = 0
     var rawStreamedJSON = ""
@@ -225,6 +286,7 @@ final class HermesResponsesSession {
         previousResponseID = ""
         activeHermesSessionID = ""
         lastErrorMessage = ""
+        lastErrorWasTimeoutOrNetworkLoss = false
         latestMessageType = ""
         eventCount = 0
         rawStreamedJSON = ""
@@ -253,6 +315,7 @@ final class HermesResponsesSession {
         previousResponseID = sessionID
         activeHermesSessionID = ""
         lastErrorMessage = ""
+        lastErrorWasTimeoutOrNetworkLoss = false
         latestMessageType = "resumed response"
         eventCount = 0
         rawStreamedJSON = ""
@@ -273,6 +336,7 @@ final class HermesResponsesSession {
         previousResponseID = continuationID
         persistLastResponseID(continuationID)
         lastErrorMessage = ""
+        lastErrorWasTimeoutOrNetworkLoss = false
         latestMessageType = continuationID.isEmpty ? (activeHermesSessionID.isEmpty ? "loaded history" : "resumed session") : "resumed response"
         eventCount = 0
         rawStreamedJSON = ""
@@ -370,6 +434,7 @@ final class HermesResponsesSession {
             updateActiveAssistantEntry(with: streamedText.isEmpty ? "Cancelled." : streamedText)
         } catch {
             lastErrorMessage = error.localizedDescription
+            lastErrorWasTimeoutOrNetworkLoss = HermesRequestFailureClassifier.isTimeoutOrNetworkLoss(error)
             connectionStatus = "Failed"
             updateActiveAssistantEntry(with: streamedText.isEmpty ? "Request failed: \(error.localizedDescription)" : streamedText)
         }
@@ -381,6 +446,7 @@ final class HermesResponsesSession {
         streamedText = ""
         latestResponseID = ""
         lastErrorMessage = ""
+        lastErrorWasTimeoutOrNetworkLoss = false
         latestMessageType = ""
         eventCount = 0
         rawStreamedJSON = ""

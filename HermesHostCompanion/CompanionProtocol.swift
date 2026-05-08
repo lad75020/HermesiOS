@@ -577,6 +577,7 @@ struct MemoryFileInfo: Codable {
     let content: String
     let exists: Bool
     let lastModified: Int?
+    let sizeOnDiskBytes: Int64?
     let entries: [MemoryEntry]?
     let charCount: Int
     let charLimit: Int
@@ -607,6 +608,8 @@ struct MemoryConfigResult: Codable {
     let userFilePath: String
     let configPath: String
     let envFilePath: String
+    let configSizeOnDiskBytes: Int64?
+    let envSizeOnDiskBytes: Int64?
     let memory: MemoryFileInfo
     let user: MemoryFileInfo
     let stats: MemoryStats

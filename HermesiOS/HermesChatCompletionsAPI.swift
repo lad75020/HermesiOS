@@ -19,6 +19,7 @@ final class HermesChatSession {
     var activeChatSessionID = ""
     var lastKnownChatSessionID = ""
     var lastErrorMessage = ""
+    var lastErrorWasTimeoutOrNetworkLoss = false
     var eventCount = 0
     var rawStreamedJSON = ""
     var sessionTitle = ""
@@ -71,6 +72,7 @@ final class HermesChatSession {
         activeChatSessionID = ""
         connectionStatus = "Idle"
         lastErrorMessage = ""
+        lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
         sessionTitle = ""
@@ -91,6 +93,7 @@ final class HermesChatSession {
         isSending = false
         activeChatSessionID = sessionID
         lastErrorMessage = ""
+        lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
         sessionTitle = "Last chat"
@@ -110,6 +113,7 @@ final class HermesChatSession {
             persistLastChatSessionID(sessionID)
         }
         lastErrorMessage = ""
+        lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
 
@@ -199,6 +203,7 @@ final class HermesChatSession {
             updateActiveAssistantEntry(with: streamedText.isEmpty ? "Cancelled." : streamedText)
         } catch {
             lastErrorMessage = error.localizedDescription
+            lastErrorWasTimeoutOrNetworkLoss = HermesRequestFailureClassifier.isTimeoutOrNetworkLoss(error)
             connectionStatus = "Failed"
             updateActiveAssistantEntry(with: streamedText.isEmpty ? "Request failed: \(error.localizedDescription)" : streamedText)
         }
@@ -209,6 +214,7 @@ final class HermesChatSession {
     private func resetForRequest() {
         streamedText = ""
         lastErrorMessage = ""
+        lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
         activeAssistantEntryID = nil

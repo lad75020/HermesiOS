@@ -212,7 +212,23 @@ struct HermesSettingsView: View {
 
                     if let status = companionRuntime.hermesInstallationStatus {
                         settingsRow(label: "Repository", value: status.repositoryPath)
-                        settingsRow(label: "Branch", value: status.branch.isEmpty ? "Unknown" : status.branch)
+
+                        HStack(alignment: .center) {
+                            Text("Current Local Branch")
+                                .fontWeight(.semibold)
+                            TextField(
+                                "Unknown",
+                                text: Binding(
+                                    get: { status.branch.isEmpty ? "Unknown" : status.branch },
+                                    set: { _ in }
+                                )
+                            )
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                        }
+                        .font(.subheadline)
+
                         settingsRow(label: "Local / main", value: "\(status.currentCommit) / \(status.upstreamCommit)")
                         settingsRow(label: "Last Checked", value: status.checkedAt.formatted(date: .abbreviated, time: .shortened))
                     }

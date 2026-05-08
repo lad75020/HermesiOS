@@ -46,7 +46,7 @@ struct HermesObservabilityPanel: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(canUseCompanion == false || companionRuntime.isBusy)
+                .disabled(canUseCompanion == false || companionRuntime.isLoadingObservabilityLog)
             }
 
             Picker("Log", selection: Binding(
@@ -64,7 +64,7 @@ struct HermesObservabilityPanel: View {
                 }
             }
             .pickerStyle(.segmented)
-            .disabled(canUseCompanion == false || companionRuntime.isBusy)
+            .disabled(canUseCompanion == false)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Final lines to load")

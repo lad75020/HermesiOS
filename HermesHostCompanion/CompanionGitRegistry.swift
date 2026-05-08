@@ -39,9 +39,11 @@ final class CompanionGitRegistry {
     func updateHermesInstallation(workspacePath: String) throws -> HermesInstallationOperationResult {
         let repoURL = try hermesRepoURL(workspacePath: workspacePath)
         try ensureNoMergeInProgress(repoURL: repoURL)
-        try ensureCleanWorkingTree(repoURL: repoURL)
 
         let branch = try runGit(["branch", "--show-current"], repoURL: repoURL, timeout: 10).trimmedOutput
+        let preUpdateCommitOutput = try commitWorkingTreeChangesIfNeeded(repoURL: repoURL, branch: branch)
+        try ensureCleanWorkingTree(repoURL: repoURL)
+
         let localRef = branch.isEmpty ? "HEAD" : branch
         _ = try runGit(["fetch", officialRepositoryURL, "main:\(officialMainRef)"], repoURL: repoURL, timeout: 60).trimmedOutput
         let officialCommit = try runGit(["rev-parse", "--short", officialMainRef], repoURL: repoURL, timeout: 10).trimmedOutput
@@ -58,10 +60,14 @@ final class CompanionGitRegistry {
         } else {
             reviewMessage = "Fetched official main \(officialCommit). Review and resolve conflicts before tapping Merge Reviewed Update.\n\(mergeProbe.output)"
         }
-        try setGitConfig(lastUpdateOutputConfigKey, value: reviewMessage, repoURL: repoURL)
+        let operationMessage = [preUpdateCommitOutput, reviewMessage]
+            .filter { $0.isEmpty == false }
+            .joined(separator: "\n\n")
+        try setGitConfig(lastUpdateOutputConfigKey, value: operationMessage, repoURL: repoURL)
+
 
         let currentStatus = try status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
-        return HermesInstallationOperationResult(status: currentStatus, output: reviewMessage)
+        return HermesInstallationOperationResult(status: currentStatus, output: operationMessage)
     }
 
     func mergeReviewedHermesInstallationUpdate(workspacePath: String) throws -> HermesInstallationOperationResult {
@@ -138,6 +144,24 @@ final class CompanionGitRegistry {
         guard status.isEmpty else {
             throw CompanionGitRegistryError.gitCommandFailed("Commit, stash, or discard local working-tree changes before updating Hermes Agent.")
         }
+    }
+
+    private func commitWorkingTreeChangesIfNeeded(repoURL: URL, branch: String) throws -> String {
+        let status = try runGit(["status", "--porcelain"], repoURL: repoURL, timeout: 10).trimmedOutput
+        guard status.isEmpty == false else {
+            return ""
+        }
+        guard branch.isEmpty == false else {
+            throw CompanionGitRegistryError.gitCommandFailed("Hermes Agent has local changes, but the checkout is detached. Check out a local branch before updating so changes can be committed safely.")
+        }
+
+        _ = try runGit(["add", "-A"], repoURL: repoURL, timeout: 30)
+        let commitOutput = try runGit(["commit", "-m", "chore: save local changes before Hermes update"], repoURL: repoURL, timeout: 60).trimmedOutput
+        let commitHash = try runGit(["rev-parse", "--short", "HEAD"], repoURL: repoURL, timeout: 10).trimmedOutput
+        if commitOutput.isEmpty {
+            return "Committed local Hermes Agent changes to \(branch) as \(commitHash) before fetching official main."
+        }
+        return "Committed local Hermes Agent changes to \(branch) as \(commitHash) before fetching official main.\n\(commitOutput)"
     }
 
     private func ensureNoMergeInProgress(repoURL: URL) throws {

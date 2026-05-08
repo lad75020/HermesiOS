@@ -264,7 +264,10 @@ struct ContentView: View {
                     HermesUtilitiesView(
                         clipboardHistory: clipboardHistory,
                         responseSession: responseSession,
-                        chatSession: chatSession
+                        chatSession: chatSession,
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
                     )
                 }
                 .tabItem {
@@ -340,7 +343,10 @@ struct ContentView: View {
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
                 responseSession: responseSession,
-                chatSession: chatSession
+                chatSession: chatSession,
+                companionSettings: companionSettings,
+                companionEnrollment: companionEnrollment,
+                companionRuntime: companionRuntime
             )
         case .settings:
             HermesSettingsView(

@@ -699,6 +699,25 @@ struct SetMemoryEnvResult: Codable {
     let value: String
 }
 
+struct SupermemoryManagementPayload: Codable {
+    let workspacePath: String
+}
+
+struct SupermemoryManagementResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let success: Bool
+    let status: String
+    let exportedCount: Int
+    let importedCount: Int
+    let exportPath: String
+    let digestPath: String
+    let skillReferencePath: String
+    let previousExportStartedAt: String
+    let exportStartedAt: String
+    let error: String?
+}
+
 struct ProfileInfo: Codable, Identifiable {
     let id: String
     let name: String

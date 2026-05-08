@@ -13,8 +13,12 @@ struct HermesUtilitiesView: View {
     @Bindable var clipboardHistory: HermesClipboardHistoryStore
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var chatSession: HermesChatSession
+    let companionSettings: HermesCompanionSettings
+    @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @AppStorage("hermes.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
     @AppStorage("hermes.utilities.debuggingExpanded") private var isDebuggingExpanded = false
+    @AppStorage("hermes.utilities.supermemoryManagementExpanded") private var isSupermemoryManagementExpanded = false
     @State private var statusMessage = "Monitoring the iOS clipboard while HermesiOS is active."
 
     var body: some View {
@@ -58,6 +62,24 @@ struct HermesUtilitiesView: View {
                         .overlay(Color.hermesDivider.opacity(0.5))
                         .padding(.vertical, 4)
 
+
+                    if isSupermemoryActive {
+                        DisclosureGroup(isExpanded: $isSupermemoryManagementExpanded) {
+                            supermemoryManagementContent
+                        } label: {
+                            utilityDisclosureLabel(
+                                title: "Supermemory management",
+                                subtitle: supermemorySubtitle,
+                                systemImage: "externaldrive.connected.to.line.below"
+                            )
+                        }
+                        .tint(.igActionBlue)
+
+                        Divider()
+                            .overlay(Color.hermesDivider.opacity(0.5))
+                            .padding(.vertical, 4)
+                    }
+
                     DisclosureGroup(isExpanded: $isDebuggingExpanded) {
                         HermesStreamedJSONDebugPanel(
                             responseSession: responseSession,
@@ -97,9 +119,91 @@ struct HermesUtilitiesView: View {
         }
     }
 
-    @ViewBuilder
-    private var clipboardHistoryContent: some View {
+
+    private var isSupermemoryActive: Bool {
+        companionRuntime.memoryProvider.lowercased() == "supermemory"
+            || companionRuntime.memoryProviders.contains { $0.name.lowercased() == "supermemory" && $0.active }
+    }
+
+    private var supermemorySubtitle: String {
+        if let result = companionRuntime.supermemoryLastResult {
+            if result.importedCount > 0 { return "Last import: \(result.importedCount) documents" }
+            return "Last export: \(result.exportedCount) documents"
+        }
+        return "Export Supermemory deltas and import them into Hermes files"
+    }
+
+    private func utilityDisclosureLabel(title: String, subtitle: String, systemImage: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.igActionBlue)
+                .frame(width: 34, height: 34)
+                .hermesLiquidGlass(cornerRadius: 11, tint: .igActionBlue.opacity(0.16), interactive: true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.igUsername)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.igSecondaryMeta)
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var supermemoryManagementContent: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("Exports Supermemory documents created since the previous export trigger into a JSONL file on the Mac, then imports that delta into Hermes memory and skill-reference files.")
+                .font(.subheadline)
+                .foregroundStyle(.hermesSecondaryText)
+
+            HStack(spacing: 10) {
+                Button {
+                    companionRuntime.exportSupermemoryDelta(settings: companionSettings, identityState: companionEnrollment.identityState)
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.down")
+                }
+                .hermesGlassButton()
+                .disabled(!companionEnrollment.identityState.isEnrolled || companionRuntime.isBusy)
+
+                Button {
+                    companionRuntime.importSupermemoryDelta(settings: companionSettings, identityState: companionEnrollment.identityState)
+                } label: {
+                    Label("Import into Hermes", systemImage: "square.and.arrow.down.on.square")
+                }
+                .hermesGlassButton()
+                .disabled(!companionEnrollment.identityState.isEnrolled || companionRuntime.isBusy)
+            }
+
+            if !companionRuntime.supermemoryOperationOutput.isEmpty {
+                Text(companionRuntime.supermemoryOperationOutput)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.hermesSecondaryText)
+                    .textSelection(.enabled)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else {
+                Text(companionEnrollment.identityState.isEnrolled ? "Ready." : "Enroll the Mac companion to run Supermemory management.")
+                    .font(.igSecondaryMeta)
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+        }
+        .padding(.top, 12)
+        .task(id: companionEnrollment.identityState.deviceID) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            if companionRuntime.memoryConfig == nil {
+                companionRuntime.refreshMemoryConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var clipboardHistoryContent: some View {        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Button {
                     clipboardHistory.captureCurrentPasteboardIfNeeded(force: true)

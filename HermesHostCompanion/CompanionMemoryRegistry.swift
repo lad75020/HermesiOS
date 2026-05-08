@@ -4,6 +4,8 @@ import Foundation
 enum CompanionMemoryRegistryError: LocalizedError {
     case invalidWorkspace(String)
     case invalidEnvironmentKey(String)
+    case inactiveSupermemoryProvider
+    case supermemoryCommandFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -11,6 +13,10 @@ enum CompanionMemoryRegistryError: LocalizedError {
             return "The Hermes workspace path '\(path)' is invalid."
         case .invalidEnvironmentKey(let key):
             return "The memory provider environment key '\(key)' is not allowlisted."
+        case .inactiveSupermemoryProvider:
+            return "Supermemory is not the active Hermes memory provider."
+        case .supermemoryCommandFailed(let message):
+            return message
         }
     }
 }
@@ -126,6 +132,265 @@ final class CompanionMemoryRegistry {
         guard Set(providers.flatMap(\.envVars)).contains(key) else { throw CompanionMemoryRegistryError.invalidEnvironmentKey(key) }
         try writeEnvValue(workspaceURL: workspaceURL, key: key, value: value)
         return SetMemoryEnvResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, envFilePath: envURL(for: workspaceURL).path, key: key, value: value)
+    }
+
+
+    func exportSupermemoryDelta(workspacePath: String) throws -> SupermemoryManagementResult {
+        let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
+        try ensureSupermemoryActive(workspaceURL: workspaceURL)
+        return try runSupermemoryCommand(mode: "export", workspacePath: workspacePath, workspaceURL: workspaceURL)
+    }
+
+    func importSupermemoryDelta(workspacePath: String) throws -> SupermemoryManagementResult {
+        let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
+        try ensureSupermemoryActive(workspaceURL: workspaceURL)
+        return try runSupermemoryCommand(mode: "import", workspacePath: workspacePath, workspaceURL: workspaceURL)
+    }
+
+    private func ensureSupermemoryActive(workspaceURL: URL) throws {
+        guard readActiveProvider(workspaceURL: workspaceURL).lowercased() == "supermemory" else {
+            throw CompanionMemoryRegistryError.inactiveSupermemoryProvider
+        }
+    }
+
+    private func runSupermemoryCommand(mode: String, workspacePath: String, workspaceURL: URL) throws -> SupermemoryManagementResult {
+        let scriptURL = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-supermemory-management-")
+            .appendingPathExtension(UUID().uuidString)
+            .appendingPathExtension("py")
+        try supermemoryPythonScript.write(to: scriptURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: scriptURL) }
+
+        let process = Process()
+        process.executableURL = pythonExecutable(for: workspaceURL)
+        process.arguments = [scriptURL.path, mode, workspaceURL.path]
+        process.currentDirectoryURL = workspaceURL
+        var environment = ProcessInfo.processInfo.environment
+        environment["HERMES_HOME"] = workspaceURL.path
+        environment["PYTHONUNBUFFERED"] = "1"
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        process.environment = environment
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw CompanionMemoryRegistryError.supermemoryCommandFailed("Unable to run Supermemory helper: \(error.localizedDescription)")
+        }
+
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: outputData, encoding: .utf8) ?? ""
+        let stderr = String(data: errorData, encoding: .utf8) ?? ""
+        guard let data = output.data(using: .utf8), !data.isEmpty else {
+            throw CompanionMemoryRegistryError.supermemoryCommandFailed(stderr.isEmpty ? "Supermemory helper returned no output." : stderr)
+        }
+        let result = try JSONDecoder().decode(SupermemoryManagementResult.self, from: data)
+        if process.terminationStatus != 0 || result.success == false {
+            throw CompanionMemoryRegistryError.supermemoryCommandFailed(result.error ?? stderr)
+        }
+        return result
+    }
+
+    private func pythonExecutable(for workspaceURL: URL) -> URL {
+        let candidates = [
+            workspaceURL.appendingPathComponent("hermes-agent/venv/bin/python3"),
+            workspaceURL.appendingPathComponent("hermes-agent/venv/bin/python"),
+            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".hermes/hermes-agent/venv/bin/python3"),
+            URL(fileURLWithPath: "/usr/bin/python3")
+        ]
+        return candidates.first { FileManager.default.fileExists(atPath: $0.path) } ?? URL(fileURLWithPath: "/usr/bin/python3")
+    }
+
+    private var supermemoryPythonScript: String {
+        #"""
+import json, os, re, sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def iso_now():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+
+def parse_iso(value):
+    if not value:
+        return datetime.fromtimestamp(0, timezone.utc)
+    value = str(value).replace('Z', '+00:00')
+    try:
+        return datetime.fromisoformat(value)
+    except Exception:
+        return datetime.fromtimestamp(0, timezone.utc)
+
+
+def load_env(workspace):
+    env_path = workspace / '.env'
+    if not env_path.exists():
+        return
+    for raw in env_path.read_text(encoding='utf-8', errors='ignore').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+def dump_model(obj):
+    if hasattr(obj, 'model_dump'):
+        return obj.model_dump(mode='json', by_alias=True)
+    if hasattr(obj, 'dict'):
+        return obj.dict(by_alias=True)
+    return obj
+
+
+def safe_name(value):
+    value = re.sub(r'[^A-Za-z0-9._-]+', '-', value or '').strip('-')
+    return value[:80] or 'document'
+
+
+def doc_created_at(doc):
+    return doc.get('createdAt') or doc.get('created_at') or ''
+
+
+def doc_title(doc):
+    return doc.get('title') or doc.get('filepath') or doc.get('url') or doc.get('id') or 'Untitled'
+
+
+def doc_content(doc):
+    return doc.get('content') or doc.get('summary') or ''
+
+
+def state_paths(workspace):
+    base = workspace / 'memories' / 'supermemory'
+    base.mkdir(parents=True, exist_ok=True)
+    return base, base / 'export-state.json'
+
+
+def load_state(path):
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+
+
+def save_state(path, state):
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+def export_delta(workspace):
+    load_env(workspace)
+    from supermemory import Supermemory
+    base, state_path = state_paths(workspace)
+    state = load_state(state_path)
+    previous = state.get('last_export_started_at') or ''
+    previous_dt = parse_iso(previous)
+    started = iso_now()
+    export_dir = base / 'exports'
+    export_dir.mkdir(parents=True, exist_ok=True)
+    export_path = export_dir / f"supermemory-delta-{started.replace(':','').replace('-','')}.jsonl"
+    client = Supermemory()
+    count = 0
+    page = 1
+    limit = 100
+    with export_path.open('w', encoding='utf-8') as fh:
+        while True:
+            resp = client.documents.list(include_content=True, page=page, limit=limit, order='asc', sort='createdAt')
+            docs = [dump_model(doc) for doc in getattr(resp, 'memories', [])]
+            for doc in docs:
+                if parse_iso(doc_created_at(doc)) > previous_dt:
+                    fh.write(json.dumps(doc, ensure_ascii=False, separators=(',', ':')) + '\n')
+                    count += 1
+            pagination = getattr(resp, 'pagination', None)
+            total_pages = int(getattr(pagination, 'total_pages', None) or getattr(pagination, 'totalPages', None) or page)
+            if page >= total_pages:
+                break
+            page += 1
+    state.update({'last_export_started_at': started, 'last_export_path': str(export_path), 'last_export_count': count, 'previous_export_started_at': previous})
+    save_state(state_path, state)
+    return {
+        'workspacePath': str(workspace), 'resolvedWorkspacePath': str(workspace), 'success': True,
+        'status': f'Exported {count} Supermemory documents created since {previous or "the beginning"}.',
+        'exportedCount': count, 'importedCount': 0, 'exportPath': str(export_path), 'digestPath': '', 'skillReferencePath': '',
+        'previousExportStartedAt': previous, 'exportStartedAt': started, 'error': None
+    }
+
+
+def append_memory_entry(workspace, entry):
+    memory_path = workspace / 'memories' / 'MEMORY.md'
+    memory_path.parent.mkdir(parents=True, exist_ok=True)
+    current = memory_path.read_text(encoding='utf-8') if memory_path.exists() else ''
+    delimiter = '\n§\n'
+    candidate = (current.rstrip() + delimiter + entry).strip() if current.strip() else entry
+    if len(candidate) <= 2200:
+        memory_path.write_text(candidate + '\n', encoding='utf-8')
+        return True
+    return False
+
+
+def import_delta(workspace):
+    base, state_path = state_paths(workspace)
+    state = load_state(state_path)
+    export_path = Path(state.get('last_export_path') or '')
+    if not export_path.exists():
+        raise RuntimeError('No Supermemory export JSONL exists yet. Run Export first.')
+    imported_at = iso_now()
+    docs = []
+    for raw in export_path.read_text(encoding='utf-8', errors='ignore').splitlines():
+        if raw.strip():
+            docs.append(json.loads(raw))
+    import_dir = base / 'imports'
+    import_dir.mkdir(parents=True, exist_ok=True)
+    digest_path = import_dir / f"supermemory-delta-{imported_at.replace(':','').replace('-','')}.md"
+    lines = [f"# Supermemory delta import {imported_at}", '', f"Source JSONL: `{export_path}`", f"Documents: {len(docs)}", '']
+    for i, doc in enumerate(docs, 1):
+        lines += [f"## {i}. {doc_title(doc)}", '', f"- ID: `{doc.get('id','')}`", f"- Created: {doc_created_at(doc)}", f"- Updated: {doc.get('updatedAt') or doc.get('updated_at') or ''}", f"- Filepath: {doc.get('filepath') or ''}", f"- Tags: {', '.join(doc.get('containerTags') or doc.get('container_tags') or [])}", '']
+        if doc.get('summary'):
+            lines += ['Summary:', '', str(doc.get('summary')), '']
+        content = doc_content(doc)
+        if content:
+            lines += ['Content:', '', str(content), '']
+    digest_path.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
+
+    skill_dir = workspace / 'skills' / 'supermemory-imports'
+    ref_dir = skill_dir / 'references'
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    skill_md = skill_dir / 'SKILL.md'
+    if not skill_md.exists():
+        skill_md.write_text('---\nname: supermemory-imports\ndescription: Imported Supermemory knowledge deltas for Hermes reference.\n---\n\n# Supermemory Imports\n\nThis skill stores references generated by the HermesiOS Supermemory management utility. Load it when imported Supermemory deltas are relevant to the task.\n', encoding='utf-8')
+    skill_ref = ref_dir / digest_path.name
+    skill_ref.write_text(digest_path.read_text(encoding='utf-8'), encoding='utf-8')
+
+    appended = append_memory_entry(workspace, f"Supermemory delta imported at {imported_at}: {len(docs)} documents. Digest: {digest_path}. Skill reference: {skill_ref}.")
+    state.update({'last_import_started_at': imported_at, 'last_import_digest_path': str(digest_path), 'last_import_skill_reference_path': str(skill_ref), 'last_import_count': len(docs), 'last_import_memory_entry_appended': appended})
+    save_state(state_path, state)
+    return {
+        'workspacePath': str(workspace), 'resolvedWorkspacePath': str(workspace), 'success': True,
+        'status': f'Imported {len(docs)} Supermemory documents into Hermes memory/skill reference files.' + ('' if appended else ' Memory summary was not appended because MEMORY.md is at capacity.'),
+        'exportedCount': 0, 'importedCount': len(docs), 'exportPath': str(export_path), 'digestPath': str(digest_path), 'skillReferencePath': str(skill_ref),
+        'previousExportStartedAt': state.get('previous_export_started_at') or '', 'exportStartedAt': state.get('last_export_started_at') or '', 'error': None
+    }
+
+
+def main():
+    mode, workspace = sys.argv[1], Path(sys.argv[2]).expanduser().resolve()
+    try:
+        result = export_delta(workspace) if mode == 'export' else import_delta(workspace)
+    except Exception as exc:
+        result = {'workspacePath': str(workspace), 'resolvedWorkspacePath': str(workspace), 'success': False, 'status': 'Supermemory operation failed.', 'exportedCount': 0, 'importedCount': 0, 'exportPath': '', 'digestPath': '', 'skillReferencePath': '', 'previousExportStartedAt': '', 'exportStartedAt': '', 'error': str(exc)}
+        print(json.dumps(result, ensure_ascii=False))
+        sys.exit(1)
+    print(json.dumps(result, ensure_ascii=False))
+
+if __name__ == '__main__':
+    main()
+"""#
     }
 
     private func operationResult(workspacePath: String, workspaceURL: URL, success: Bool, error: String?) -> MemoryOperationResult {

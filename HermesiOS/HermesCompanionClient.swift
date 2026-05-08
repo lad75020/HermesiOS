@@ -761,6 +761,25 @@ struct HermesCompanionSetMemoryEnvResult: Codable, Equatable {
     let value: String
 }
 
+struct HermesCompanionSupermemoryManagementPayload: Codable {
+    let workspacePath: String
+}
+
+struct HermesCompanionSupermemoryManagementResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let success: Bool
+    let status: String
+    let exportedCount: Int
+    let importedCount: Int
+    let exportPath: String
+    let digestPath: String
+    let skillReferencePath: String
+    let previousExportStartedAt: String
+    let exportStartedAt: String
+    let error: String?
+}
+
 struct HermesCompanionProfileInfo: Codable, Identifiable, Equatable {
     let id: String
     let name: String
@@ -1153,6 +1172,8 @@ final class HermesCompanionRuntimeSession {
     var memoryUserFilePath = ""
     var memoryConfigPath = ""
     var memoryEnvFilePath = ""
+    var supermemoryLastResult: HermesCompanionSupermemoryManagementResult?
+    var supermemoryOperationOutput = ""
     var schedules: [HermesCompanionScheduleCronJob] = []
     var schedulesFilePath = ""
     var profiles: [HermesCompanionProfileInfo] = []
@@ -2298,6 +2319,53 @@ final class HermesCompanionRuntimeSession {
             self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
             self.connectionStatus = "Memory Provider Key Saved"
         }
+    }
+
+
+    func exportSupermemoryDelta(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Exporting Supermemory"
+            let result: HermesCompanionSupermemoryManagementResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "export_supermemory_delta",
+                payload: HermesCompanionSupermemoryManagementPayload(workspacePath: settings.hermesWorkspacePath)
+            )
+            self.applySupermemoryManagement(result, fallbackStatus: "Supermemory Exported")
+        }
+    }
+
+    func importSupermemoryDelta(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Importing Supermemory"
+            let result: HermesCompanionSupermemoryManagementResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "import_supermemory_delta",
+                payload: HermesCompanionSupermemoryManagementPayload(workspacePath: settings.hermesWorkspacePath)
+            )
+            self.applySupermemoryManagement(result, fallbackStatus: "Supermemory Imported")
+            self.refreshMemoryConfig(settings: settings, identityState: identityState)
+        }
+    }
+
+    private func applySupermemoryManagement(_ result: HermesCompanionSupermemoryManagementResult, fallbackStatus: String) {
+        supermemoryLastResult = result
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+        let parts = [
+            result.status,
+            result.exportPath.isEmpty ? nil : "Export: \(result.exportPath)",
+            result.digestPath.isEmpty ? nil : "Digest: \(result.digestPath)",
+            result.skillReferencePath.isEmpty ? nil : "Skill ref: \(result.skillReferencePath)",
+            result.error
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        supermemoryOperationOutput = parts.joined(separator: "\n")
+        if let error = result.error, !error.isEmpty {
+            lastErrorMessage = error
+        } else if result.success {
+            lastErrorMessage = ""
+        }
+        connectionStatus = result.success ? fallbackStatus : "Supermemory Operation Failed"
     }
 
     private func applyMemoryOperation(_ result: HermesCompanionMemoryOperationResult) {

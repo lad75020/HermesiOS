@@ -326,6 +326,8 @@ final class CompanionClientSession {
                         "write_user_profile",
                         "set_memory_provider",
                         "set_memory_env",
+                        "export_supermemory_delta",
+                        "import_supermemory_delta",
                         "list_schedules",
                         "create_schedule",
                         "remove_schedule",
@@ -788,6 +790,24 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "set_memory_env_failed", message: error.localizedDescription)
+            }
+        case "export_supermemory_delta":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The export_supermemory_delta request requires a payload.") }
+                let exportPayload = try payload.decode(SupermemoryManagementPayload.self)
+                let result = try memoryRegistry.exportSupermemoryDelta(workspacePath: exportPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "export_supermemory_delta_failed", message: error.localizedDescription)
+            }
+        case "import_supermemory_delta":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The import_supermemory_delta request requires a payload.") }
+                let importPayload = try payload.decode(SupermemoryManagementPayload.self)
+                let result = try memoryRegistry.importSupermemoryDelta(workspacePath: importPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "import_supermemory_delta_failed", message: error.localizedDescription)
             }
         case "list_schedules":
             do {

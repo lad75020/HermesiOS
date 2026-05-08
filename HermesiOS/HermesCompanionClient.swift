@@ -639,6 +639,7 @@ struct HermesCompanionMemoryFileInfo: Codable, Equatable {
     let content: String
     let exists: Bool
     let lastModified: Int?
+    let sizeOnDiskBytes: Int64?
     let entries: [HermesCompanionMemoryEntry]?
     let charCount: Int
     let charLimit: Int
@@ -669,6 +670,8 @@ struct HermesCompanionMemoryConfigResult: Codable, Equatable {
     let userFilePath: String
     let configPath: String
     let envFilePath: String
+    let configSizeOnDiskBytes: Int64?
+    let envSizeOnDiskBytes: Int64?
     let memory: HermesCompanionMemoryFileInfo
     let user: HermesCompanionMemoryFileInfo
     let stats: HermesCompanionMemoryStats
@@ -1095,7 +1098,10 @@ final class HermesCompanionRuntimeSession {
     var observabilityLogPath = HermesCompanionLogKind.errors.path
     var observabilityLoadedLineCount = 0
     var observabilityUpdatedAt: Date?
+    var isLoadingObservabilityLog = false
     var resolvedHermesWorkspacePath = ""
+
+    private var observabilityLogTask: Task<Void, Never>?
     var hermesToolsets: [HermesCompanionToolsetInfo] = []
     var toolsetsConfigPath = ""
     var hermesModels: [HermesCompanionSavedModel] = []
@@ -1581,31 +1587,67 @@ final class HermesCompanionRuntimeSession {
         resolvedHermesWorkspacePath = result.resolvedWorkspacePath
     }
 
+    private static func withTimeout<T>(seconds: UInt64, operation: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                throw URLError(.timedOut)
+            }
+            guard let result = try await group.next() else {
+                throw URLError(.timedOut)
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
     func refreshHermesLog(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        run {
-            self.connectionStatus = "Loading \(self.observabilityLogKind.label) Log"
-            let result: HermesCompanionReadLogResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "read_hermes_log",
-                payload: HermesCompanionReadLogPayload(
-                    log: self.observabilityLogKind,
-                    lineCount: self.observabilityLineCount
-                )
-            )
-            self.observabilityLogKind = result.log
-            self.observabilityLineCount = result.requestedLineCount
-            self.observabilityLogContent = result.content
-            self.observabilityLogPath = result.path
-            self.observabilityLoadedLineCount = result.loadedLineCount
-            self.observabilityUpdatedAt = result.updatedAt
-            self.connectionStatus = result.fileExists ? "\(result.label) Log Loaded" : "\(result.label) Log Missing"
+        observabilityLogTask?.cancel()
+        let log = observabilityLogKind
+        let lineCount = observabilityLineCount
+        observabilityLogTask = Task {
+            isLoadingObservabilityLog = true
+            lastErrorMessage = ""
+            connectionStatus = "Loading \(log.label) Log"
+            defer { isLoadingObservabilityLog = false }
+
+            do {
+                let result: HermesCompanionReadLogResult = try await Self.withTimeout(seconds: 20) {
+                    try await HermesCompanionSessionFactory.request(
+                        settings: settings,
+                        state: identityState,
+                        type: "read_hermes_log",
+                        payload: HermesCompanionReadLogPayload(
+                            log: log,
+                            lineCount: lineCount
+                        )
+                    )
+                }
+                guard Task.isCancelled == false else { return }
+                self.observabilityLogKind = result.log
+                self.observabilityLineCount = result.requestedLineCount
+                self.observabilityLogContent = result.content
+                self.observabilityLogPath = result.path
+                self.observabilityLoadedLineCount = result.loadedLineCount
+                self.observabilityUpdatedAt = result.updatedAt
+                self.connectionStatus = result.fileExists ? "\(result.label) Log Loaded" : "\(result.label) Log Missing"
+            } catch is CancellationError {
+                return
+            } catch {
+                self.lastErrorMessage = error.localizedDescription
+                self.connectionStatus = "Log Load Failed"
+            }
         }
     }
 
     func setHermesObservabilityLog(_ log: HermesCompanionLogKind, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         observabilityLogKind = log
         observabilityLogPath = log.path
+        observabilityLogContent = ""
+        observabilityLoadedLineCount = 0
         refreshHermesLog(settings: settings, identityState: identityState)
     }
 

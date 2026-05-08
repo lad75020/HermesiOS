@@ -39,6 +39,9 @@ struct ContentView: View {
     @State private var isResponsesCompletionUnread = false
     @State private var isChatCompletionUnread = false
     @State private var isHistorySearchCompletionUnread = false
+    @State private var isResponsesFailureUnread = false
+    @State private var isChatFailureUnread = false
+    @State private var isHistorySearchFailureUnread = false
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -111,15 +114,26 @@ struct ContentView: View {
             }
         }
         .onChange(of: responseSession.connectionStatus) { _, newValue in
-            guard newValue == "Completed" else { return }
-            isResponsesCompletionUnread = true
+            if newValue == "Completed" {
+                isResponsesFailureUnread = false
+                isResponsesCompletionUnread = true
+            } else if newValue == "Failed" {
+                isResponsesCompletionUnread = false
+                isResponsesFailureUnread = responseSession.lastErrorWasTimeoutOrNetworkLoss
+            }
         }
         .onChange(of: chatSession.connectionStatus) { _, newValue in
-            guard newValue == "Completed" else { return }
-            isChatCompletionUnread = true
+            if newValue == "Completed" {
+                isChatFailureUnread = false
+                isChatCompletionUnread = true
+            } else if newValue == "Failed" {
+                isChatCompletionUnread = false
+                isChatFailureUnread = chatSession.lastErrorWasTimeoutOrNetworkLoss
+            }
         }
         .onChange(of: dashboardHistorySearchSession.isSearching) { oldValue, newValue in
             guard oldValue, !newValue, dashboardHistorySearchSession.status != "Cancelled" else { return }
+            isHistorySearchFailureUnread = false
             isHistorySearchCompletionUnread = true
         }
     }
@@ -171,7 +185,10 @@ struct ContentView: View {
                 dashboardChannelActive: dashboardChannelActive,
                 isResponsesCompletionUnread: $isResponsesCompletionUnread,
                 isChatCompletionUnread: $isChatCompletionUnread,
-                isHistorySearchCompletionUnread: $isHistorySearchCompletionUnread
+                isHistorySearchCompletionUnread: $isHistorySearchCompletionUnread,
+                isResponsesFailureUnread: $isResponsesFailureUnread,
+                isChatFailureUnread: $isChatFailureUnread,
+                isHistorySearchFailureUnread: $isHistorySearchFailureUnread
             )
             .toolbar(.hidden, for: .navigationBar)
             .navigationSplitViewColumnWidth(min: 72, ideal: 84, max: 96)

@@ -80,6 +80,9 @@ struct WorkspaceSidebar: View {
     @Binding var isResponsesCompletionUnread: Bool
     @Binding var isChatCompletionUnread: Bool
     @Binding var isHistorySearchCompletionUnread: Bool
+    @Binding var isResponsesFailureUnread: Bool
+    @Binding var isChatFailureUnread: Bool
+    @Binding var isHistorySearchFailureUnread: Bool
 
     private func completionUnread(for section: WorkspaceSection) -> Bool {
         switch section {
@@ -94,14 +97,30 @@ struct WorkspaceSidebar: View {
         }
     }
 
-    private func clearCompletionUnread(for section: WorkspaceSection) {
+    private func failureUnread(for section: WorkspaceSection) -> Bool {
+        switch section {
+        case .responses:
+            isResponsesFailureUnread
+        case .chat:
+            isChatFailureUnread
+        case .history:
+            isHistorySearchFailureUnread
+        case .office, .settings, .runtime:
+            false
+        }
+    }
+
+    private func clearUnreadState(for section: WorkspaceSection) {
         switch section {
         case .responses:
             isResponsesCompletionUnread = false
+            isResponsesFailureUnread = false
         case .chat:
             isChatCompletionUnread = false
+            isChatFailureUnread = false
         case .history:
             isHistorySearchCompletionUnread = false
+            isHistorySearchFailureUnread = false
         case .office, .settings, .runtime:
             break
         }
@@ -127,21 +146,22 @@ struct WorkspaceSidebar: View {
 
             List(WorkspaceSection.allCases) { section in
                 let hasUnreadCompletion = completionUnread(for: section)
+                let hasUnreadFailure = failureUnread(for: section)
                 Button {
                     selection = section
-                    clearCompletionUnread(for: section)
+                    clearUnreadState(for: section)
                 } label: {
                     Image(systemName: section.systemImage)
                         .font(.title3.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 36)
-                        .foregroundStyle(hasUnreadCompletion ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
+                        .foregroundStyle(hasUnreadFailure || hasUnreadCompletion ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
                         .background(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(hasUnreadCompletion ? Color.green.opacity(0.85) : Color.clear)
+                                .fill(hasUnreadFailure ? Color.igDestructive.opacity(0.9) : (hasUnreadCompletion ? Color.green.opacity(0.85) : Color.clear))
                         )
                         .contentShape(Rectangle())
                         .accessibilityLabel(section.title)
-                        .accessibilityHint(hasUnreadCompletion ? "Completed. Tap to mark as seen." : "")
+                        .accessibilityHint(hasUnreadFailure ? "Request failed. Tap to clear the failure indicator." : (hasUnreadCompletion ? "Completed. Tap to mark as seen." : ""))
                 }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
@@ -161,22 +181,16 @@ struct WorkspaceSidebar: View {
             Button {
                 isShowingStreamDebugJSON = true
             } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: isShowingStreamDebugJSON ? "checkmark.square.fill" : "square")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(isShowingStreamDebugJSON ? Color.igActionBlue : Color.hermesSecondaryText)
-                    Image(systemName: "ladybug")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color.hermesSecondaryText)
-                }
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .contentShape(Rectangle())
+                Image(systemName: "ladybug")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 10)
             .padding(.vertical, 12)
-            .accessibilityLabel("Debug stream JSON checkbox")
-            .accessibilityValue(isShowingStreamDebugJSON ? "Checked" : "Unchecked")
+            .accessibilityLabel("Debug stream JSON")
             .accessibilityHint("Shows a modal with raw JSON streamed by the Hermes Responses and Chat Completions APIs")
         }
         .background(Color.hermesCanvas)

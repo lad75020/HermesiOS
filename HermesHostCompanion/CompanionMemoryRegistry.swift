@@ -50,6 +50,8 @@ final class CompanionMemoryRegistry {
             userFilePath: userURL(for: workspaceURL).path,
             configPath: configURL(for: workspaceURL).path,
             envFilePath: envURL(for: workspaceURL).path,
+            configSizeOnDiskBytes: sizeOnDisk(for: configURL(for: workspaceURL)),
+            envSizeOnDiskBytes: sizeOnDisk(for: envURL(for: workspaceURL)),
             memory: memory,
             user: user,
             stats: readStats(workspaceURL: workspaceURL),
@@ -150,20 +152,37 @@ final class CompanionMemoryRegistry {
     private func readMemoryFile(workspaceURL: URL) -> MemoryFileInfo {
         let file = readFile(memoryURL(for: workspaceURL))
         let entries = parseMemoryEntries(file.content)
-        return MemoryFileInfo(content: file.content, exists: file.exists, lastModified: file.lastModified, entries: entries, charCount: file.content.count, charLimit: memoryCharLimit)
+        return MemoryFileInfo(content: file.content, exists: file.exists, lastModified: file.lastModified, sizeOnDiskBytes: file.sizeOnDiskBytes, entries: entries, charCount: file.content.count, charLimit: memoryCharLimit)
     }
 
     private func readUserFile(workspaceURL: URL) -> MemoryFileInfo {
         let file = readFile(userURL(for: workspaceURL))
-        return MemoryFileInfo(content: file.content, exists: file.exists, lastModified: file.lastModified, entries: nil, charCount: file.content.count, charLimit: userCharLimit)
+        return MemoryFileInfo(content: file.content, exists: file.exists, lastModified: file.lastModified, sizeOnDiskBytes: file.sizeOnDiskBytes, entries: nil, charCount: file.content.count, charLimit: userCharLimit)
     }
 
-    private func readFile(_ url: URL) -> (content: String, exists: Bool, lastModified: Int?) {
-        guard FileManager.default.fileExists(atPath: url.path) else { return ("", false, nil) }
+    private func readFile(_ url: URL) -> (content: String, exists: Bool, lastModified: Int?, sizeOnDiskBytes: Int64?) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return ("", false, nil, nil) }
         let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         let modified = (attrs?[.modificationDate] as? Date).map { Int($0.timeIntervalSince1970) }
-        return (content, true, modified)
+        return (content, true, modified, sizeOnDisk(for: url))
+    }
+
+    private func sizeOnDisk(for url: URL) -> Int64? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        if let values = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .fileSizeKey]) {
+            if let allocated = values.totalFileAllocatedSize ?? values.fileAllocatedSize {
+                return Int64(allocated)
+            }
+            if let fileSize = values.fileSize {
+                return Int64(fileSize)
+            }
+        }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        if let size = attrs?[.size] as? NSNumber {
+            return size.int64Value
+        }
+        return nil
     }
 
     private func parseMemoryEntries(_ content: String) -> [MemoryEntry] {

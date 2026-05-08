@@ -496,9 +496,16 @@ struct HermesResponsesConsoleView: View {
                                 .id(message.id)
                         }
                     }
+
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.transcriptBottomID)
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 12)
+            }
+            .onAppear {
+                scrollToLatest(proxy, animated: false)
             }
             .onChange(of: responseSession.entries.count) { _, _ in
                 scrollToLatest(proxy)
@@ -626,10 +633,20 @@ struct HermesResponsesConsoleView: View {
         .background(.ultraThinMaterial)
     }
 
-    private func scrollToLatest(_ proxy: ScrollViewProxy) {
-        guard let lastID = responseSession.entries.last?.id else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(lastID, anchor: .bottom)
+    private static let transcriptBottomID = "responses-transcript-bottom"
+
+    private func scrollToLatest(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(Self.transcriptBottomID, anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo(Self.transcriptBottomID, anchor: .bottom)
+                DispatchQueue.main.async {
+                    proxy.scrollTo(Self.transcriptBottomID, anchor: .bottom)
+                }
+            }
         }
     }
 
@@ -1058,9 +1075,16 @@ struct HermesChatConsoleView: View {
                             .id(message.id)
                         }
                     }
+
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.transcriptBottomID)
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 12)
+            }
+            .onAppear {
+                scrollToLatest(proxy, animated: false)
             }
             .onChange(of: chatSession.entries.count) { _, _ in
                 scrollToLatest(proxy)
@@ -1188,10 +1212,20 @@ struct HermesChatConsoleView: View {
         .background(.ultraThinMaterial)
     }
 
-    private func scrollToLatest(_ proxy: ScrollViewProxy) {
-        guard let lastID = chatSession.entries.last?.id else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(lastID, anchor: .bottom)
+    private static let transcriptBottomID = "chat-transcript-bottom"
+
+    private func scrollToLatest(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(Self.transcriptBottomID, anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo(Self.transcriptBottomID, anchor: .bottom)
+                DispatchQueue.main.async {
+                    proxy.scrollTo(Self.transcriptBottomID, anchor: .bottom)
+                }
+            }
         }
     }
 

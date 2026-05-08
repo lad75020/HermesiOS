@@ -1,267 +1,348 @@
 # HermesiOS
 
-HermesiOS is the SwiftUI iOS/iPadOS companion app for Laurent's Hermes Agent environment. It provides mobile access to Hermes API chat surfaces, dashboard history, host-side Hermes Agent configuration, and the Hermes Office web experience.
+HermesiOS is a SwiftUI iOS/iPadOS companion for Laurent's Hermes Agent setup. It provides mobile access to Ask Hermes, Chat with Hermes, dashboard history search, host-side Hermes runtime settings, macOS service controls, and the Hermes Office / Claw3D web experience.
+
+The repository contains two apps:
 
-The app is intentionally split into two sides:
+- `HermesiOS/`: the iOS/iPadOS client.
+- `HermesHostCompanion/`: the macOS helper that performs trusted host operations over an authenticated WebSocket.
 
-- HermesiOS: the iOS/iPadOS SwiftUI client in `HermesiOS/`.
-- HermesHostCompanion: the macOS helper in `HermesHostCompanion/` that performs trusted host operations over an authenticated WebSocket protocol.
+Host file edits, service controls, git operations, and secret-aware configuration changes should go through HermesHostCompanion. The iOS app should not directly mutate arbitrary macOS files.
 
-Most host file edits, service controls, git operations, and secret-aware configuration changes must go through HermesHostCompanion. The iOS app should not directly read or mutate arbitrary macOS files.
+## Features
+
+- Ask Hermes via `/v1/responses`, with up to four parallel independent screens.
+- Chat with Hermes via `/v1/chat/completions`.
+- Profile selection through `GET /v1/profiles` and `X-Hermes-Profile`.
+- Prompt attachments for images, documents, text, and source files.
+- Dashboard-backed history search and session resume actions.
+- Agent Runtime panels for memory, providers, models, profiles, gateway/messaging, tools, MCP servers, skills, schedules, observability, allowlisted targets, and knowledge erasure.
+- Settings for Hermes API, Host Companion, macOS service controls, Hermes installation status/update, theme, and Office URL.
+- Office tab with a persisted Claw3D WebView On/Off switch.
+- iPad sidebar status/completion indicators and app-wide API/Mac/Dashboard health LEDs.
 
-## Main product areas
+## Installation and deployment
 
-### Ask Hermes and Chat
+This section is intentionally detailed. HermesiOS is only fully functional when the iOS app, Hermes Agent, the Hermes API server, the dashboard, HermesHostCompanion, Tailscale Serve, and the Office/Claw3D bridge are all configured consistently.
 
-HermesiOS exposes both OpenAI-compatible Hermes API surfaces:
+### 1. Prerequisites
 
-- `/v1/responses` through the Ask Hermes / Responses console.
-- `/v1/chat/completions` through the Chat console.
+On the Mac host:
 
-Current behavior and conventions:
+1. Install Xcode and open this project once so signing and simulator runtimes are available.
+2. Install Homebrew, Node.js, npm, Python 3.11, Git, and Tailscale.
+3. Install and configure Hermes Agent using the official quickstart:
+   https://hermes-agent.nousresearch.com/docs/getting-started/quickstart
+4. Install Hermes Agent in the expected workspace, normally `~/.hermes/hermes-agent`.
+5. Run the Hermes setup wizard and configure at least one provider/model:
+   `hermes setup`
+6. Verify Hermes itself:
+   `hermes doctor`
+   `hermes status --all`
+7. Make sure the Mac and the iPhone/iPad are on the same Tailscale tailnet.
 
-- The app uses Hermes profiles as the user-facing execution context selector, not raw provider/model selection per request.
-- Profiles come from `GET /v1/profiles`.
-- Requests send the selected profile through `X-Hermes-Profile`.
-- The request `model` remains the Hermes API compatibility id, normally `hermes-agent` unless centralized elsewhere.
-- The selected profile is locked into a session once a request starts. Switching profile should start a fresh session or clear continuation state.
-- Chat and Responses can resume stored Hermes sessions where server support exists; use the persisted Hermes `SessionDB` id as the universal resume key, not transient TUI runtime ids or `resp_...` ids.
-- Ask Hermes supports up to four parallel Responses screens. The `+` control creates a new screen, numbered title-area buttons switch between screens, and each screen owns its own transcript, selected profile/session state, attachments, and request lifecycle.
-- Keep Ask Hermes busy/disabled state scoped to the active screen where possible. A sending screen must not block unrelated screens except for shared global actions that truly cannot run concurrently.
+### 2. Required local services and ports
 
-### Prompt attachments
+The current app expects these services to exist on the Mac host:
 
-The prompt composers support local attachments:
+| Purpose | Local endpoint | Tailscale endpoint used by iOS | Required for |
+| --- | --- | --- | --- |
+| Hermes API server | `http://127.0.0.1:8642/v1` | `https://mac-studio.tail4d2ab4.ts.net:8642/v1` | Ask Hermes, Chat, profiles, status LED |
+| Hermes dashboard | `http://127.0.0.1:9119` | `https://mac-studio.tail4d2ab4.ts.net:9119` | History/search/session resume |
+| Dashboard host-rewriting proxy | `http://127.0.0.1:9120` | exposed as dashboard `:9119` | Tailscale dashboard access without Host-header errors |
+| Hermes Office / Studio | `http://127.0.0.1:9116` | `https://mac-studio.tail4d2ab4.ts.net:9116` | Office tab and Claw3D WebView |
+| HermesHostCompanion WebSocket | `ws://127.0.0.1:9312/ws` in Laurent's current setup; code default is `ws://127.0.0.1:9112/ws` | `wss://mac-studio.tail4d2ab4.ts.net:9312/ws` | Agent Runtime, Settings service controls, Hermes installation controls |
+| Claw3D Hermes adapter | `ws://127.0.0.1:18790` | proxied through Office at `:9116/api/gateway/ws` | Claw3D/OpenClaw bridge |
+| OpenClaw gateway | `ws://127.0.0.1:18789` | optional root Tailscale Serve endpoint | OpenClaw gateway compatibility |
 
-- A paperclip button sits next to the prompt area.
-- Selected attachments appear as removable chips.
-- Images are sent as inline base64 data URLs in OpenAI/Hermes multimodal image shapes.
-- Text, source, and document files are appended to prompt text with filename, MIME, size metadata, and content when possible.
-- The Hermes API server currently accepts inline images but rejects `file` / `input_file` parts, so document-style attachments are represented in prompt text rather than sent as file parts.
+Open or serve these TCP ports through Tailscale for full iOS functionality:
 
-### Console bubbles and copy affordances
+- `8642`: Hermes OpenAI-compatible API server.
+- `9119`: public dashboard URL, forwarded to the local host-rewriting proxy on `127.0.0.1:9120`.
+- `9116`: Hermes Office / Studio web app.
+- `9312`: HermesHostCompanion WebSocket API in Laurent's current deployment.
+- Optional: `9120` if you want direct access to the dashboard proxy for debugging.
+- Optional: root HTTPS/443 or the OpenClaw gateway endpoint if you use OpenClaw directly from other devices.
 
-The Chat and Responses consoles share bubble styling helpers where possible. Copy controls should copy the real adjacent message content to the platform pasteboard (`UIPasteboard` on iOS, `NSPasteboard` where relevant), not a rendered approximation.
+Legacy note: older Host Companion builds used `9112` for API and `9212` for enrollment. Current Host Companion authentication is a single 4096-character token over plain WebSocket behind Tailscale Serve; no TLS certificates, QR enrollment, pairing IDs, or enrollment port should be needed.
 
-### Streaming debug and observability events
+### 3. Hermes Agent API server and gateway
 
-Hermes chat-completions streaming can emit Hermes-specific debug SSE events in addition to normal OpenAI text chunks:
+HermesiOS talks to Hermes through the gateway's API Server platform.
 
-- `hermes.tool.progress`
-- `Hermes.reasoning.summary`
-- `Hermes.tool.output`
+1. Configure Hermes Agent:
+   `hermes setup`
+2. Enable/configure the API Server platform:
+   `hermes gateway setup`
+3. Set an API key in `~/.hermes/.env` if the API server binds beyond loopback. The iOS app must use the same value in Settings → Hermes API → Bearer token.
+4. Install and start the macOS LaunchAgent:
+   `hermes gateway install`
+   `hermes gateway start`
+5. Verify the service:
+   `hermes gateway status`
+   `lsof -nP -iTCP:8642 -sTCP:LISTEN`
+6. Verify from the Mac:
+   `curl -i http://127.0.0.1:8642/v1/models`
+   A `401 Invalid API key` still proves the route is reachable; a `200` requires the configured bearer token.
 
-Normal assistant text must remain in unnamed OpenAI-compatible `data:` chunks. Debug information should not be injected into `delta.content`.
+LaunchAgent:
 
-Chat must keep tool/event/debug logs out of the assistant bubble. Stream events should update a concise status pill instead, with a meaningful label capped at 40 characters. The chat SSE handler should give the UI a chance to repaint after status updates before appending further logs or assistant content.
+- Label: `ai.hermes.gateway`
+- Plist: `~/Library/LaunchAgents/ai.hermes.gateway.plist`
+- Logs: `~/.hermes/logs/gateway.log` and `~/.hermes/logs/gateway.error.log`
+- Program: `~/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --replace`
 
-## History and dashboard search
+In HermesiOS Settings:
 
-HermesiOS includes dashboard-backed History and search views for Hermes sessions.
+- API base URL on simulator: `http://127.0.0.1:8642/v1` or `http://localhost:8642/v1`.
+- API base URL on device: `https://mac-studio.tail4d2ab4.ts.net:8642/v1`.
+- Bearer token: the value of `API_SERVER_KEY`, if configured.
+- The URL may be entered with or without `/v1`; the app normalizes bare origins for API requests, but using `/v1` is clearer.
 
-Important conventions:
+### 4. Tailscale Serve
 
-- Dashboard HTTP JSON endpoints live in the Hermes dashboard server, not the OpenAI-compatible API server.
-- Dashboard `/api/*` routes require the injected `X-Hermes-Session-Token`.
-- Native clients can fetch `/`, extract `window.__HERMES_SESSION_TOKEN__`, then call the JSON endpoints.
-- Full-conversation search expands grouped `SessionDB.search_messages()` hits into session summaries and messages.
-- Resume actions should use the persisted Hermes `session_id`.
-- Resume into Responses may require explicit bridge support such as `X-Hermes-Session-Id`, synthesized response-store state, or client-supplied conversation history.
-- Friendly titles should be propagated into destination session pills from `title`, `display_title`, `friendly_name`, `name`, `summary`, or metadata variants before falling back to prompt/session-id labels.
+Tailscale Serve must forward the Mac's tailnet HTTPS endpoints to the local services.
 
-History search resume controls should be destination-tab aware:
+Typical commands:
 
-- Disable Resume in Responses while the Responses session is sending.
-- Disable Resume in Chat while the Chat session is sending.
-- Guard both expanded-row buttons and compact menu actions at handler level to prevent races.
+```sh
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg --https 8642 http://127.0.0.1:8642
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg --https 9116 http://127.0.0.1:9116
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg --https 9119 http://127.0.0.1:9120
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg --https 9312 http://127.0.0.1:9312
+```
 
-## Sidebar completion indicators
+Optional debug route:
 
-On iPad, the sidebar can show completion/attention indicators:
+```sh
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg --https 9120 http://127.0.0.1:9120
+```
 
-- Store unread/completion state in `ContentView`.
-- Set indicators when relevant sessions complete.
-- Clear the green state when the sidebar row is tapped.
-- Preserve the selected row background; only the icon background should turn green.
-- Ask Hermes and Chat indicators are driven by their session `connectionStatus == "Completed"` transitions.
-- History search indicators are driven by `isSearching` transitioning from `true` to `false`, unless status is `Cancelled`.
+Verify:
 
-## Hermes Office
+```sh
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve status
+lsof -nP -iTCP:8642 -iTCP:9116 -iTCP:9119 -iTCP:9120 -iTCP:9312 -sTCP:LISTEN
+```
 
-`HermesOfficeView` embeds the Hermes Office / Studio web experience.
+Expected important routes:
 
-Current behavior:
+- `https://mac-studio.tail4d2ab4.ts.net:8642` → `http://127.0.0.1:8642`
+- `https://mac-studio.tail4d2ab4.ts.net:9116` → `http://127.0.0.1:9116`
+- `https://mac-studio.tail4d2ab4.ts.net:9119` → `http://127.0.0.1:9120`
+- `https://mac-studio.tail4d2ab4.ts.net:9312` → `http://127.0.0.1:9312`
 
-- The Office header includes a persisted `Claw3D WebView` switch next to the title.
-- The switch uses `hermes.office.webView.enabled` and defaults to on.
-- When the switch is off, the Office tab shows a disabled-state placeholder, reload is disabled, background preload is skipped, and the shared `WKWebView` is stopped and blanked so Claw3D is cleared from memory.
-- Turning the switch back on triggers a fresh reload using the configured Office URL.
-- The Office URL remains configured in Settings through `hermes.office.url`, defaulting to `http://localhost:9116`.
+If the app gets `502` from a Tailscale URL, the local backend is not reachable from Tailscale Serve. If `/v1/models` returns `401`, the network path is working and authentication is the remaining issue.
 
-Environment notes:
+### 5. Hermes dashboard and dashboard proxy
 
-- The dashboard is served through Tailscale at `https://mac-studio.tail4d2ab4.ts.net:9119`.
-- On Laurent's Mac, that URL reaches a Host-rewriting proxy LaunchAgent, `fr.dubertrand.hermes-dashboard-host-proxy`, on `127.0.0.1:9120`, forwarding to dashboard `127.0.0.1:9119`.
-- Hermes Office / Claw3D gateway traffic is not the same as the OpenAI-compatible API server.
-- The Claw3D Hermes adapter LaunchAgent is `fr.dubertrand.hermes-office-adapter` and listens on `127.0.0.1:18790`.
-- Studio proxies the adapter at `:9116/api/gateway/ws`.
+History search uses the Hermes dashboard server, not the OpenAI-compatible API server. Dashboard `/api/*` routes require the session token injected into the dashboard HTML; the iOS app fetches `/`, extracts `window.__HERMES_SESSION_TOKEN__`, then calls the JSON search endpoint.
 
-Do not point Claw3D gateway fields at the HTTP API server on port `8642`. Use the Hermes Office adapter WebSocket path instead.
+Required pieces:
 
-## Host Companion architecture
+1. Start the Hermes dashboard locally on `127.0.0.1:9119`:
+   `~/.hermes/hermes-agent/venv/bin/python3 ~/.local/bin/hermes dashboard --host 127.0.0.1 --port 9119 --no-open`
+2. Start the host-rewriting proxy on `127.0.0.1:9120` so Tailscale dashboard requests do not fail Host-header validation:
+   `~/.hermes/hermes-agent/venv/bin/python3 ~/.hermes/scripts/hermes_dashboard_host_proxy.py`
+3. Prefer the LaunchAgent below for persistence instead of leaving those commands in a terminal.
+4. Forward Tailscale `:9119` to `http://127.0.0.1:9120`.
+5. Set the History dashboard URL in HermesiOS to `https://mac-studio.tail4d2ab4.ts.net:9119`.
 
-Host Companion is the trusted macOS bridge for operations the iOS app cannot safely perform directly.
+LaunchAgent for the proxy:
 
-Primary files:
+- Label: `fr.dubertrand.hermes-dashboard-host-proxy`
+- Plist: `~/Library/LaunchAgents/fr.dubertrand.hermes-dashboard-host-proxy.plist`
+- Script: `~/.hermes/scripts/hermes_dashboard_host_proxy.py`
+- Local proxy: `127.0.0.1:9120`
+- Local dashboard backend: `127.0.0.1:9119`
+- Logs: `~/.hermes/logs/hermes-dashboard-host-proxy.log` and `~/.hermes/logs/hermes-dashboard-host-proxy.err.log`
 
-- `HermesHostCompanion/CompanionProtocol.swift`: shared Codable request/result types.
-- `HermesHostCompanion/CompanionServer.swift`: WebSocket dispatch and advertised capabilities.
-- `HermesiOS/HermesCompanionClient.swift`: matching iOS client models and request helpers.
-- Focused registries such as `CompanionMemoryRegistry`, `CompanionProviderRegistry`, `CompanionProfileRegistry`, `CompanionGatewayRegistry`, `CompanionScheduleRegistry`, `CompanionGitRegistry`, `CompanionTargetRegistry`, and related registry files.
+Verify:
 
-When adding a host-backed feature:
+```sh
+launchctl print gui/$(id -u)/fr.dubertrand.hermes-dashboard-host-proxy
+lsof -nP -iTCP:9119 -iTCP:9120 -sTCP:LISTEN
+curl -I http://127.0.0.1:9120/
+curl -I https://mac-studio.tail4d2ab4.ts.net:9119/
+```
 
-1. Add Codable payload/result types to the shared protocol.
-2. Encapsulate host logic in a focused registry.
-3. Advertise the capability in `CompanionServer` hello/capabilities.
-4. Dispatch the request in `CompanionServer`.
-5. Add matching iOS client structs and methods.
-6. Render the SwiftUI panel using the client state.
-7. Verify the Host Companion with `swiftc -typecheck HermesHostCompanion/*.swift`.
-8. Verify the iOS side with an iPhone/iPad simulator SDK typecheck or Xcode build.
+### 6. HermesHostCompanion for host operations
 
-### Enrollment and TLS
+HermesHostCompanion is required for Agent Runtime panels, macOS service controls, allowlisted file edits, Hermes installation status/update, and host log access.
 
-Enrollment uses a pinned Host Companion certificate. If enrollment fails with a generic TLS error:
+1. In Xcode, build the `HermesHostCompanion` scheme.
+2. Launch the built macOS app.
+3. In the Host Companion window, set:
+   - Advertised host: `mac-studio.tail4d2ab4.ts.net` for physical devices, or `127.0.0.1` for simulator-only use.
+   - API port: `9312` for Laurent's current Tailscale setup, unless you intentionally use the code default `9112` locally.
+4. Click Apply Network Target.
+5. Start or restart the server.
+6. Copy the displayed API URL into HermesiOS Settings → Host Companion.
+7. Copy the displayed 4096-character token into HermesiOS Settings → Host Companion → Authentication token.
+8. Do not paste the token into logs, README files, screenshots, or commits.
 
-- Verify URL and port ownership before changing certificate logic.
-- Stale `wss://...:9113/enroll` settings can hit Tailscale/IPNExtension and present a Let's Encrypt tailnet cert rather than the pinned Host Companion cert.
-- The actual companion enrollment listener has used `:9212`, while API traffic used `:9112`.
-- Check `lsof`, app defaults, PKI cert/fingerprint, and unified logs before patching trust code.
+Expected URLs:
 
-## Agent Runtime panels
+- Simulator/local: `ws://127.0.0.1:9312/ws` or `ws://127.0.0.1:9112/ws`, depending on the configured port.
+- Physical device through Tailscale: `wss://mac-studio.tail4d2ab4.ts.net:9312/ws`.
+
+Verify on the Mac:
 
-The Agent Runtime area mirrors Hermes Desktop configuration surfaces through Host Companion APIs.
+```sh
+lsof -nP -iTCP:9312 -sTCP:LISTEN
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve status | grep 9312
+```
 
-Current major panels and concepts:
+Host Companion currently uses token authentication only. If an old README, setting, or QR code mentions `wss://...:9113/enroll`, `9212/enroll`, pinned certificates, fingerprints, CAs, or enrollment IDs, treat it as stale and replace it with the WebSocket URL plus token flow.
 
-- Memory: edits `memories/MEMORY.md` and `memories/USER.md`, preserving `§` delimiters and size limits.
-- Providers: reads/writes provider environment and config safely; secret values are write-only and should never be echoed back to iOS logs or UI.
-- Models: manages saved model inventory and runtime routing separately. Runtime routing belongs in `config.yaml` slots such as `model`, `delegation`, and `auxiliary`, not just `models.json`.
-- Profiles: lists/creates/edits/deletes/activates Hermes profiles. Default profile lives at `HERMES_HOME`; named profiles live under `profiles/<name>/`.
-- Gateway: shows config/env, platform toggles, process status, and service controls without exposing secrets.
-- Tools/toolsets: lists and toggles Hermes toolsets through host-side config.
-- MCP servers: manages MCP server definitions through Host Companion.
-- Skills: lists and toggles Hermes skills.
-- Knowledge Eraser: uses a two-phase scan/review/erase workflow for memory/profile/skill knowledge deletion. Scans cover `memories/MEMORY.md`, `memories/USER.md`, and text-oriented files under `skills/`; erase actions must stay Host Companion mediated and should not bypass the review step.
-- Schedules: manages Hermes cron schedules and trigger/pause/resume/remove actions.
-- Observability: reads bounded host logs for diagnostics.
-- Allowlisted Targets: displays targets from Host Companion's persisted target registry, not necessarily from Settings → Host Companion → Hermes workspace path.
+### 7. macOS services managed from HermesiOS Settings
 
-Important runtime-panel rules:
+The Settings tab can query/start/stop/restart these allowlisted services through Host Companion:
 
-- Mirror desktop semantics when possible.
-- Do not use direct iOS file access for host Hermes config.
-- Use allowlists for writable env keys.
-- Preserve unrelated lines and comments when editing `.env` files.
-- Avoid logging or summarizing actual secret values.
-- For YAML validation, prefer PyYAML from the workspace venv, then the default Hermes venv, then system Python. If PyYAML is unavailable, skip strict validation rather than fabricating YAML errors.
+| Service ID | Display name | Control method |
+| --- | --- | --- |
+| `hermesd` | Hermes Gateway / API Server | `hermes gateway status/start/stop/restart` |
+| `hermes-dashboard` | Hermes Dashboard | LaunchAgent `fr.dubertrand.hermes-dashboard-host-proxy` |
+| `claw3d-adapter` | Claw3D Hermes Adapter | LaunchAgent `fr.dubertrand.hermes-office-adapter` |
+| `openclaw-gateway` | OpenClaw Gateway | LaunchAgent `ai.openclaw.gateway` |
 
-## Settings → Hermes Installation
+Verify all service definitions exist:
 
-The Settings tab contains a Hermes Installation section for inspecting and updating the host Hermes Agent checkout.
-
-Core behavior:
-
-- Status compares the local branch with official Hermes Agent main, not arbitrary `origin/main`.
-- Official upstream is fetched directly from `https://github.com/NousResearch/hermes-agent.git` into `refs/remotes/hermes-official/main`.
-- The current local branch is displayed so Laurent can see which local Hermes Agent change branch is active.
-- Pending update state is stored in local git config keys such as:
-  - `hermesios.pendingUpdateBranch`
-  - `hermesios.pendingUpdateCommit`
-  - `hermesios.pendingUpdateConflicts`
-  - `hermesios.lastUpdateOutput`
-
-Update workflow:
-
-1. Before fetching official main, the Hermes Update button preserves local working-tree changes on the current local branch.
-2. If the target repo is dirty, the companion requires a non-detached branch, runs `git add -A`, and commits with `chore: save local changes before Hermes update`.
-3. It then asserts the working tree is clean and no merge is in progress.
-4. It fetches official main into `refs/remotes/hermes-official/main`.
-5. It probes conflicts with `git merge-tree --write-tree` without touching the working tree.
-6. It persists pending review state and disables the update button until the pending update is resolved.
-
-Merge workflow:
-
-- If no conflicts were reported, `Merge Reviewed Update` performs a real merge of the pinned official commit after requiring a clean tree, no merge in progress, and matching branch.
-- If conflicts were reported, `Review Conflicts with Hermes` is enabled instead.
-
-Conflict review workflow:
-
-1. The companion starts a real `git merge --no-ff --no-commit <pending-official-commit>`.
-2. It enumerates unresolved files with `git diff --name-only --diff-filter=U`.
-3. For each conflicted file, it runs `hermes chat -q` from the Hermes Agent repo with the required prompt:
-   `Merge those two files in git conflict. They belong to the hermes agent source code. Review the merged file for syntax correctness. Run relevant tests on the hermes agent`
-4. The prompt also includes the file path, the `HEAD:<file>` local branch version, and the pending official commit version.
-5. After each agent run, the companion verifies conflict markers are gone, stages the file, checks that no unresolved conflicts remain, commits the merge, and clears pending state.
-
-This workflow is implemented primarily in `CompanionGitRegistry.swift`, with protocol/client/UI wiring in `CompanionProtocol.swift`, `CompanionServer.swift`, `HermesCompanionClient.swift`, and `HermesSettingsView.swift`.
-
-## Network and service endpoints
-
-Common endpoints in Laurent's setup:
-
-- Hermes API server: `http://127.0.0.1:8642/v1` locally.
-- Tailscale API access: `https://mac-studio.tail4d2ab4.ts.net:8642/v1` when Tailscale Serve is correctly forwarding to `http://127.0.0.1:8642`.
-- Dashboard: `https://mac-studio.tail4d2ab4.ts.net:9119` through the Host-rewriting proxy.
-- Dashboard local backend: `127.0.0.1:9119`.
-- Dashboard Host-rewriting proxy: `127.0.0.1:9120`.
-- Host Companion API/enrollment ports may differ; verify with settings/defaults and `lsof` rather than assuming.
-- Hermes Office / Claw3D adapter: `127.0.0.1:18790`.
-
-When `/v1/models` returns `401 Invalid API key`, the route/backend is reachable and the issue is authentication. When Tailscale Serve returns `502`, inspect `tailscale serve status` and prefer forwarding explicitly to `http://127.0.0.1:8642` if Hermes is not listening on `::1`.
+```sh
+test -f ~/Library/LaunchAgents/ai.hermes.gateway.plist
+test -f ~/Library/LaunchAgents/fr.dubertrand.hermes-dashboard-host-proxy.plist
+test -f ~/Library/LaunchAgents/fr.dubertrand.hermes-office-adapter.plist
+test -f ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+```
+
+Check live state:
+
+```sh
+hermes gateway status
+launchctl print gui/$(id -u)/fr.dubertrand.hermes-dashboard-host-proxy
+launchctl print gui/$(id -u)/fr.dubertrand.hermes-office-adapter
+launchctl print gui/$(id -u)/ai.openclaw.gateway
+```
+
+### 8. Hermes Office, Claw3D adapter, and OpenClaw
+
+The Office tab embeds Hermes Office / Studio. It is separate from the Hermes API server.
+
+Required pieces:
+
+1. Hermes Office web app listening on `127.0.0.1:9116`:
+   `cd ~/.hermes/hermes-office && npm start`
+2. Claw3D Hermes adapter listening on `127.0.0.1:18790`:
+   `cd ~/.hermes/hermes-office && npm run hermes-adapter`
+3. Prefer the LaunchAgent below for the adapter so it survives logout/reboot.
+4. Tailscale Serve forwarding `https://mac-studio.tail4d2ab4.ts.net:9116` to `http://127.0.0.1:9116` for physical devices.
+5. HermesiOS Settings → Office URL set to:
+   - Simulator: `http://localhost:9116`
+   - Physical device: `https://mac-studio.tail4d2ab4.ts.net:9116`
+6. Office tab Claw3D WebView switch turned on when you want the WebView loaded.
+
+LaunchAgent for the adapter:
+
+- Label: `fr.dubertrand.hermes-office-adapter`
+- Plist: `~/Library/LaunchAgents/fr.dubertrand.hermes-office-adapter.plist`
+- Working directory: `~/.hermes/hermes-office`
+- Command: `npm run hermes-adapter`
+- Local adapter endpoint: `ws://127.0.0.1:18790`
+- Studio proxy path: `:9116/api/gateway/ws`
+
+OpenClaw gateway, if used:
+
+- Label: `ai.openclaw.gateway`
+- Plist: `~/Library/LaunchAgents/ai.openclaw.gateway.plist`
+- Typical local endpoint: `ws://127.0.0.1:18789`
+
+Verify:
+
+```sh
+launchctl print gui/$(id -u)/fr.dubertrand.hermes-office-adapter
+launchctl print gui/$(id -u)/ai.openclaw.gateway
+lsof -nP -iTCP:9116 -iTCP:18790 -iTCP:18789 -sTCP:LISTEN
+curl -I http://127.0.0.1:9116/
+```
+
+Do not point Claw3D gateway fields at `http://127.0.0.1:8642/v1`; that is the OpenAI-compatible HTTP API, not the Claw3D WebSocket adapter.
+
+### 9. Build and install HermesiOS
+
+1. Open `HermesiOS.xcodeproj`.
+2. Select the `HermesiOS` scheme.
+3. Build for an iOS Simulator or a signed physical device.
+4. In Settings, configure:
+   - Hermes API URL and bearer token.
+   - Dashboard URL.
+   - Host Companion WebSocket URL and token.
+   - Hermes workspace path, usually `/Volumes/WDBlack4TB/Code/HermesiOS/.hermes` for this project setup or `~/.hermes` for the default Hermes workspace.
+   - Office URL.
+5. Confirm the top status band shows reachable API, Mac Companion, and Dashboard states.
+6. Test each major tab:
+   - Ask Hermes: load profiles, send a short prompt.
+   - Chat: send a short prompt and confirm debug/tool events stay out of the assistant bubble.
+   - History: search a known term and open a session.
+   - Agent Runtime: refresh a harmless panel such as Observability or Profiles.
+   - Settings: refresh service status.
+   - Office: turn the WebView on and load the Office URL.
+
+Command-line build check:
+
+```sh
+xcodebuild -project HermesiOS.xcodeproj -scheme HermesiOS -destination 'generic/platform=iOS Simulator' build
+```
+
+Host Companion build check:
+
+```sh
+xcodebuild -project HermesiOS.xcodeproj -scheme HermesHostCompanion build
+```
+
+### 10. End-to-end deployment checklist
+
+Before considering the iOS app fully functional, verify every item:
+
+- Hermes Agent installed from the official quickstart and `hermes doctor` passes enough for the chosen provider.
+- `hermes gateway status` reports the gateway/API service running.
+- Local API listens on `8642` and Tailscale serves `:8642`.
+- `API_SERVER_KEY` is configured if required and copied to HermesiOS as the bearer token.
+- Dashboard listens on `9119`.
+- Dashboard host-rewriting proxy listens on `9120`.
+- Tailscale `:9119` forwards to `127.0.0.1:9120`.
+- HermesHostCompanion is built, running, listening on the configured port, and reachable through Tailscale `:9312` for physical devices.
+- The 4096-character Host Companion token is copied into HermesiOS and never committed.
+- LaunchAgents exist and are loaded for `ai.hermes.gateway`, `fr.dubertrand.hermes-dashboard-host-proxy`, `fr.dubertrand.hermes-office-adapter`, and `ai.openclaw.gateway` if OpenClaw is used.
+- Office web app listens on `9116` and Tailscale serves `:9116`.
+- Claw3D adapter listens on `18790`.
+- OpenClaw gateway listens on `18789` if that workflow is needed.
+- HermesiOS Settings contain the Tailscale URLs when running on a physical device, not `127.0.0.1` URLs.
+- The app status band reports API, Mac Companion, and Dashboard as reachable.
 
 ## Project layout
 
-- `HermesiOS/ContentView.swift`: high-level app composition, tab/sidebar orchestration, parallel Ask Hermes screen state, and Office preload gating.
-- `HermesiOS/HermesWorkspaceNavigation.swift`: workspace navigation/sidebar components.
-- `HermesiOS/HermesConsoleViews.swift`: shared console UI pieces.
-- `HermesiOS/HermesResponsesAPI.swift`: Responses API request/response models.
-- `HermesiOS/HermesChatCompletionsAPI.swift`: Chat Completions API request/response models and streaming status-pill event handling.
-- `HermesiOS/HermesOfficeView.swift`: embedded Office/Claw3D WebView, persisted URL, reload, and WebView on/off toggle.
-- `HermesiOS/HermesDashboardHistorySearch.swift`: dashboard-backed history search.
-- `HermesiOS/HermesHistoryView.swift`: history UI.
-- `HermesiOS/HermesAgentConfigView.swift`: Agent Runtime surface.
-- `HermesiOS/HermesSettingsView.swift`: Settings, Host Companion, service controls, and Hermes Installation controls.
-- `HermesiOS/HermesCompanionClient.swift`: iOS client for Host Companion requests.
-- `HermesHostCompanion/`: macOS helper, protocol, server, and host-side registries.
+- `HermesiOS/ContentView.swift`: app shell, tab/sidebar orchestration, status polling, parallel Ask Hermes screens, and Office preload gating.
+- `HermesiOS/HermesResponsesAPI.swift`: Responses API models, requests, profiles, attachments, and API settings.
+- `HermesiOS/HermesChatCompletionsAPI.swift`: Chat Completions requests and streaming status-pill handling.
+- `HermesiOS/HermesDashboardHistorySearch.swift`: dashboard-backed search client.
+- `HermesiOS/HermesAgentConfigView.swift`: Agent Runtime panels.
+- `HermesiOS/HermesSettingsView.swift`: Settings, service controls, and Hermes installation controls.
+- `HermesiOS/HermesOfficeView.swift`: Office WebView, URL setting, reload, and WebView switch.
+- `HermesiOS/HermesCompanionClient.swift`: iOS Host Companion client.
+- `HermesHostCompanion/`: macOS helper app, WebSocket server, protocol, and host-side registries.
 
-## Development conventions
+## Development rules
 
-- Swift/iOS builds should be run through Xcode when possible.
-- Command-line verification can use `xcodebuild` or `swiftc` with the simulator SDK.
-- Host Companion verification:
-  `swiftc -typecheck HermesHostCompanion/*.swift`
-- iOS typecheck example:
-  `SDK=$(xcrun --sdk iphonesimulator --show-sdk-path) && swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios26.0-simulator HermesiOS/*.swift`
-- Some existing warnings in `HermesConsoleViews.swift` and `HermesOfficeView.swift` may be unrelated to a focused Settings/Companion change.
-- Check `git status --short` after changes and mention any untracked files.
-- Do not create local git branches for HermesiOS app source changes unless Laurent explicitly asks.
+- Keep the README concise outside installation/deployment.
+- Do not expose actual secret values in logs, UI, docs, commits, or final summaries.
+- Do not create local branches for HermesiOS app changes unless explicitly requested.
+- Build successfully before committing completed HermesiOS changes.
+- Commit titles should stay under 49 characters and commit bodies under 50 words.
 
-## Security and privacy rules
+Useful verification commands:
 
-- Treat Host Companion as the only trusted bridge for host mutations.
-- Do not expose actual secret values in API responses, logs, UI summaries, or final messages.
-- Env/secret panels should show present/missing/redacted metadata and write new values without echoing them.
-- Validate workspace paths on the host before reading/writing.
-- For destructive or stateful operations, keep the scope narrow and report exact files/services affected.
-
-## Getting started
-
-1. Open the Xcode project from `/Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS`.
-2. Configure Hermes API settings in the Settings tab.
-3. Enroll/authenticate Host Companion before using Agent Runtime panels or host service controls.
-4. Use Ask Hermes or Chat for API interactions.
-5. Use History to search and resume past Hermes sessions.
-6. Use Agent Runtime to manage host Hermes configuration through Companion-backed panels.
-7. Use Settings → Hermes Installation to inspect, update, review, and merge the host Hermes Agent checkout safely.
+```sh
+swiftc -typecheck HermesHostCompanion/*.swift
+xcodebuild -project HermesiOS.xcodeproj -scheme HermesHostCompanion build
+xcodebuild -project HermesiOS.xcodeproj -scheme HermesiOS -destination 'generic/platform=iOS Simulator' build
+```

@@ -245,6 +245,9 @@ struct HermesStreamedJSONDebugPanel: View {
     var initialSource: HermesStreamDebugSource = .responses
     @State private var selectedSource: HermesStreamDebugSource = .responses
 
+    private let visibleDebugLineCount: CGFloat = 16
+    private let debugLineHeight: CGFloat = 18
+
     private var debugText: String {
         switch selectedSource {
         case .responses:
@@ -323,7 +326,7 @@ struct HermesStreamedJSONDebugPanel: View {
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
                     .scrollContentBackground(.hidden)
-                    .frame(minHeight: 420)
+                    .frame(height: visibleDebugLineCount * debugLineHeight)
                     .padding(8)
                     .igFieldBackground()
         }

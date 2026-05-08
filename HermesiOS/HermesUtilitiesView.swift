@@ -26,13 +26,7 @@ struct HermesUtilitiesView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HermesTabHeader("Utilities", systemImage: "wrench.and.screwdriver")
 
-                HermesHeroCard(
-                    title: "Utilities",
-                    detail: "Quick helpers for day-to-day Hermes work. Clipboard History stores the last ten copied objects locally on this device, and Debugging exposes streamed API JSON in-place.",
-                    systemImage: "wrench.and.screwdriver.fill"
-                )
-
-                HermesSectionCard("Utilities") {
+                HermesSectionCard {
                     DisclosureGroup(isExpanded: $isClipboardHistoryExpanded) {
                         clipboardHistoryContent
                     } label: {
@@ -113,7 +107,7 @@ struct HermesUtilitiesView: View {
             .frame(maxWidth: 980, alignment: .leading)
         }
         .background(Color.hermesCanvas.ignoresSafeArea())
-        .navigationTitle("Utilities")
+        .navigationTitle("")
         .onAppear {
             clipboardHistory.captureCurrentPasteboardIfNeeded()
         }

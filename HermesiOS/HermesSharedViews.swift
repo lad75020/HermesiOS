@@ -93,7 +93,7 @@ struct HermesTabHeader: View {
 }
 
 struct HermesSectionCard<Content: View>: View {
-    let title: String
+    let title: String?
     @ViewBuilder let content: Content
 
     init(_ title: String, @ViewBuilder content: () -> Content) {
@@ -101,23 +101,31 @@ struct HermesSectionCard<Content: View>: View {
         self.content = content()
     }
 
+    init(@ViewBuilder content: () -> Content) {
+        self.title = nil
+        self.content = content()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(title.uppercased())
-                    .font(.igSecondaryMeta.weight(.semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(.hermesSecondaryText)
-                Spacer()
+            if let title, !title.isEmpty {
+                HStack {
+                    Text(title.uppercased())
+                        .font(.igSecondaryMeta.weight(.semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(.hermesSecondaryText)
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 16) {
                 content
             }
             .padding(.horizontal, 18)
+            .padding(.top, title == nil ? 18 : 0)
             .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

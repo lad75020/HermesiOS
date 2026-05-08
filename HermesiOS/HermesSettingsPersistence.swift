@@ -12,8 +12,10 @@ enum HermesSettingsPersistence {
     private static let apiSettingsKey = "hermes.apiSettings"
     private static let responsesDraftKey = "hermes.responsesDraft"
     private static let lastResponsesSessionIDKey = "hermes.lastResponsesSessionID"
+    private static let lastResponsesSessionTitleKey = "hermes.lastResponsesSessionTitle"
     private static let chatDraftKey = "hermes.chatDraft"
     private static let lastChatSessionIDKey = "hermes.lastChatSessionID"
+    private static let lastChatSessionTitleKey = "hermes.lastChatSessionTitle"
     private static let companionSettingsKey = "hermes.companionSettings"
     private static let companionIdentityStateKey = "hermes.companionIdentityState"
     private static let tokenService = "com.hermesios.api"
@@ -55,6 +57,19 @@ enum HermesSettingsPersistence {
         }
     }
 
+    static func loadLastResponsesSessionTitle() -> String {
+        UserDefaults.standard.string(forKey: lastResponsesSessionTitleKey) ?? ""
+    }
+
+    static func saveLastResponsesSessionTitle(_ title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: lastResponsesSessionTitleKey)
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: lastResponsesSessionTitleKey)
+        }
+    }
+
     static func loadChatDraft() -> HermesChatDraft {
         decode(HermesChatDraft.self, from: chatDraftKey) ?? HermesChatDraft()
     }
@@ -73,6 +88,19 @@ enum HermesSettingsPersistence {
             UserDefaults.standard.removeObject(forKey: lastChatSessionIDKey)
         } else {
             UserDefaults.standard.set(trimmed, forKey: lastChatSessionIDKey)
+        }
+    }
+
+    static func loadLastChatSessionTitle() -> String {
+        UserDefaults.standard.string(forKey: lastChatSessionTitleKey) ?? ""
+    }
+
+    static func saveLastChatSessionTitle(_ title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: lastChatSessionTitleKey)
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: lastChatSessionTitleKey)
         }
     }
 

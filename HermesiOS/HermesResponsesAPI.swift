@@ -228,6 +228,7 @@ final class HermesResponsesSession {
     var previousResponseID = ""
     var activeHermesSessionID = ""
     var lastKnownResponseID = ""
+    var lastKnownResponseTitle = ""
     var lastErrorMessage = ""
     var lastErrorWasTimeoutOrNetworkLoss = false
     var latestMessageType = ""
@@ -252,6 +253,7 @@ final class HermesResponsesSession {
 
     init() {
         lastKnownResponseID = HermesSettingsPersistence.loadLastResponsesSessionID()
+        lastKnownResponseTitle = HermesSettingsPersistence.loadLastResponsesSessionTitle()
     }
 
     func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment? = nil) {
@@ -319,7 +321,7 @@ final class HermesResponsesSession {
         latestMessageType = "resumed response"
         eventCount = 0
         rawStreamedJSON = ""
-        sessionTitle = "Last response"
+        sessionTitle = Self.userFriendlySessionTitle(from: lastKnownResponseTitle, fallback: "Last response")
         connectionStatus = "Resumed last response"
     }
 
@@ -352,6 +354,9 @@ final class HermesResponsesSession {
 
         let displayTitle = result.sessionFriendlyName
         sessionTitle = Self.userFriendlySessionTitle(from: displayTitle, fallback: continuationID.isEmpty ? (activeHermesSessionID.isEmpty ? "Loaded history" : activeHermesSessionID) : continuationID)
+        if !continuationID.isEmpty {
+            persistLastResponseTitle(sessionTitle)
+        }
 
         entries = restoredEntries.isEmpty
             ? [HermesResponseMessage(role: "assistant", content: "Loaded session \(displayTitle). Send a new prompt to start a new Responses API turn.")]
@@ -399,6 +404,13 @@ final class HermesResponsesSession {
         HermesSettingsPersistence.saveLastResponsesSessionID(trimmed)
     }
 
+    private func persistLastResponseTitle(_ title: String) {
+        let normalized = Self.userFriendlySessionTitle(from: title, fallback: "")
+        guard !normalized.isEmpty else { return }
+        lastKnownResponseTitle = normalized
+        HermesSettingsPersistence.saveLastResponsesSessionTitle(normalized)
+    }
+
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?) async {
         let continuationID = previousResponseID
         let hermesSessionID = activeHermesSessionID
@@ -407,6 +419,7 @@ final class HermesResponsesSession {
         if sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             sessionTitle = Self.userFriendlySessionTitle(from: prompt, fallback: attachment?.filename ?? "New response")
         }
+        persistLastResponseTitle(sessionTitle)
         resetForRequest()
         appendExchange(prompt: displayPrompt)
         isSending = true
@@ -921,8 +934,7 @@ private struct HermesResponseOutputItem: Decodable {
     var assistantText: String? {
         guard type == "message" else { return nil }
         let text = (content ?? output ?? [])
-            .filter { $0.type == "output_text" || $0.type == "text" || $0.type == "message" }
-            .compactMap(\.text)
+            .compactMap(\.displayValue)
             .joined()
         return text.isEmpty ? nil : text
     }
@@ -931,6 +943,37 @@ private struct HermesResponseOutputItem: Decodable {
 private struct HermesResponseContent: Decodable {
     let type: String
     let text: String?
+    let imageURL: HermesImageURLPayload?
+    let url: String?
+    let b64JSON: String?
+
+    var displayValue: String? {
+        if type == "output_text" || type == "text" || type == "message" {
+            return text
+        }
+        if let imageMarkdown {
+            return imageMarkdown
+        }
+        return nil
+    }
+
+    var imageMarkdown: String? {
+        let source = imageURL?.url ?? url ?? b64JSON.map { "data:image/png;base64,\($0)" }
+        guard let source, !source.isEmpty else { return nil }
+        return "\n\n![Hermes image](\(source))"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case imageURL = "image_url"
+        case url
+        case b64JSON = "b64_json"
+    }
+}
+
+private struct HermesImageURLPayload: Decodable {
+    let url: String?
 }
 
 private struct HermesSSEEvent {
@@ -1206,6 +1249,10 @@ struct HermesLooseJSON {
                 return [outputText]
             }
 
+            if let imageMarkdown = extractImageMarkdown(from: dictionary) {
+                return [imageMarkdown]
+            }
+
             return dictionary.values.flatMap(extractTexts)
         }
 
@@ -1214,6 +1261,24 @@ struct HermesLooseJSON {
         }
 
         return []
+    }
+
+    private func extractImageMarkdown(from dictionary: [String: Any]) -> String? {
+        let source: String?
+        if let imageURL = dictionary["image_url"] as? [String: Any] {
+            source = imageURL["url"] as? String
+        } else if let imageURL = dictionary["image_url"] as? String {
+            source = imageURL
+        } else if let url = dictionary["url"] as? String {
+            source = url
+        } else if let base64 = dictionary["b64_json"] as? String {
+            source = "data:image/png;base64,\(base64)"
+        } else {
+            source = nil
+        }
+
+        guard let source, !source.isEmpty else { return nil }
+        return "\n\n![Hermes image](\(source))"
     }
 
     private func extractChatFallbackTexts(from value: Any) -> [String] {

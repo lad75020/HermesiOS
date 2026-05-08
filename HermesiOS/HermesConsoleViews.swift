@@ -807,6 +807,7 @@ struct HermesResponseBubble: View {
                     text: displayContent,
                     copyText: message.content,
                     isUser: isUser,
+                    rendersMarkdown: !isUser,
                     isResponding: isResponding
                 )
             }
@@ -842,6 +843,7 @@ struct HermesChatBubble: View {
                     text: displayContent,
                     copyText: copyContent,
                     isUser: isUser,
+                    rendersMarkdown: !isUser,
                     isResponding: isResponding
                 )
             }
@@ -868,22 +870,160 @@ struct HermesChatBubble: View {
     }
 }
 
+private struct HermesBubbleMessageText: View {
+    let text: String
+    let rendersMarkdown: Bool
+
+    var body: some View {
+        if rendersMarkdown, let attributedText = try? AttributedString(markdown: text) {
+            Text(attributedText)
+        } else {
+            Text(text)
+        }
+    }
+}
+
+private struct HermesBubbleImageAttachment: Identifiable, Equatable {
+    let id = UUID()
+    let source: String
+    let altText: String
+
+    var displayName: String {
+        if !altText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return altText
+        }
+        if let url = URL(string: source), let lastComponent = url.pathComponents.last, !lastComponent.isEmpty {
+            return lastComponent
+        }
+        if source.hasPrefix("data:") {
+            return "Hermes image"
+        }
+        return URL(fileURLWithPath: source).lastPathComponent.isEmpty ? "Hermes image" : URL(fileURLWithPath: source).lastPathComponent
+    }
+
+    var fileExtension: String {
+        if let mimeType = dataURLMimeType {
+            switch mimeType.lowercased() {
+            case "image/jpeg", "image/jpg": return "jpg"
+            case "image/gif": return "gif"
+            case "image/webp": return "webp"
+            default: return "png"
+            }
+        }
+        if let url = URL(string: source), !url.pathExtension.isEmpty {
+            return url.pathExtension
+        }
+        let pathExtension = URL(fileURLWithPath: source).pathExtension
+        return pathExtension.isEmpty ? "png" : pathExtension
+    }
+
+    var dataURLMimeType: String? {
+        guard source.hasPrefix("data:"), let semicolon = source.firstIndex(of: ";") else { return nil }
+        return String(source[source.index(source.startIndex, offsetBy: 5)..<semicolon])
+    }
+
+    func loadData() async throws -> Data {
+        if source.hasPrefix("data:") {
+            guard let comma = source.firstIndex(of: ",") else { throw HermesBubbleImageError.invalidImageSource }
+            let encoded = String(source[source.index(after: comma)...])
+            guard let data = Data(base64Encoded: encoded) else { throw HermesBubbleImageError.invalidImageSource }
+            return data
+        }
+
+        if let url = URL(string: source), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return data
+        }
+
+        let fileURL: URL
+        if let url = URL(string: source), url.isFileURL {
+            fileURL = url
+        } else {
+            fileURL = URL(fileURLWithPath: source)
+        }
+        return try Data(contentsOf: fileURL)
+    }
+
+    static func extract(from text: String) -> (text: String, images: [HermesBubbleImageAttachment]) {
+        var images: [HermesBubbleImageAttachment] = []
+        var displayText = text
+
+        let markdownPattern = #"!\[([^\]]*)\]\(([^\s\)]+)(?:\s+\"[^\"]*\")?\)"#
+        if let regex = try? NSRegularExpression(pattern: markdownPattern) {
+            let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+            let matches = regex.matches(in: text, range: nsRange).reversed()
+            for match in matches {
+                guard
+                    let fullRange = Range(match.range(at: 0), in: displayText),
+                    let altRange = Range(match.range(at: 1), in: text),
+                    let sourceRange = Range(match.range(at: 2), in: text)
+                else { continue }
+                let source = String(text[sourceRange]).trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+                if Self.isSupportedImageSource(source) {
+                    images.insert(HermesBubbleImageAttachment(source: source, altText: String(text[altRange])), at: 0)
+                    displayText.removeSubrange(fullRange)
+                }
+            }
+        }
+
+        let tokenCandidates = displayText
+            .components(separatedBy: .whitespacesAndNewlines)
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "<>()[]{}.,;\"'")) }
+            .filter { Self.isSupportedImageSource($0) }
+        for candidate in tokenCandidates where !images.contains(where: { $0.source == candidate }) {
+            images.append(HermesBubbleImageAttachment(source: candidate, altText: ""))
+        }
+
+        return (displayText.trimmingCharacters(in: .whitespacesAndNewlines), images)
+    }
+
+    private static func isSupportedImageSource(_ source: String) -> Bool {
+        let lowercased = source.lowercased()
+        if lowercased.hasPrefix("data:image/") { return true }
+        if lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://") || lowercased.hasPrefix("file://") || lowercased.hasPrefix("/") {
+            return [".png", ".jpg", ".jpeg", ".gif", ".webp"].contains { lowercased.contains($0) }
+        }
+        return false
+    }
+}
+
+private enum HermesBubbleImageError: LocalizedError {
+    case invalidImageSource
+
+    var errorDescription: String? {
+        "Could not load this image."
+    }
+}
+
 private struct HermesCopyableBubbleContent: View {
     let text: String
     let copyText: String
     let isUser: Bool
+    var rendersMarkdown = false
     var isResponding = false
 
+    private var imageExtraction: (text: String, images: [HermesBubbleImageAttachment]) {
+        guard !isUser else { return (text, []) }
+        return HermesBubbleImageAttachment.extract(from: text)
+    }
+
     var body: some View {
-        Group {
+        let extracted = imageExtraction
+        VStack(alignment: .leading, spacing: 10) {
             if isResponding && text.isEmpty && !isUser {
                 HermesUndulatingDotsIndicator()
                     .accessibilityLabel("Hermes is responding")
             } else {
-                Text(text)
-                    .font(.body)
-                    .foregroundStyle(isUser ? .white : .primary)
-                    .textSelection(.enabled)
+                if !extracted.text.isEmpty {
+                    HermesBubbleMessageText(text: extracted.text, rendersMarkdown: rendersMarkdown)
+                        .font(.body)
+                        .foregroundStyle(isUser ? .white : .primary)
+                        .textSelection(.enabled)
+                }
+
+                ForEach(extracted.images) { image in
+                    HermesBubbleImageView(image: image)
+                }
             }
         }
             .padding(.leading, 14)
@@ -907,6 +1047,170 @@ private struct HermesCopyableBubbleContent: View {
             }
     }
 }
+
+private struct HermesBubbleImageView: View {
+    let image: HermesBubbleImageAttachment
+    @State private var imageData: Data?
+    @State private var statusMessage = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            imageContent
+                .frame(maxWidth: 520, maxHeight: 360)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.hermesDivider.opacity(0.7), lineWidth: 1)
+                )
+                .task { await loadImageIfNeeded() }
+
+            HStack(spacing: 8) {
+                Label(image.displayName, systemImage: "photo")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button {
+                    Task { await copyImage() }
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Copy image")
+
+                Button {
+                    Task { await downloadImage() }
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Download image")
+            }
+
+            if !statusMessage.isEmpty {
+                Text(statusMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var imageContent: some View {
+        if let imageData, let platformImage = makePlatformImage(from: imageData) {
+            platformImageView(platformImage)
+                .resizable()
+                .scaledToFit()
+        } else if image.source.lowercased().hasPrefix("http"), let url = URL(string: image.source) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let loadedImage):
+                    loadedImage
+                        .resizable()
+                        .scaledToFit()
+                case .failure:
+                    HermesBubbleImagePlaceholder(label: "Image unavailable")
+                case .empty:
+                    HermesBubbleImagePlaceholder(label: "Loading image…")
+                @unknown default:
+                    HermesBubbleImagePlaceholder(label: "Loading image…")
+                }
+            }
+        } else {
+            HermesBubbleImagePlaceholder(label: "Loading image…")
+        }
+    }
+
+    private func loadImageIfNeeded() async {
+        guard imageData == nil else { return }
+        do {
+            imageData = try await image.loadData()
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func copyImage() async {
+        do {
+            let data: Data
+            if let imageData {
+                data = imageData
+            } else {
+                data = try await image.loadData()
+                imageData = data
+            }
+            copyImageToClipboard(data)
+            statusMessage = "Copied image"
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func downloadImage() async {
+        do {
+            let data: Data
+            if let imageData {
+                data = imageData
+            } else {
+                data = try await image.loadData()
+                imageData = data
+            }
+            let savedURL = try saveImageData(data)
+            statusMessage = "Saved to \(savedURL.lastPathComponent)"
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func saveImageData(_ data: Data) throws -> URL {
+        let baseDirectory: URL
+#if canImport(UIKit)
+        baseDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+#elseif canImport(AppKit)
+        baseDirectory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+#else
+        baseDirectory = FileManager.default.temporaryDirectory
+#endif
+        let directory = baseDirectory.appendingPathComponent("Hermes Images", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let filename = "hermes-image-\(Self.timestamp()).\(image.fileExtension)"
+        let destination = directory.appendingPathComponent(filename)
+        try data.write(to: destination, options: .atomic)
+        return destination
+    }
+
+    private static func timestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: Date())
+    }
+}
+
+private struct HermesBubbleImagePlaceholder: View {
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "photo")
+                .font(.title2)
+            Text(label)
+                .font(.caption)
+        }
+        .foregroundStyle(.hermesSecondaryText)
+        .frame(width: 260, height: 170)
+        .background(Color.hermesCanvas.opacity(0.72))
+    }
+}
+
+#if canImport(UIKit)
+private func makePlatformImage(from data: Data) -> UIImage? { UIImage(data: data) }
+private func platformImageView(_ image: UIImage) -> Image { Image(uiImage: image) }
+#elseif canImport(AppKit)
+private func makePlatformImage(from data: Data) -> NSImage? { NSImage(data: data) }
+private func platformImageView(_ image: NSImage) -> Image { Image(nsImage: image) }
+#endif
 
 private struct HermesUndulatingDotsIndicator: View {
     private let dotCount = 3
@@ -972,6 +1276,20 @@ private func copyToClipboard(_ text: String) {
 #elseif canImport(AppKit)
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
+#endif
+}
+
+@MainActor
+private func copyImageToClipboard(_ data: Data) {
+#if canImport(UIKit)
+    if let image = UIImage(data: data) {
+        UIPasteboard.general.image = image
+    }
+#elseif canImport(AppKit)
+    if let image = NSImage(data: data) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([image])
+    }
 #endif
 }
 

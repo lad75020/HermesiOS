@@ -18,6 +18,7 @@ final class HermesChatSession {
     var connectionStatus = "Idle"
     var activeChatSessionID = ""
     var lastKnownChatSessionID = ""
+    var lastKnownChatSessionTitle = ""
     var lastErrorMessage = ""
     var lastErrorWasTimeoutOrNetworkLoss = false
     var eventCount = 0
@@ -37,6 +38,7 @@ final class HermesChatSession {
 
     init() {
         lastKnownChatSessionID = HermesSettingsPersistence.loadLastChatSessionID()
+        lastKnownChatSessionTitle = HermesSettingsPersistence.loadLastChatSessionTitle()
     }
 
     func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment? = nil) {
@@ -96,7 +98,7 @@ final class HermesChatSession {
         lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
-        sessionTitle = "Last chat"
+        sessionTitle = Self.userFriendlySessionTitle(from: lastKnownChatSessionTitle, fallback: "Last chat")
         connectionStatus = "Resumed last chat"
     }
 
@@ -128,6 +130,7 @@ final class HermesChatSession {
 
         let displayTitle = result.sessionFriendlyName
         sessionTitle = Self.userFriendlySessionTitle(from: displayTitle, fallback: sessionID.isEmpty ? "Loaded history" : sessionID)
+        persistLastChatSessionTitle(sessionTitle)
 
         entries = restoredEntries.isEmpty
             ? [HermesChatMessage(role: "assistant", content: "Loaded session \(displayTitle). Send a new prompt to continue in Chat Completions.")]
@@ -174,6 +177,13 @@ final class HermesChatSession {
         HermesSettingsPersistence.saveLastChatSessionID(trimmed)
     }
 
+    private func persistLastChatSessionTitle(_ title: String) {
+        let normalized = Self.userFriendlySessionTitle(from: title, fallback: "")
+        guard !normalized.isEmpty else { return }
+        lastKnownChatSessionTitle = normalized
+        HermesSettingsPersistence.saveLastChatSessionTitle(normalized)
+    }
+
     private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment?) async {
         let history = entries
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -181,6 +191,7 @@ final class HermesChatSession {
         if sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             sessionTitle = Self.userFriendlySessionTitle(from: prompt, fallback: attachment?.filename ?? "New chat")
         }
+        persistLastChatSessionTitle(sessionTitle)
         resetForRequest()
         appendExchange(prompt: displayPrompt)
         isSending = true
@@ -708,17 +719,38 @@ private struct HermesChatMessageContent: Decodable {
 }
 
 private struct HermesChatContentPart: Decodable {
+    let type: String?
     let text: String?
     let outputText: String?
+    let imageURL: HermesChatImageURLPayload?
+    let url: String?
+    let b64JSON: String?
 
     var textValue: String? {
-        text ?? outputText
+        if let text { return text }
+        if let outputText { return outputText }
+        if let imageMarkdown { return imageMarkdown }
+        return nil
+    }
+
+    var imageMarkdown: String? {
+        let source = imageURL?.url ?? url ?? b64JSON.map { "data:image/png;base64,\($0)" }
+        guard let source, !source.isEmpty else { return nil }
+        return "\n\n![Hermes image](\(source))"
     }
 
     enum CodingKeys: String, CodingKey {
+        case type
         case text
         case outputText = "output_text"
+        case imageURL = "image_url"
+        case url
+        case b64JSON = "b64_json"
     }
+}
+
+private struct HermesChatImageURLPayload: Decodable {
+    let url: String?
 }
 
 private struct HermesChatSSEEvent {

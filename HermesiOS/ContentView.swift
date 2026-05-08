@@ -38,6 +38,7 @@ struct ContentView: View {
     @State private var isShowingStreamDebugJSON = false
     @State private var isResponsesCompletionUnread = false
     @State private var isChatCompletionUnread = false
+    @State private var isHistorySearchCompletionUnread = false
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -117,6 +118,10 @@ struct ContentView: View {
             guard newValue == "Completed" else { return }
             isChatCompletionUnread = true
         }
+        .onChange(of: dashboardHistorySearchSession.isSearching) { oldValue, newValue in
+            guard oldValue, !newValue, dashboardHistorySearchSession.status != "Cancelled" else { return }
+            isHistorySearchCompletionUnread = true
+        }
     }
 
 
@@ -165,7 +170,8 @@ struct ContentView: View {
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive,
                 isResponsesCompletionUnread: $isResponsesCompletionUnread,
-                isChatCompletionUnread: $isChatCompletionUnread
+                isChatCompletionUnread: $isChatCompletionUnread,
+                isHistorySearchCompletionUnread: $isHistorySearchCompletionUnread
             )
             .toolbar(.hidden, for: .navigationBar)
             .navigationSplitViewColumnWidth(min: 72, ideal: 84, max: 96)

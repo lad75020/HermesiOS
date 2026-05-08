@@ -182,6 +182,61 @@ struct HermesSettingsView: View {
                 }
                 }
 
+                Section("Hermes Installation") {
+                    if companionEnrollment.identityState.isEnrolled == false {
+                        Text("Authenticate Host Companion before checking the host Hermes Agent checkout.")
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: companionRuntime.hermesInstallationStatus?.behindBy == 0 ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(hermesInstallationStatusColor)
+                            .frame(width: 28)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(companionRuntime.hermesInstallationStatusMessage)
+                                .font(.subheadline.weight(.semibold))
+                            Text("Compared with origin/main of the host Hermes Agent repository. Refreshes hourly.")
+                                .font(.caption)
+                                .foregroundStyle(.hermesSecondaryText)
+                        }
+
+                        Spacer()
+
+                        if companionRuntime.isCheckingHermesInstallation {
+                            ProgressView()
+                        }
+                    }
+
+                    if let status = companionRuntime.hermesInstallationStatus {
+                        settingsRow(label: "Repository", value: status.repositoryPath)
+                        settingsRow(label: "Branch", value: status.branch.isEmpty ? "Unknown" : status.branch)
+                        settingsRow(label: "Local / main", value: "\(status.currentCommit) / \(status.upstreamCommit)")
+                        settingsRow(label: "Last Checked", value: status.checkedAt.formatted(date: .abbreviated, time: .shortened))
+                    }
+
+                    if !companionRuntime.hermesInstallationStatusError.isEmpty {
+                        Text(companionRuntime.hermesInstallationStatusError)
+                            .font(.caption)
+                            .foregroundStyle(.igDestructive)
+                    }
+
+                    Button {
+                        Task {
+                            await companionRuntime.refreshHermesInstallationStatus(
+                                settings: companionSettings,
+                                identityState: companionEnrollment.identityState
+                            )
+                        }
+                    } label: {
+                        Label("Refresh Hermes Version", systemImage: "arrow.clockwise")
+                    }
+                    .hermesGlassButton()
+                    .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isCheckingHermesInstallation)
+                }
+
 
                 Section("/v1/responses") {
                 Toggle("Streaming enabled", isOn: $responsesDraft.stream)
@@ -210,6 +265,31 @@ struct HermesSettingsView: View {
                 identityState: companionEnrollment.identityState
             )
         }
+        .task(id: hermesInstallationRefreshKey) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            await companionRuntime.refreshHermesInstallationStatusLoop(
+                settings: companionSettings,
+                identityState: companionEnrollment.identityState
+            )
+        }
+    }
+
+    private var hermesInstallationRefreshKey: String {
+        [
+            companionEnrollment.identityState.isEnrolled ? "enrolled" : "not-enrolled",
+            companionEnrollment.identityState.serverEndpoint,
+            companionSettings.hermesWorkspacePath
+        ].joined(separator: "|")
+    }
+
+    private var hermesInstallationStatusColor: Color {
+        if companionRuntime.hermesInstallationStatusError.isEmpty == false {
+            return .igDestructive
+        }
+        guard let status = companionRuntime.hermesInstallationStatus else {
+            return .hermesSecondaryText
+        }
+        return status.behindBy == 0 ? .igOnlineGreen : .igGradOrange
     }
 
     private func settingsRow(label: String, value: String) -> some View {

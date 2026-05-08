@@ -193,6 +193,7 @@ final class CompanionClientSession {
     private let logRegistry = CompanionLogRegistry()
     private let profileRegistry = CompanionProfileRegistry()
     private let gatewayRegistry = CompanionGatewayRegistry()
+    private let gitRegistry = CompanionGitRegistry()
     private let authenticationToken: String
 
     init(connection: NWConnection, authenticationToken: String) {
@@ -296,6 +297,7 @@ final class CompanionClientSession {
                         "service_start",
                         "service_stop",
                         "service_restart",
+                        "hermes_installation_status",
                         "list_skills",
                         "set_skill_state",
                         "list_mcp_servers",
@@ -454,6 +456,17 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "service_restart_failed", message: error.localizedDescription)
+            }
+        case "hermes_installation_status":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The hermes_installation_status request requires a payload.")
+                }
+                let statusPayload = try payload.decode(HermesInstallationStatusPayload.self)
+                let result = try gitRegistry.hermesInstallationStatus(workspacePath: statusPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "hermes_installation_status_failed", message: error.localizedDescription)
             }
         case "list_skills":
             do {

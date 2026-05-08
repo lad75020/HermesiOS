@@ -167,6 +167,22 @@ struct ServiceStopResult: Codable {
     let output: String
 }
 
+struct HermesInstallationStatusPayload: Codable {
+    let workspacePath: String
+}
+
+struct HermesInstallationStatusResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let repositoryPath: String
+    let remoteURL: String
+    let branch: String
+    let currentCommit: String
+    let upstreamCommit: String
+    let behindBy: Int
+    let checkedAt: Date
+}
+
 struct ListHermesSkillsPayload: Codable {
     let workspacePath: String
 }

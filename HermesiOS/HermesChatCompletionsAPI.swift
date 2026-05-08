@@ -122,9 +122,7 @@ final class HermesChatSession {
                 HermesChatMessage(role: message.role.lowercased(), content: message.content)
             }
 
-        let trimmedTitle = result.session.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let firstUserPrompt = restoredEntries.first { $0.role == "user" }?.content ?? ""
-        let displayTitle = trimmedTitle.isEmpty ? (firstUserPrompt.isEmpty ? sessionID : firstUserPrompt) : trimmedTitle
+        let displayTitle = result.sessionFriendlyName
         sessionTitle = Self.userFriendlySessionTitle(from: displayTitle, fallback: sessionID.isEmpty ? "Loaded history" : sessionID)
 
         entries = restoredEntries.isEmpty

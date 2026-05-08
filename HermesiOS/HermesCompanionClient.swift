@@ -147,6 +147,22 @@ struct HermesCompanionServiceStopResult: Codable {
     let output: String
 }
 
+struct HermesCompanionInstallationStatusPayload: Codable {
+    let workspacePath: String
+}
+
+struct HermesCompanionInstallationStatusResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let repositoryPath: String
+    let remoteURL: String
+    let branch: String
+    let currentCommit: String
+    let upstreamCommit: String
+    let behindBy: Int
+    let checkedAt: Date
+}
+
 struct HermesCompanionListSkillsPayload: Codable {
     let workspacePath: String
 }
@@ -1062,6 +1078,10 @@ final class HermesCompanionRuntimeSession {
     var linkedServiceOutput = ""
     var macServiceStatuses: [String: HermesCompanionServiceStatusResult] = [:]
     var macServiceOutputs: [String: String] = [:]
+    var hermesInstallationStatus: HermesCompanionInstallationStatusResult?
+    var hermesInstallationStatusMessage = "Not checked"
+    var hermesInstallationStatusError = ""
+    var isCheckingHermesInstallation = false
     var connectionStatus = "Idle"
     var lastErrorMessage = ""
     var isBusy = false
@@ -1280,6 +1300,49 @@ final class HermesCompanionRuntimeSession {
         if macServiceOutputs[serviceID, default: ""].isEmpty {
             macServiceOutputs[serviceID] = result.output
         }
+    }
+
+    func refreshHermesInstallationStatusLoop(
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState,
+        interval: Duration = .seconds(3600)
+    ) async {
+        while !Task.isCancelled {
+            await refreshHermesInstallationStatus(settings: settings, identityState: identityState)
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                return
+            }
+        }
+    }
+
+    func refreshHermesInstallationStatus(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async {
+        guard identityState.isEnrolled else { return }
+        isCheckingHermesInstallation = true
+        hermesInstallationStatusError = ""
+        do {
+            let result: HermesCompanionInstallationStatusResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "hermes_installation_status",
+                payload: HermesCompanionInstallationStatusPayload(workspacePath: settings.hermesWorkspacePath)
+            )
+            hermesInstallationStatus = result
+            resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            hermesInstallationStatusMessage = Self.hermesInstallationStatusMessage(for: result)
+        } catch {
+            hermesInstallationStatusError = error.localizedDescription
+            hermesInstallationStatusMessage = "Unavailable"
+        }
+        isCheckingHermesInstallation = false
+    }
+
+    private static func hermesInstallationStatusMessage(for result: HermesCompanionInstallationStatusResult) -> String {
+        if result.behindBy == 0 {
+            return "Up to date"
+        }
+        return "\(result.behindBy) commit\(result.behindBy == 1 ? "" : "s") behind main"
     }
 
     private func loadSelectedTarget(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {

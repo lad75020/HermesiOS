@@ -79,6 +79,7 @@ struct WorkspaceSidebar: View {
     var dashboardChannelActive = false
     @Binding var isResponsesCompletionUnread: Bool
     @Binding var isChatCompletionUnread: Bool
+    @Binding var isHistorySearchCompletionUnread: Bool
 
     private func completionUnread(for section: WorkspaceSection) -> Bool {
         switch section {
@@ -86,7 +87,9 @@ struct WorkspaceSidebar: View {
             isResponsesCompletionUnread
         case .chat:
             isChatCompletionUnread
-        case .history, .office, .settings, .runtime:
+        case .history:
+            isHistorySearchCompletionUnread
+        case .office, .settings, .runtime:
             false
         }
     }
@@ -97,7 +100,9 @@ struct WorkspaceSidebar: View {
             isResponsesCompletionUnread = false
         case .chat:
             isChatCompletionUnread = false
-        case .history, .office, .settings, .runtime:
+        case .history:
+            isHistorySearchCompletionUnread = false
+        case .office, .settings, .runtime:
             break
         }
     }

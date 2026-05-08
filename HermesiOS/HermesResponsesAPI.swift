@@ -286,9 +286,7 @@ final class HermesResponsesSession {
                 HermesResponseMessage(role: message.role.lowercased(), content: message.content)
             }
 
-        let trimmedTitle = result.session.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let firstUserPrompt = restoredEntries.first { $0.role == "user" }?.content ?? ""
-        let displayTitle = trimmedTitle.isEmpty ? (firstUserPrompt.isEmpty ? (activeHermesSessionID.isEmpty ? continuationID : activeHermesSessionID) : firstUserPrompt) : trimmedTitle
+        let displayTitle = result.sessionFriendlyName
         sessionTitle = Self.userFriendlySessionTitle(from: displayTitle, fallback: continuationID.isEmpty ? (activeHermesSessionID.isEmpty ? "Loaded history" : activeHermesSessionID) : continuationID)
 
         entries = restoredEntries.isEmpty

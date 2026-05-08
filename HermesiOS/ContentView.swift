@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var companionRuntime = HermesCompanionRuntimeSession()
     @State private var statusMonitor = HermesStatusMonitor()
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
+    @State private var clipboardHistory = HermesClipboardHistoryStore()
     @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
     @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
@@ -95,6 +96,10 @@ struct ContentView: View {
             guard !isShowingSplash else { return }
             officeWebViewStore.preload(urlString: officeURLString, reloadID: officeReloadID)
         }
+        .task(id: clipboardMonitoringKey) {
+            guard !isShowingSplash, scenePhase == .active else { return }
+            await clipboardHistory.runMonitoringLoop()
+        }
         .task(id: statusLoopKey) {
             guard !isShowingSplash, scenePhase == .active else { return }
             await statusMonitor.runStatusLoop(
@@ -157,6 +162,10 @@ struct ContentView: View {
 
     private var officePreloadKey: String {
         officeURLString + "|reload=\(officeReloadID.uuidString)|splash=\(isShowingSplash)"
+    }
+
+    private var clipboardMonitoringKey: String {
+        "scenePhase=\(scenePhase)|splash=\(isShowingSplash)"
     }
 
     private var statusRefreshKey: String {
@@ -255,6 +264,14 @@ struct ContentView: View {
                 .tag(WorkspaceSection.history)
 
                 NavigationStack {
+                    HermesUtilitiesView(clipboardHistory: clipboardHistory)
+                }
+                .tabItem {
+                    Label("Utilities", systemImage: "wrench.and.screwdriver")
+                }
+                .tag(WorkspaceSection.utilities)
+
+                NavigationStack {
                     HermesSettingsView(
                         apiSettings: $apiSettings,
                         companionSettings: $companionSettings,
@@ -318,6 +335,8 @@ struct ContentView: View {
             )
         case .office:
             HermesOfficeView(webViewStore: officeWebViewStore, reloadID: $officeReloadID)
+        case .utilities:
+            HermesUtilitiesView(clipboardHistory: clipboardHistory)
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,

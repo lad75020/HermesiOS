@@ -23,6 +23,7 @@ final class HermesChatSession {
     var lastErrorWasTimeoutOrNetworkLoss = false
     var eventCount = 0
     var rawStreamedJSON = ""
+    var debugEventText = ""
     var sessionTitle = ""
 
     var displaySessionTitle: String {
@@ -77,6 +78,7 @@ final class HermesChatSession {
         lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
+        debugEventText = ""
         sessionTitle = ""
     }
 
@@ -98,6 +100,7 @@ final class HermesChatSession {
         lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
+        debugEventText = ""
         sessionTitle = Self.userFriendlySessionTitle(from: lastKnownChatSessionTitle, fallback: "Last chat")
         connectionStatus = "Resumed last chat"
     }
@@ -118,6 +121,7 @@ final class HermesChatSession {
         lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
+        debugEventText = ""
 
         let restoredEntries = result.messages
             .filter { message in
@@ -228,6 +232,7 @@ final class HermesChatSession {
         lastErrorWasTimeoutOrNetworkLoss = false
         eventCount = 0
         rawStreamedJSON = ""
+        debugEventText = ""
         activeAssistantEntryID = nil
     }
 
@@ -432,6 +437,7 @@ final class HermesChatSession {
 
     private func handle(event: HermesChatSSEEvent) {
         appendRawStreamedJSON(event)
+        appendDebugEventText(event)
 
         if event.data == "[DONE]" {
             connectionStatus = "Completed"
@@ -527,6 +533,54 @@ final class HermesChatSession {
         } else {
             rawStreamedJSON += "\n\n\(block)"
         }
+    }
+
+    private func appendDebugEventText(_ event: HermesChatSSEEvent) {
+        guard let eventName = event.name else { return }
+
+        let payload = HermesLooseJSON(json: event.data)
+        let block: String?
+        switch eventName {
+        case "hermes.tool.progress", "Hermes.tool.progress":
+            let tool = payload.string(at: ["tool"]) ?? "tool"
+            let status = payload.string(at: ["status"]) ?? "progress"
+            let label = payload.string(at: ["label"])
+            let toolCallID = payload.string(at: ["toolCallId"])
+            block = Self.debugBlock(
+                title: "Tool \(status): \(tool)",
+                lines: [label, toolCallID.map { "id: \($0)" }]
+            )
+        case "Hermes.tool.output", "hermes.tool.output":
+            let tool = payload.string(at: ["tool"]) ?? "tool"
+            let output = payload.string(at: ["structured", "output"])
+                ?? payload.string(at: ["output"])
+                ?? Self.prettyPrintedJSON(from: event.data)
+            block = Self.debugBlock(
+                title: "Tool output: \(tool)",
+                lines: [output]
+            )
+        case "Hermes.reasoning.summary", "hermes.reasoning.summary":
+            let text = payload.string(at: ["delta"])
+                ?? payload.string(at: ["summary"])
+                ?? Self.prettyPrintedJSON(from: event.data)
+            block = Self.debugBlock(
+                title: "Reasoning",
+                lines: [text]
+            )
+        default:
+            block = nil
+        }
+
+        guard let block, !block.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        debugEventText = debugEventText.isEmpty ? block : debugEventText + "\n\n" + block
+    }
+
+    private static func debugBlock(title: String, lines: [String?]) -> String {
+        let body = lines
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return body.isEmpty ? "[\(title)]" : "[\(title)]\n\(body)"
     }
 
     private static func prettyPrintedJSON(from string: String) -> String {

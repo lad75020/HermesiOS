@@ -90,9 +90,14 @@ final class CompanionGitRegistry {
         let mergeResult = try runGitAllowingFailure(["merge", "--no-ff", "--no-commit", officialRef], repoURL: repoURL, timeout: 120)
         let conflictFiles = try unresolvedConflictFiles(repoURL: repoURL)
         guard conflictFiles.isEmpty == false else {
-            _ = try runGit(["commit", "-m", "Merge official Hermes Agent main into \(branch.isEmpty ? "local checkout" : branch)"], repoURL: repoURL, timeout: 120)
+            let output: String
+            if try hasStagedChanges(repoURL: repoURL) {
+                _ = try runGit(["commit", "-m", "Merge official Hermes Agent main into \(branch.isEmpty ? "local checkout" : branch)"], repoURL: repoURL, timeout: 120)
+                output = mergeResult.output.isEmpty ? "Merged official main; no conflict files required Hermes review." : mergeResult.output
+            } else {
+                output = mergeResult.output.isEmpty ? "No merge was needed; the pending official commit is already included in the local branch." : mergeResult.output
+            }
             try clearPendingUpdateConfig(repoURL: repoURL)
-            let output = mergeResult.output.isEmpty ? "Merged official main; no conflict files required Hermes review." : mergeResult.output
             try setGitConfig(lastUpdateOutputConfigKey, value: output, repoURL: repoURL)
             let currentStatus = try status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
             return HermesInstallationOperationResult(status: currentStatus, output: output)
@@ -158,12 +163,20 @@ final class CompanionGitRegistry {
         let upstreamCommit = try runGit(["rev-parse", "--short", officialMainRef], repoURL: repoURL, timeout: 10).trimmedOutput
         let behindOutput = try runGit(["rev-list", "--count", "HEAD..\(officialMainRef)"], repoURL: repoURL, timeout: 10).trimmedOutput
         let remoteURL = (try? runGit(["remote", "get-url", "origin"], repoURL: repoURL, timeout: 10).trimmedOutput) ?? ""
-        let pendingBranch = try gitConfigValue(pendingBranchConfigKey, repoURL: repoURL)
-        let pendingCommit = try gitConfigValue(pendingCommitConfigKey, repoURL: repoURL)
-        let conflictFiles = try gitConfigValue(pendingConflictsConfigKey, repoURL: repoURL)
+        var pendingBranch = try gitConfigValue(pendingBranchConfigKey, repoURL: repoURL)
+        var pendingCommit = try gitConfigValue(pendingCommitConfigKey, repoURL: repoURL)
+        var conflictFiles = try gitConfigValue(pendingConflictsConfigKey, repoURL: repoURL)
             .split(separator: "\n")
             .map(String.init)
-        let lastUpdateOutput = try gitConfigValue(lastUpdateOutputConfigKey, repoURL: repoURL)
+        var lastUpdateOutput = try gitConfigValue(lastUpdateOutputConfigKey, repoURL: repoURL)
+        if pendingCommit.isEmpty == false, try isAncestor(pendingCommit, of: "HEAD", repoURL: repoURL) {
+            try clearPendingUpdateConfig(repoURL: repoURL)
+            pendingBranch = ""
+            pendingCommit = ""
+            conflictFiles = []
+            lastUpdateOutput = "Cleared stale Hermes update review state because the pending official commit is already included in the local branch."
+            try setGitConfig(lastUpdateOutputConfigKey, value: lastUpdateOutput, repoURL: repoURL)
+        }
 
         return HermesInstallationStatusResult(
             workspacePath: workspacePath,
@@ -203,6 +216,16 @@ final class CompanionGitRegistry {
             .split(separator: "\n")
             .map(String.init)
             .filter { $0.isEmpty == false }
+    }
+
+    private func isAncestor(_ ancestor: String, of descendant: String, repoURL: URL) throws -> Bool {
+        let result = try runGitAllowingFailure(["merge-base", "--is-ancestor", ancestor, descendant], repoURL: repoURL, timeout: 10)
+        return result.exitCode == 0
+    }
+
+    private func hasStagedChanges(repoURL: URL) throws -> Bool {
+        let result = try runGitAllowingFailure(["diff", "--cached", "--quiet"], repoURL: repoURL, timeout: 10)
+        return result.exitCode != 0
     }
 
     private func gitBlobContent(ref: String, file: String, repoURL: URL) throws -> String {

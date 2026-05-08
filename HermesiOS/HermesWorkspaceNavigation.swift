@@ -10,6 +10,7 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     case chat
     case history
     case office
+    case utilities
     case settings
     case runtime
 
@@ -24,7 +25,9 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         case .history:
             "History"
         case .office:
-            "Office"
+            "Office (beta)"
+        case .utilities:
+            "Utilities"
         case .settings:
             "Settings"
         case .runtime:
@@ -42,6 +45,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Review saved requests and final responses grouped by session."
         case .office:
             "Open the Hermes Office web experience inside the app."
+        case .utilities:
+            "Clipboard history and other local helpers."
         case .settings:
             "Configure gateway, prompts, models, and streaming behavior."
         case .runtime:
@@ -59,6 +64,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "clock.arrow.circlepath"
         case .office:
             "building.2.crop.circle"
+        case .utilities:
+            "wrench.and.screwdriver"
         case .settings:
             "slider.horizontal.3"
         case .runtime:
@@ -93,7 +100,7 @@ struct WorkspaceSidebar: View {
             isChatCompletionUnread
         case .history:
             isHistorySearchCompletionUnread
-        case .office, .settings, .runtime:
+        case .office, .utilities, .settings, .runtime:
             false
         }
     }
@@ -106,7 +113,7 @@ struct WorkspaceSidebar: View {
             isChatFailureUnread
         case .history:
             isHistorySearchFailureUnread
-        case .office, .settings, .runtime:
+        case .office, .utilities, .settings, .runtime:
             false
         }
     }
@@ -119,7 +126,7 @@ struct WorkspaceSidebar: View {
             chatSession.isSending
         case .history:
             isHistorySearchActive
-        case .office, .settings, .runtime:
+        case .office, .utilities, .settings, .runtime:
             false
         }
     }
@@ -135,7 +142,7 @@ struct WorkspaceSidebar: View {
         case .history:
             isHistorySearchCompletionUnread = false
             isHistorySearchFailureUnread = false
-        case .office, .settings, .runtime:
+        case .office, .utilities, .settings, .runtime:
             break
         }
     }
@@ -273,8 +280,14 @@ struct HermesStreamedJSONDebugSheet: View {
             }
             return responseSession.rawStreamedJSON
         case .chat:
-            if chatSession.rawStreamedJSON.isEmpty {
+            if chatSession.rawStreamedJSON.isEmpty && chatSession.debugEventText.isEmpty {
                 return "No Chat Completions API JSON has been streamed yet. Send a Chat Completions request with streaming enabled to populate this debug view."
+            }
+            if !chatSession.debugEventText.isEmpty {
+                if chatSession.rawStreamedJSON.isEmpty {
+                    return chatSession.debugEventText
+                }
+                return chatSession.debugEventText + "\n\n--- Raw SSE JSON ---\n\n" + chatSession.rawStreamedJSON
             }
             return chatSession.rawStreamedJSON
         }
@@ -294,7 +307,7 @@ struct HermesStreamedJSONDebugSheet: View {
         case .responses:
             responseSession.rawStreamedJSON.isEmpty
         case .chat:
-            chatSession.rawStreamedJSON.isEmpty
+            chatSession.rawStreamedJSON.isEmpty && chatSession.debugEventText.isEmpty
         }
     }
 
@@ -304,6 +317,7 @@ struct HermesStreamedJSONDebugSheet: View {
             responseSession.rawStreamedJSON = ""
         case .chat:
             chatSession.rawStreamedJSON = ""
+            chatSession.debugEventText = ""
         }
     }
 

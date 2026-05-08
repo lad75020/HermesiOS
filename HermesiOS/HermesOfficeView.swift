@@ -22,7 +22,7 @@ struct HermesOfficeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HermesTabHeader("Office", systemImage: "building.2.crop.circle")
+            HermesTabHeader("Office (beta)", systemImage: "building.2.crop.circle")
                 .padding(.horizontal)
                 .padding(.top)
 

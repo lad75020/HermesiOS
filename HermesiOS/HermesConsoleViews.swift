@@ -404,6 +404,11 @@ struct HermesResponsesConsoleView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var responseSession: HermesResponsesSession
+    let workspaceNumber: Int
+    let workspaceCount: Int
+    let canCreateWorkspace: Bool
+    let onCreateWorkspace: () -> Void
+    let onSelectWorkspace: (Int) -> Void
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
@@ -414,7 +419,13 @@ struct HermesResponsesConsoleView: View {
         VStack(spacing: 0) {
             HermesGlassEffectContainer(spacing: 16) {
                 VStack(alignment: .leading, spacing: 16) {
-                    HermesTabHeader("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
+                    HStack(alignment: .center, spacing: 12) {
+                        HermesTabHeader("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
+
+                        Spacer(minLength: 8)
+
+                        responseWorkspaceSwitcher
+                    }
 
                     HStack(alignment: .top, spacing: 12) {
                         HermesProfileSelector(
@@ -470,6 +481,48 @@ struct HermesResponsesConsoleView: View {
         ) { result in
             handleAttachmentImport(result)
         }
+    }
+
+    private var responseWorkspaceSwitcher: some View {
+        HStack(spacing: 8) {
+            Button(action: onCreateWorkspace) {
+                Image(systemName: "plus")
+                    .font(.headline.weight(.semibold))
+                    .frame(width: 34, height: 34)
+            }
+            .hermesGlassButton()
+            .disabled(!canCreateWorkspace)
+            .accessibilityLabel("New Hermes request screen")
+
+            ForEach(responseWorkspaceSwitcherNumbers, id: \.self) { number in
+                Button {
+                    onSelectWorkspace(number)
+                } label: {
+                    Text("\(number)")
+                        .font(.subheadline.weight(.bold))
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(number == workspaceNumber ? Color.white : Color.primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .fill(number == workspaceNumber ? Color.igActionBlue : Color.hermesSurfaceInput.opacity(0.72))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .stroke(Color.white.opacity(number == workspaceNumber ? 0 : 0.12), lineWidth: 1)
+                )
+                .accessibilityLabel("Open Hermes request screen \(number)")
+            }
+        }
+    }
+
+    private var responseWorkspaceSwitcherNumbers: [Int] {
+        let allNumbers = Array(1...max(workspaceCount, 1))
+        if workspaceNumber == 1 {
+            return allNumbers.filter { $0 > 1 }
+        }
+        return allNumbers
     }
 
     private var responseTranscript: some View {

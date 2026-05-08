@@ -25,7 +25,8 @@ struct ContentView: View {
     @State private var companionSettings: HermesCompanionSettings
     @State private var agentConfiguration = HermesAgentConfiguration()
     @State private var responsesDraft: HermesRequestDraft
-    @State private var responseSession = HermesResponsesSession()
+    @State private var responseWorkspaces: [HermesResponsesWorkspace]
+    @State private var selectedResponseWorkspaceID: HermesResponsesWorkspace.ID
     @State private var chatDraft: HermesChatDraft
     @State private var chatSession = HermesChatSession()
     @State private var companionEnrollment = HermesCompanionEnrollmentSession()
@@ -46,9 +47,13 @@ struct ContentView: View {
     init() {
         HermesAppearance.configureGlobalAppearance()
         HermesSettingsPersistence.removeLegacyLocalHistoryFile()
+        let loadedResponsesDraft = HermesSettingsPersistence.loadResponsesDraft()
+        let initialResponseWorkspace = HermesResponsesWorkspace(number: 1, draft: loadedResponsesDraft, session: HermesResponsesSession())
         _apiSettings = State(initialValue: HermesSettingsPersistence.loadAPISettings())
         _companionSettings = State(initialValue: HermesSettingsPersistence.loadCompanionSettings())
-        _responsesDraft = State(initialValue: HermesSettingsPersistence.loadResponsesDraft())
+        _responsesDraft = State(initialValue: loadedResponsesDraft)
+        _responseWorkspaces = State(initialValue: [initialResponseWorkspace])
+        _selectedResponseWorkspaceID = State(initialValue: initialResponseWorkspace.id)
         _chatDraft = State(initialValue: HermesSettingsPersistence.loadChatDraft())
     }
 
@@ -117,13 +122,13 @@ struct ContentView: View {
                 )
             }
         }
-        .onChange(of: responseSession.connectionStatus) { _, newValue in
+        .onChange(of: activeResponseSession.connectionStatus) { _, newValue in
             if newValue == "Completed" {
                 isResponsesFailureUnread = false
                 isResponsesCompletionUnread = true
             } else if newValue == "Failed" {
                 isResponsesCompletionUnread = false
-                isResponsesFailureUnread = responseSession.lastErrorWasTimeoutOrNetworkLoss
+                isResponsesFailureUnread = activeResponseSession.lastErrorWasTimeoutOrNetworkLoss
             }
         }
         .onChange(of: chatSession.connectionStatus) { _, newValue in
@@ -143,8 +148,22 @@ struct ContentView: View {
     }
 
 
+    private var activeResponseWorkspace: HermesResponsesWorkspace {
+        if let workspace = responseWorkspaces.first(where: { $0.id == selectedResponseWorkspaceID }) {
+            return workspace
+        }
+        if let workspace = responseWorkspaces.first {
+            return workspace
+        }
+        return HermesResponsesWorkspace(number: 1, draft: responsesDraft, session: HermesResponsesSession())
+    }
+
+    private var activeResponseSession: HermesResponsesSession {
+        activeResponseWorkspace.session
+    }
+
     private var apiChannelActive: Bool {
-        responseSession.isSending || chatSession.isSending
+        responseWorkspaces.contains { $0.session.isSending } || chatSession.isSending
     }
 
     private var companionChannelActive: Bool {
@@ -184,7 +203,7 @@ struct ContentView: View {
             WorkspaceSidebar(
                 selection: $selectedWorkspace,
                 statusMonitor: statusMonitor,
-                responseSession: responseSession,
+                responseSession: activeResponseSession,
                 chatSession: chatSession,
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
@@ -216,14 +235,7 @@ struct ContentView: View {
 
             TabView(selection: $selectedPhoneSection) {
                 NavigationStack {
-                    HermesResponsesConsoleView(
-                        apiSettings: $apiSettings,
-                        requestDraft: $responsesDraft,
-                        companionSettings: companionSettings,
-                        companionEnrollment: companionEnrollment,
-                        companionRuntime: companionRuntime,
-                        responseSession: responseSession
-                    )
+                    responsesConsoleView()
                 }
                 .tabItem {
                     Label("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
@@ -249,7 +261,7 @@ struct ContentView: View {
                     HermesHistoryView(
                         apiSettings: $apiSettings,
                         searchSession: dashboardHistorySearchSession,
-                        isResponsesStreaming: responseSession.isSending,
+                        isResponsesStreaming: responseWorkspaces.contains { $0.session.isSending },
                         isChatStreaming: chatSession.isSending,
                         onResumeResponses: resumeConversationInResponses,
                         onResumeChat: resumeConversationInChat
@@ -263,7 +275,7 @@ struct ContentView: View {
                 NavigationStack {
                     HermesUtilitiesView(
                         clipboardHistory: clipboardHistory,
-                        responseSession: responseSession,
+                        responseSession: activeResponseSession,
                         chatSession: chatSession,
                         companionSettings: companionSettings,
                         companionEnrollment: companionEnrollment,
@@ -308,17 +320,50 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private func responsesConsoleView() -> some View {
+        let workspace = activeResponseWorkspace
+        HermesResponsesConsoleView(
+            apiSettings: $apiSettings,
+            requestDraft: Binding(
+                get: { workspace.draft },
+                set: { newValue in
+                    workspace.draft = newValue
+                    responsesDraft = newValue
+                }
+            ),
+            companionSettings: companionSettings,
+            companionEnrollment: companionEnrollment,
+            companionRuntime: companionRuntime,
+            responseSession: workspace.session,
+            workspaceNumber: workspace.number,
+            workspaceCount: responseWorkspaces.count,
+            canCreateWorkspace: responseWorkspaces.count < 4,
+            onCreateWorkspace: createResponseWorkspace,
+            onSelectWorkspace: selectResponseWorkspace(number:)
+        )
+    }
+
+    private func createResponseWorkspace() {
+        guard responseWorkspaces.count < 4 else { return }
+        let nextNumber = (1...4).first { number in
+            !responseWorkspaces.contains { $0.number == number }
+        } ?? (responseWorkspaces.count + 1)
+        let workspace = HermesResponsesWorkspace(number: nextNumber, draft: responsesDraft, session: HermesResponsesSession())
+        responseWorkspaces.append(workspace)
+        responseWorkspaces.sort { $0.number < $1.number }
+    }
+
+    private func selectResponseWorkspace(number: Int) {
+        guard let workspace = responseWorkspaces.first(where: { $0.number == number }) else { return }
+        selectedResponseWorkspaceID = workspace.id
+        responsesDraft = workspace.draft
+    }
+
+    @ViewBuilder
     private func workspaceDetail(for section: WorkspaceSection) -> some View {
         switch section {
         case .responses:
-            HermesResponsesConsoleView(
-                apiSettings: $apiSettings,
-                requestDraft: $responsesDraft,
-                companionSettings: companionSettings,
-                companionEnrollment: companionEnrollment,
-                companionRuntime: companionRuntime,
-                responseSession: responseSession
-            )
+            responsesConsoleView()
         case .chat:
             HermesChatConsoleView(
                 apiSettings: $apiSettings,
@@ -332,7 +377,7 @@ struct ContentView: View {
             HermesHistoryView(
                 apiSettings: $apiSettings,
                 searchSession: dashboardHistorySearchSession,
-                isResponsesStreaming: responseSession.isSending,
+                isResponsesStreaming: responseWorkspaces.contains { $0.session.isSending },
                 isChatStreaming: chatSession.isSending,
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
@@ -342,7 +387,7 @@ struct ContentView: View {
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
-                responseSession: responseSession,
+                responseSession: activeResponseSession,
                 chatSession: chatSession,
                 companionSettings: companionSettings,
                 companionEnrollment: companionEnrollment,
@@ -369,8 +414,9 @@ struct ContentView: View {
     }
 
     private func resumeConversationInResponses(_ result: HermesDashboardConversationResult) {
-        guard !responseSession.isSending else { return }
-        responseSession.resumeConversation(from: result)
+        let session = activeResponseSession
+        guard !session.isSending else { return }
+        session.resumeConversation(from: result)
         selectedWorkspace = .responses
         selectedPhoneSection = .responses
     }

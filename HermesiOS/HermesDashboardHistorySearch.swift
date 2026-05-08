@@ -327,11 +327,14 @@ final class HermesDashboardHistorySearchSession {
     var isDashboardHTTPActive = false
 
     private var requestTask: Task<Void, Never>?
+    private var activeSearchID: UUID?
     private var cachedTokenByBaseURL: [String: String] = [:]
 
     func search(dashboardBaseURL: String, apiSettings: HermesAPISettings, profileFilter: String = "all", limit: Int = 25) {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
+            requestTask?.cancel()
+            activeSearchID = nil
             results = []
             matchedMessages = 0
             matchedSessions = 0
@@ -341,8 +344,15 @@ final class HermesDashboardHistorySearchSession {
         }
 
         requestTask?.cancel()
+        let searchID = UUID()
+        activeSearchID = searchID
+        results = []
+        matchedMessages = 0
+        matchedSessions = 0
+        lastErrorMessage = ""
+        status = "Searching dashboard history"
         requestTask = Task {
-            await runSearch(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, query: trimmedQuery, profileFilter: profileFilter, limit: limit)
+            await runSearch(searchID: searchID, dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, query: trimmedQuery, profileFilter: profileFilter, limit: limit)
         }
     }
 
@@ -354,7 +364,8 @@ final class HermesDashboardHistorySearchSession {
         status = "Cancelled"
     }
 
-    private func runSearch(dashboardBaseURL: String, apiSettings: HermesAPISettings, query: String, profileFilter: String, limit: Int) async {
+    private func runSearch(searchID: UUID, dashboardBaseURL: String, apiSettings: HermesAPISettings, query: String, profileFilter: String, limit: Int) async {
+        guard activeSearchID == searchID else { return }
         isSearching = true
         status = "Searching dashboard history"
         lastErrorMessage = ""
@@ -378,6 +389,7 @@ final class HermesDashboardHistorySearchSession {
                 }
 
                 try Task.checkCancellation()
+                guard activeSearchID == searchID else { return }
                 let filteredResults = filter(response.results, profileFilter: profileFilter)
                 results = filteredResults
                 matchedMessages = filteredResults.reduce(0) { $0 + $1.matches.count }
@@ -389,17 +401,23 @@ final class HermesDashboardHistorySearchSession {
                 }
             }
         } catch is CancellationError {
-            status = "Cancelled"
+            if activeSearchID == searchID {
+                status = "Cancelled"
+            }
         } catch {
-            results = []
-            matchedMessages = 0
-            matchedSessions = 0
-            lastErrorMessage = error.localizedDescription
-            status = "Search failed"
+            if activeSearchID == searchID {
+                results = []
+                matchedMessages = 0
+                matchedSessions = 0
+                lastErrorMessage = error.localizedDescription
+                status = "Search failed"
+            }
         }
 
-        isSearching = false
-        isDashboardHTTPActive = false
+        if activeSearchID == searchID {
+            isSearching = false
+            isDashboardHTTPActive = false
+        }
     }
 
     private func filter(_ results: [HermesDashboardConversationResult], profileFilter: String) -> [HermesDashboardConversationResult] {

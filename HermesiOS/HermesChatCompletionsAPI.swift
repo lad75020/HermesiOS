@@ -445,6 +445,7 @@ final class HermesChatSession {
         }
 
         var didExtractText = false
+        var latestStatus = statusMessage(for: event, payload: nil, didExtractText: false)
         for payloadString in Self.jsonPayloadStrings(from: event.data) {
             eventCount += 1
             let payload = HermesLooseJSON(json: payloadString)
@@ -452,8 +453,13 @@ final class HermesChatSession {
                 persistLastChatSessionID(sessionID)
             }
             let delta = extractChatText(from: payload, eventName: event.name)
+            let extractedTextFromPayload = !delta.isEmpty
+            let eventStatus = statusMessage(for: event, payload: payload, didExtractText: extractedTextFromPayload)
+            if !eventStatus.isEmpty {
+                latestStatus = eventStatus
+            }
 
-            guard !delta.isEmpty else { continue }
+            guard extractedTextFromPayload else { continue }
             didExtractText = true
 
             switch event.name {
@@ -469,7 +475,75 @@ final class HermesChatSession {
             updateActiveAssistantEntry(with: streamedText)
         }
 
-        connectionStatus = didExtractText ? "Streaming output" : "Processing chat chunks"
+        connectionStatus = latestStatus.isEmpty ? (didExtractText ? "Streaming output" : "Processing chat chunks") : latestStatus
+    }
+
+    private func statusMessage(for event: HermesChatSSEEvent, payload: HermesLooseJSON?, didExtractText: Bool) -> String {
+        guard event.data != "[DONE]" else { return "Completed" }
+        let eventName = event.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !eventName.isEmpty else {
+            return didExtractText ? "Streaming output" : "Processing chat chunks"
+        }
+
+        switch eventName.lowercased() {
+        case "hermes.tool.progress":
+            let tool = payload?.string(at: ["tool"]) ?? "tool"
+            let status = payload?.string(at: ["status"]) ?? "progress"
+            return "Tool \(status): \(tool)"
+        case "hermes.tool.output":
+            let tool = payload?.string(at: ["tool"]) ?? "tool"
+            return "Tool output: \(tool)"
+        case "hermes.reasoning.summary":
+            return "Reasoning"
+        case "response.created", "response.in_progress":
+            return "Response in progress"
+        case "response.output_item.added":
+            return outputItemStatus(prefix: "Started", payload: payload)
+        case "response.output_item.done":
+            return outputItemStatus(prefix: "Finished", payload: payload)
+        case "response.content_part.added", "response.content_part.done":
+            return "Receiving content"
+        case "response.output_text.delta":
+            return didExtractText ? "Streaming output" : "Receiving assistant text"
+        case "response.output_text.done":
+            return "Assistant text complete"
+        case "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done", "response.reasoning.delta", "response.reasoning.done":
+            return "Reasoning"
+        case "response.function_call_arguments.delta", "response.function_call_arguments.done":
+            let name = payload?.string(at: ["name"])
+                ?? payload?.string(at: ["item", "name"])
+                ?? payload?.string(at: ["output_item", "name"])
+            return name.map { "Preparing tool call: \($0)" } ?? "Preparing tool call"
+        case "response.completed":
+            return "Completed"
+        case "response.failed", "response.incomplete":
+            return eventName == "response.failed" ? "Failed" : "Incomplete"
+        default:
+            if didExtractText {
+                return "Streaming output"
+            }
+            if eventName.lowercased().hasPrefix("response.") {
+                return "Event: \(eventName)"
+            }
+            return "Event: \(eventName)"
+        }
+    }
+
+    private func outputItemStatus(prefix: String, payload: HermesLooseJSON?) -> String {
+        let type = payload?.string(at: ["item", "type"])
+            ?? payload?.string(at: ["output_item", "type"])
+            ?? payload?.string(at: ["type"])
+        let name = payload?.string(at: ["item", "name"])
+            ?? payload?.string(at: ["output_item", "name"])
+            ?? payload?.string(at: ["name"])
+
+        if let name, !name.isEmpty {
+            return "\(prefix) \(name)"
+        }
+        if let type, !type.isEmpty {
+            return "\(prefix) \(type.replacingOccurrences(of: "_", with: " "))"
+        }
+        return "\(prefix) output item"
     }
 
     private static func jsonPayloadStrings(from data: String) -> [String] {

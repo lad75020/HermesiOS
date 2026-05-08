@@ -184,7 +184,7 @@ struct ContentView: View {
                     )
                 }
                 .tabItem {
-                    Label("Responses", systemImage: "dot.radiowaves.left.and.right")
+                    Label("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
                 }
                 .tag(WorkspaceSection.responses)
 
@@ -199,7 +199,7 @@ struct ContentView: View {
                     )
                 }
                 .tabItem {
-                    Label("Chat", systemImage: "text.bubble")
+                    Label("Chat with Hermes", systemImage: "text.bubble")
                 }
                 .tag(WorkspaceSection.chat)
 

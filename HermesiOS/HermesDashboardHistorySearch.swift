@@ -42,6 +42,7 @@ struct HermesDashboardSessionInfo: Decodable {
     let id: String
     let source: String?
     let userID: String?
+    let profile: String?
     let model: String?
     let title: String?
     let startedAt: Double?
@@ -52,11 +53,45 @@ struct HermesDashboardSessionInfo: Decodable {
         case id
         case source
         case userID = "user_id"
+        case profile
+        case profileName = "profile_name"
+        case profileID = "profile_id"
+        case hermesProfile = "hermes_profile"
+        case metadata
         case model
         case title
         case startedAt = "started_at"
         case endedAt = "ended_at"
         case messageCount = "message_count"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        source = try? container.decode(String.self, forKey: .source)
+        userID = try? container.decode(String.self, forKey: .userID)
+        model = try? container.decode(String.self, forKey: .model)
+        title = try? container.decode(String.self, forKey: .title)
+        startedAt = try? container.decode(Double.self, forKey: .startedAt)
+        endedAt = try? container.decode(Double.self, forKey: .endedAt)
+        messageCount = try? container.decode(Int.self, forKey: .messageCount)
+
+        let directProfile = [
+            try? container.decode(String.self, forKey: .profile),
+            try? container.decode(String.self, forKey: .profileName),
+            try? container.decode(String.self, forKey: .profileID),
+            try? container.decode(String.self, forKey: .hermesProfile)
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
+
+        if let directProfile {
+            profile = directProfile
+        } else if let metadata = try? container.decode([String: HermesFlexibleJSONValue].self, forKey: .metadata) {
+            profile = ["profile", "profile_name", "profile_id", "hermes_profile"]
+                .compactMap { metadata[$0]?.readableText.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty }
+        } else {
+            profile = nil
+        }
     }
 }
 
@@ -194,7 +229,7 @@ final class HermesDashboardHistorySearchSession {
     private var requestTask: Task<Void, Never>?
     private var cachedTokenByBaseURL: [String: String] = [:]
 
-    func search(dashboardBaseURL: String, apiSettings: HermesAPISettings, limit: Int = 25) {
+    func search(dashboardBaseURL: String, apiSettings: HermesAPISettings, profileFilter: String = "all", limit: Int = 25) {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             results = []
@@ -207,7 +242,7 @@ final class HermesDashboardHistorySearchSession {
 
         requestTask?.cancel()
         requestTask = Task {
-            await runSearch(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, query: trimmedQuery, limit: limit)
+            await runSearch(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, query: trimmedQuery, profileFilter: profileFilter, limit: limit)
         }
     }
 
@@ -219,7 +254,7 @@ final class HermesDashboardHistorySearchSession {
         status = "Cancelled"
     }
 
-    private func runSearch(dashboardBaseURL: String, apiSettings: HermesAPISettings, query: String, limit: Int) async {
+    private func runSearch(dashboardBaseURL: String, apiSettings: HermesAPISettings, query: String, profileFilter: String, limit: Int) async {
         isSearching = true
         status = "Searching dashboard history"
         lastErrorMessage = ""
@@ -231,7 +266,7 @@ final class HermesDashboardHistorySearchSession {
                 let response: HermesDashboardConversationSearchResponse
 
                 do {
-                    response = try await fetchConversations(baseURL: baseURL, token: token, apiSettings: apiSettings, query: query, limit: limit)
+                    response = try await fetchConversations(baseURL: baseURL, token: token, apiSettings: apiSettings, query: query, profileFilter: profileFilter, limit: limit)
                 } catch HermesResponsesError.httpError(401) {
                     // Dashboard session tokens are ephemeral and change whenever the
                     // dashboard process restarts. If the simulator has a cached token
@@ -239,14 +274,19 @@ final class HermesDashboardHistorySearchSession {
                     cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
                     status = "Refreshing dashboard session token"
                     let refreshedToken = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-                    response = try await fetchConversations(baseURL: baseURL, token: refreshedToken, apiSettings: apiSettings, query: query, limit: limit)
+                    response = try await fetchConversations(baseURL: baseURL, token: refreshedToken, apiSettings: apiSettings, query: query, profileFilter: profileFilter, limit: limit)
                 }
 
                 try Task.checkCancellation()
-                results = response.results
-                matchedMessages = response.matchedMessages
-                matchedSessions = response.matchedSessions
-                status = response.results.isEmpty ? "No matching conversations" : "Found \(response.matchedSessions) conversations"
+                let filteredResults = filter(response.results, profileFilter: profileFilter)
+                results = filteredResults
+                matchedMessages = filteredResults.reduce(0) { $0 + $1.matches.count }
+                matchedSessions = filteredResults.count
+                if profileFilter == "all" {
+                    status = response.results.isEmpty ? "No matching conversations" : "Found \(response.matchedSessions) conversations"
+                } else {
+                    status = filteredResults.isEmpty ? "No matching conversations for \(displayProfileName(profileFilter))" : "Found \(filteredResults.count) conversations for \(displayProfileName(profileFilter))"
+                }
             }
         } catch is CancellationError {
             status = "Cancelled"
@@ -260,6 +300,26 @@ final class HermesDashboardHistorySearchSession {
 
         isSearching = false
         isDashboardHTTPActive = false
+    }
+
+    private func filter(_ results: [HermesDashboardConversationResult], profileFilter: String) -> [HermesDashboardConversationResult] {
+        let selected = normalizedProfileName(profileFilter)
+        guard selected != "all" else { return results }
+        return results.filter { result in
+            let sessionProfile = normalizedProfileName(result.session.profile ?? "default")
+            return sessionProfile == selected
+        }
+    }
+
+    private func normalizedProfileName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "default" : trimmed.lowercased()
+    }
+
+    private func displayProfileName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Default" }
+        return trimmed == "default" ? "Default" : trimmed
     }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
@@ -297,16 +357,21 @@ final class HermesDashboardHistorySearchSession {
         token: String,
         apiSettings: HermesAPISettings,
         query: String,
+        profileFilter: String,
         limit: Int
     ) async throws -> HermesDashboardConversationSearchResponse {
         status = "Fetching matching conversations"
 
         var components = URLComponents(url: baseURL.appendingPathComponent("api/sessions/search/conversations"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "limit", value: String(limit)),
             URLQueryItem(name: "role", value: "user,assistant,tool")
         ]
+        if normalizedProfileName(profileFilter) != "all" {
+            queryItems.append(URLQueryItem(name: "profile", value: profileFilter))
+        }
+        components?.queryItems = queryItems
 
         guard let url = components?.url else {
             throw HermesDashboardHistorySearchError.invalidDashboardURL

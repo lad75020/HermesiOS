@@ -18,9 +18,9 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .responses:
-            "Responses API"
+            "Ask Hermes"
         case .chat:
-            "Chat Completions"
+            "Chat with Hermes"
         case .history:
             "History"
         case .office:

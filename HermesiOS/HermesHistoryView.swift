@@ -13,6 +13,8 @@ struct HermesHistoryView: View {
 
     @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
     @State private var expandedConversationIDs: Set<String> = []
+    @State private var apiProfiles: [HermesAPIProfile] = []
+    @State private var selectedProfileFilter = "all"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +39,9 @@ struct HermesHistoryView: View {
         }
         .background(Color.hermesCanvas)
         .toolbar(.hidden, for: .navigationBar)
+        .task(id: apiSettings.baseURL) {
+            await refreshProfileOptions()
+        }
     }
 
     private var dashboardSearchSection: some View {
@@ -51,6 +56,16 @@ struct HermesHistoryView: View {
                     .hermesRuntimeInput()
 
                 HStack(spacing: 10) {
+                    Picker("Profile", selection: $selectedProfileFilter) {
+                        ForEach(profileFilterOptions, id: \.value) { option in
+                            Text(option.title).tag(option.value)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                    .disabled(searchSession.isSearching)
+                    .accessibilityLabel("History profile filter")
+
                     Button(action: runDashboardSearch) {
                         Label(searchSession.isSearching ? "Searching…" : "Search", systemImage: "magnifyingglass")
                     }
@@ -138,7 +153,47 @@ struct HermesHistoryView: View {
 
     private func runDashboardSearch() {
         expandedConversationIDs.removeAll()
-        searchSession.search(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        let limit = selectedProfileFilter == "all" ? 25 : 100
+        searchSession.search(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profileFilter: selectedProfileFilter, limit: limit)
+    }
+
+    private var profileFilterOptions: [HermesHistoryProfileFilterOption] {
+        var seen = Set(["all", "default"])
+        var options: [HermesHistoryProfileFilterOption] = [
+            HermesHistoryProfileFilterOption(title: "All", value: "all"),
+            HermesHistoryProfileFilterOption(title: "Default", value: "default")
+        ]
+
+        let namedProfiles = apiProfiles
+            .filter { !$0.isDefault }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        for profile in namedProfiles {
+            let value = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { continue }
+            let key = value.lowercased()
+            guard !seen.contains(key) else { continue }
+            let title = profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? value : profile.name
+            options.append(HermesHistoryProfileFilterOption(title: title, value: value))
+            seen.insert(key)
+        }
+
+        return options
+    }
+
+    private func refreshProfileOptions() async {
+        do {
+            apiProfiles = try await HermesAPIProfilesClient.fetchProfiles(apiSettings: apiSettings)
+            let available = Set(profileFilterOptions.map { $0.value.lowercased() })
+            if !available.contains(selectedProfileFilter.lowercased()) {
+                selectedProfileFilter = "all"
+            }
+        } catch {
+            apiProfiles = []
+            if selectedProfileFilter != "all" && selectedProfileFilter != "default" {
+                selectedProfileFilter = "all"
+            }
+        }
     }
 
     private func bindingForConversation(_ id: String) -> Binding<Bool> {
@@ -153,6 +208,11 @@ struct HermesHistoryView: View {
             }
         )
     }
+}
+
+private struct HermesHistoryProfileFilterOption: Hashable {
+    let title: String
+    let value: String
 }
 
 private extension HermesDashboardHistorySearchSession {

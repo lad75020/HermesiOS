@@ -414,7 +414,7 @@ struct HermesResponsesConsoleView: View {
         VStack(spacing: 0) {
             HermesGlassEffectContainer(spacing: 16) {
                 VStack(alignment: .leading, spacing: 16) {
-                    HermesTabHeader("Responses API", systemImage: "dot.radiowaves.left.and.right")
+                    HermesTabHeader("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
 
                     HStack(alignment: .top, spacing: 12) {
                         HermesProfileSelector(
@@ -971,7 +971,7 @@ struct HermesChatConsoleView: View {
         VStack(spacing: 0) {
             HermesGlassEffectContainer(spacing: 16) {
                 VStack(alignment: .leading, spacing: 16) {
-                    HermesTabHeader("Chat Completions", systemImage: "text.bubble")
+                    HermesTabHeader("Chat with Hermes", systemImage: "text.bubble")
 
                     HStack(alignment: .top, spacing: 12) {
                         HermesProfileSelector(

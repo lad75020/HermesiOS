@@ -299,6 +299,7 @@ final class CompanionClientSession {
                         "service_restart",
                         "hermes_installation_status",
                         "hermes_installation_update",
+                        "hermes_installation_review_conflicts",
                         "hermes_installation_merge_reviewed_update",
                         "list_skills",
                         "set_skill_state",
@@ -480,6 +481,17 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "hermes_installation_update_failed", message: error.localizedDescription)
+            }
+        case "hermes_installation_review_conflicts":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The hermes_installation_review_conflicts request requires a payload.")
+                }
+                let reviewPayload = try payload.decode(HermesInstallationReviewConflictsPayload.self)
+                let result = try gitRegistry.reviewHermesInstallationConflicts(workspacePath: reviewPayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "hermes_installation_review_conflicts_failed", message: error.localizedDescription)
             }
         case "hermes_installation_merge_reviewed_update":
             do {

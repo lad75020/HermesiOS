@@ -159,6 +159,10 @@ struct HermesCompanionInstallationMergePayload: Codable {
     let workspacePath: String
 }
 
+struct HermesCompanionInstallationReviewConflictsPayload: Codable {
+    let workspacePath: String
+}
+
 struct HermesCompanionInstallationStatusResult: Codable, Equatable {
     let workspacePath: String
     let resolvedWorkspacePath: String
@@ -1386,6 +1390,32 @@ final class HermesCompanionRuntimeSession {
                 self.hermesInstallationStatusError = error.localizedDescription
                 self.hermesInstallationStatusMessage = "Update Failed"
                 self.connectionStatus = "Hermes Update Failed"
+            }
+            self.isUpdatingHermesInstallation = false
+        }
+    }
+
+    func reviewHermesInstallationConflicts(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            guard identityState.isEnrolled else { return }
+            self.isUpdatingHermesInstallation = true
+            self.hermesInstallationStatusError = ""
+            self.hermesInstallationOperationOutput = ""
+            self.connectionStatus = "Reviewing Hermes Conflicts"
+            do {
+                let result: HermesCompanionInstallationOperationResult = try await HermesCompanionSessionFactory.request(
+                    settings: settings,
+                    state: identityState,
+                    type: "hermes_installation_review_conflicts",
+                    payload: HermesCompanionInstallationReviewConflictsPayload(workspacePath: settings.hermesWorkspacePath)
+                )
+                self.applyHermesInstallationStatus(result.status)
+                self.hermesInstallationOperationOutput = result.output
+                self.connectionStatus = "Hermes Conflicts Reviewed and Merged"
+            } catch {
+                self.hermesInstallationStatusError = error.localizedDescription
+                self.hermesInstallationStatusMessage = "Conflict Review Failed"
+                self.connectionStatus = "Hermes Conflict Review Failed"
             }
             self.isUpdatingHermesInstallation = false
         }

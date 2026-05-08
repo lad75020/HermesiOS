@@ -179,6 +179,10 @@ struct HermesInstallationMergePayload: Codable {
     let workspacePath: String
 }
 
+struct HermesInstallationReviewConflictsPayload: Codable {
+    let workspacePath: String
+}
+
 struct HermesInstallationStatusResult: Codable {
     let workspacePath: String
     let resolvedWorkspacePath: String

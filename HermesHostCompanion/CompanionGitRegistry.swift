@@ -70,6 +70,60 @@ final class CompanionGitRegistry {
         return HermesInstallationOperationResult(status: currentStatus, output: operationMessage)
     }
 
+    func reviewHermesInstallationConflicts(workspacePath: String) throws -> HermesInstallationOperationResult {
+        let repoURL = try hermesRepoURL(workspacePath: workspacePath)
+        try ensureNoMergeInProgress(repoURL: repoURL)
+        try ensureCleanWorkingTree(repoURL: repoURL)
+
+        let pendingBranch = try gitConfigValue(pendingBranchConfigKey, repoURL: repoURL)
+        guard pendingBranch.isEmpty == false else {
+            throw CompanionGitRegistryError.gitCommandFailed("No Hermes update conflict review is pending. Tap Hermes Update first.")
+        }
+
+        let branch = try runGit(["branch", "--show-current"], repoURL: repoURL, timeout: 10).trimmedOutput
+        guard branch == pendingBranch || pendingBranch == "HEAD" else {
+            throw CompanionGitRegistryError.gitCommandFailed("The pending update was prepared for \(pendingBranch), but the checkout is currently on \(branch.isEmpty ? "detached HEAD" : branch).")
+        }
+
+        let pendingCommit = try gitConfigValue(pendingCommitConfigKey, repoURL: repoURL)
+        let officialRef = pendingCommit.isEmpty ? officialMainRef : pendingCommit
+        let mergeResult = try runGitAllowingFailure(["merge", "--no-ff", "--no-commit", officialRef], repoURL: repoURL, timeout: 120)
+        let conflictFiles = try unresolvedConflictFiles(repoURL: repoURL)
+        guard conflictFiles.isEmpty == false else {
+            _ = try runGit(["commit", "-m", "Merge official Hermes Agent main into \(branch.isEmpty ? "local checkout" : branch)"], repoURL: repoURL, timeout: 120)
+            try clearPendingUpdateConfig(repoURL: repoURL)
+            let output = mergeResult.output.isEmpty ? "Merged official main; no conflict files required Hermes review." : mergeResult.output
+            try setGitConfig(lastUpdateOutputConfigKey, value: output, repoURL: repoURL)
+            let currentStatus = try status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
+            return HermesInstallationOperationResult(status: currentStatus, output: output)
+        }
+
+        var reviewOutputs: [String] = []
+        for file in conflictFiles {
+            let localContent = try gitBlobContent(ref: "HEAD", file: file, repoURL: repoURL)
+            let officialContent = try gitBlobContent(ref: officialRef, file: file, repoURL: repoURL)
+            let prompt = hermesConflictReviewPrompt(file: file, localContent: localContent, officialContent: officialContent)
+            let result = try runHermesAgent(prompt: prompt, repoURL: repoURL, timeout: 900).trimmedOutput
+            try ensureFileHasNoConflictMarkers(file, repoURL: repoURL)
+            _ = try runGit(["add", file], repoURL: repoURL, timeout: 30)
+            reviewOutputs.append("Reviewed \(file) with Hermes Agent.\(result.isEmpty ? "" : "\n\(result)")")
+        }
+
+        let remainingConflicts = try unresolvedConflictFiles(repoURL: repoURL)
+        guard remainingConflicts.isEmpty else {
+            throw CompanionGitRegistryError.gitCommandFailed("Hermes reviewed conflicts, but these files remain unresolved: \(remainingConflicts.joined(separator: ", "))")
+        }
+
+        _ = try runGit(["commit", "-m", "Merge official Hermes Agent main into \(branch.isEmpty ? "local checkout" : branch)"], repoURL: repoURL, timeout: 120)
+        try clearPendingUpdateConfig(repoURL: repoURL)
+        let output = ([mergeResult.output] + reviewOutputs + ["Merged reviewed official Hermes Agent update into \(branch.isEmpty ? "local checkout" : branch)."])
+            .filter { $0.isEmpty == false }
+            .joined(separator: "\n\n")
+        try setGitConfig(lastUpdateOutputConfigKey, value: output, repoURL: repoURL)
+        let currentStatus = try status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
+        return HermesInstallationOperationResult(status: currentStatus, output: output)
+    }
+
     func mergeReviewedHermesInstallationUpdate(workspacePath: String) throws -> HermesInstallationOperationResult {
         let repoURL = try hermesRepoURL(workspacePath: workspacePath)
         try ensureNoMergeInProgress(repoURL: repoURL)
@@ -88,9 +142,7 @@ final class CompanionGitRegistry {
         let pendingCommit = try gitConfigValue(pendingCommitConfigKey, repoURL: repoURL)
         let officialRef = pendingCommit.isEmpty ? officialMainRef : pendingCommit
         let mergeOutput = try runGit(["merge", "--no-ff", officialRef, "-m", "Merge official Hermes Agent main into \(branch.isEmpty ? "local checkout" : branch)"], repoURL: repoURL, timeout: 120).trimmedOutput
-        try unsetGitConfig(pendingBranchConfigKey, repoURL: repoURL)
-        try unsetGitConfig(pendingCommitConfigKey, repoURL: repoURL)
-        try unsetGitConfig(pendingConflictsConfigKey, repoURL: repoURL)
+        try clearPendingUpdateConfig(repoURL: repoURL)
         try setGitConfig(lastUpdateOutputConfigKey, value: mergeOutput.isEmpty ? "Merged official main into local branch." : mergeOutput, repoURL: repoURL)
 
         let currentStatus = try status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
@@ -144,6 +196,60 @@ final class CompanionGitRegistry {
         guard status.isEmpty else {
             throw CompanionGitRegistryError.gitCommandFailed("Commit, stash, or discard local working-tree changes before updating Hermes Agent.")
         }
+    }
+
+    private func unresolvedConflictFiles(repoURL: URL) throws -> [String] {
+        try runGit(["diff", "--name-only", "--diff-filter=U"], repoURL: repoURL, timeout: 10)
+            .split(separator: "\n")
+            .map(String.init)
+            .filter { $0.isEmpty == false }
+    }
+
+    private func gitBlobContent(ref: String, file: String, repoURL: URL) throws -> String {
+        let result = try runGitAllowingFailure(["show", "\(ref):\(file)"], repoURL: repoURL, timeout: 30)
+        if result.exitCode == 0 {
+            return result.output
+        }
+        return "[No version of \(file) exists at \(ref). The file may have been added, deleted, or renamed in this side of the merge.]"
+    }
+
+    private func hermesConflictReviewPrompt(file: String, localContent: String, officialContent: String) -> String {
+        """
+        Merge those two files in git conflict. They belong to the hermes agent source code. Review the merged file for syntax correctness. Run relevant tests on the hermes agent.
+
+        File path to write with the final merged result: \(file)
+
+        Use the current working tree at this repository. Overwrite the conflicted file at the path above with the final merged version. Preserve local branch changes unless official main intentionally supersedes them. Preserve official main changes unless they are incompatible with the local branch. Remove all git conflict markers. After writing the file, review syntax correctness and run relevant Hermes Agent tests for this file. In your final response, summarize the merge decisions and tests run.
+
+        Version from the current local branch:
+        ```
+        \(localContent)
+        ```
+
+        Version from the pulled official main branch:
+        ```
+        \(officialContent)
+        ```
+        """
+    }
+
+    private func runHermesAgent(prompt: String, repoURL: URL, timeout: TimeInterval) throws -> String {
+        try runProcess(executable: "/usr/bin/env", arguments: ["hermes", "chat", "-q", prompt], workingDirectory: repoURL, timeout: timeout)
+    }
+
+    private func ensureFileHasNoConflictMarkers(_ file: String, repoURL: URL) throws {
+        let fileURL = repoURL.appendingPathComponent(file)
+        let content = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+        let hasMarkers = content.contains("<<<<<<< ") || content.contains("=======\n") || content.contains(">>>>>>> ")
+        guard hasMarkers == false else {
+            throw CompanionGitRegistryError.gitCommandFailed("Hermes Agent left git conflict markers in \(file).")
+        }
+    }
+
+    private func clearPendingUpdateConfig(repoURL: URL) throws {
+        try unsetGitConfig(pendingBranchConfigKey, repoURL: repoURL)
+        try unsetGitConfig(pendingCommitConfigKey, repoURL: repoURL)
+        try unsetGitConfig(pendingConflictsConfigKey, repoURL: repoURL)
     }
 
     private func commitWorkingTreeChangesIfNeeded(repoURL: URL, branch: String) throws -> String {
@@ -219,9 +325,23 @@ final class CompanionGitRegistry {
     }
 
     private func runGitAllowingFailure(_ arguments: [String], repoURL: URL, timeout: TimeInterval) throws -> (output: String, exitCode: Int32) {
+        let result = try runProcessAllowingFailure(executable: "/usr/bin/env", arguments: ["git", "-C", repoURL.path] + arguments, workingDirectory: repoURL, timeout: timeout)
+        return (result.output, result.exitCode)
+    }
+
+    private func runProcess(executable: String, arguments: [String], workingDirectory: URL, timeout: TimeInterval) throws -> String {
+        let result = try runProcessAllowingFailure(executable: executable, arguments: arguments, workingDirectory: workingDirectory, timeout: timeout)
+        guard result.exitCode == 0 else {
+            throw CompanionGitRegistryError.gitCommandFailed(result.output)
+        }
+        return result.output
+    }
+
+    private func runProcessAllowingFailure(executable: String, arguments: [String], workingDirectory: URL, timeout: TimeInterval) throws -> (output: String, exitCode: Int32) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git", "-C", repoURL.path] + arguments
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.currentDirectoryURL = workingDirectory
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         process.environment = environment
@@ -239,7 +359,7 @@ final class CompanionGitRegistry {
             }
             if process.isRunning {
                 process.terminate()
-                throw CompanionGitRegistryError.gitCommandFailed("git \(arguments.joined(separator: " ")) timed out.")
+                throw CompanionGitRegistryError.gitCommandFailed("\(executable) \(arguments.joined(separator: " ")) timed out.")
             }
             let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""

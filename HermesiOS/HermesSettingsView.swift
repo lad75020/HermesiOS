@@ -287,6 +287,17 @@ struct HermesSettingsView: View {
                         .disabled(hermesUpdateDisabled)
 
                         Button {
+                            companionRuntime.reviewHermesInstallationConflicts(
+                                settings: companionSettings,
+                                identityState: companionEnrollment.identityState
+                            )
+                        } label: {
+                            Label("Review Conflicts with Hermes", systemImage: "wand.and.stars")
+                        }
+                        .hermesGlassProminentButton()
+                        .disabled(reviewHermesConflictsDisabled)
+
+                        Button {
                             companionRuntime.mergeReviewedHermesInstallationUpdate(
                                 settings: companionSettings,
                                 identityState: companionEnrollment.identityState
@@ -355,7 +366,16 @@ struct HermesSettingsView: View {
         companionEnrollment.identityState.isEnrolled == false ||
         companionRuntime.isCheckingHermesInstallation ||
         companionRuntime.isUpdatingHermesInstallation ||
-        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false) == false
+        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false) == false ||
+        (companionRuntime.hermesInstallationStatus?.conflictFiles.isEmpty ?? true) == false
+    }
+
+    private var reviewHermesConflictsDisabled: Bool {
+        companionEnrollment.identityState.isEnrolled == false ||
+        companionRuntime.isCheckingHermesInstallation ||
+        companionRuntime.isUpdatingHermesInstallation ||
+        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false) == false ||
+        (companionRuntime.hermesInstallationStatus?.conflictFiles.isEmpty ?? true)
     }
 
     private var hermesInstallationStatusColor: Color {

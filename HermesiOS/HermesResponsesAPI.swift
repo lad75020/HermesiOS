@@ -9,6 +9,44 @@ import Foundation
 import Observation
 import UniformTypeIdentifiers
 
+enum HermesStreamTextFormatter {
+    static func lineBreakAfterStatementDots(_ text: String) -> String {
+        guard text.contains(".") else { return text }
+
+        var formatted = ""
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            formatted.append(character)
+
+            if character == "." {
+                let previous = index > text.startIndex ? text[text.index(before: index)] : nil
+                let nextIndex = text.index(after: index)
+                let next = nextIndex < text.endIndex ? text[nextIndex] : nil
+
+                if shouldInsertLineBreak(afterDotWithPrevious: previous, next: next) {
+                    formatted.append("\n")
+                }
+            }
+
+            index = text.index(after: index)
+        }
+
+        return formatted
+    }
+
+    private static func shouldInsertLineBreak(afterDotWithPrevious previous: Character?, next: Character?) -> Bool {
+        if previous == "." || next == "." { return false }
+        if next == "\n" || next == "\r" { return false }
+        if let previous, let next, isDigit(previous), isDigit(next) { return false }
+        return true
+    }
+
+    private static func isDigit(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { CharacterSet.decimalDigits.contains($0) }
+    }
+}
+
 struct HermesPromptAttachment: Equatable {
     let filename: String
     let mimeType: String
@@ -486,7 +524,7 @@ final class HermesResponsesSession {
               let index = entries.firstIndex(where: { $0.id == activeAssistantEntryID })
         else { return }
         var updatedEntries = entries
-        updatedEntries[index].content = content
+        updatedEntries[index].content = HermesStreamTextFormatter.lineBreakAfterStatementDots(content)
         entries = updatedEntries
     }
 

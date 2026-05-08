@@ -151,6 +151,14 @@ struct HermesCompanionInstallationStatusPayload: Codable {
     let workspacePath: String
 }
 
+struct HermesCompanionInstallationUpdatePayload: Codable {
+    let workspacePath: String
+}
+
+struct HermesCompanionInstallationMergePayload: Codable {
+    let workspacePath: String
+}
+
 struct HermesCompanionInstallationStatusResult: Codable, Equatable {
     let workspacePath: String
     let resolvedWorkspacePath: String
@@ -161,6 +169,19 @@ struct HermesCompanionInstallationStatusResult: Codable, Equatable {
     let upstreamCommit: String
     let behindBy: Int
     let checkedAt: Date
+    let pendingUpdateBranch: String?
+    let pendingUpdateCommit: String?
+    let conflictFiles: [String]
+    let lastUpdateOutput: String
+
+    var isUpdateBlocked: Bool {
+        pendingUpdateBranch?.isEmpty == false
+    }
+}
+
+struct HermesCompanionInstallationOperationResult: Codable, Equatable {
+    let status: HermesCompanionInstallationStatusResult
+    let output: String
 }
 
 struct HermesCompanionListSkillsPayload: Codable {
@@ -1084,7 +1105,9 @@ final class HermesCompanionRuntimeSession {
     var hermesInstallationStatus: HermesCompanionInstallationStatusResult?
     var hermesInstallationStatusMessage = "Not checked"
     var hermesInstallationStatusError = ""
+    var hermesInstallationOperationOutput = ""
     var isCheckingHermesInstallation = false
+    var isUpdatingHermesInstallation = false
     var connectionStatus = "Idle"
     var lastErrorMessage = ""
     var isBusy = false
@@ -1334,9 +1357,7 @@ final class HermesCompanionRuntimeSession {
                 type: "hermes_installation_status",
                 payload: HermesCompanionInstallationStatusPayload(workspacePath: settings.hermesWorkspacePath)
             )
-            hermesInstallationStatus = result
-            resolvedHermesWorkspacePath = result.resolvedWorkspacePath
-            hermesInstallationStatusMessage = Self.hermesInstallationStatusMessage(for: result)
+            applyHermesInstallationStatus(result)
         } catch {
             hermesInstallationStatusError = error.localizedDescription
             hermesInstallationStatusMessage = "Unavailable"
@@ -1344,11 +1365,79 @@ final class HermesCompanionRuntimeSession {
         isCheckingHermesInstallation = false
     }
 
+    func updateHermesInstallation(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            guard identityState.isEnrolled else { return }
+            self.isUpdatingHermesInstallation = true
+            self.hermesInstallationStatusError = ""
+            self.hermesInstallationOperationOutput = ""
+            self.connectionStatus = "Updating Hermes Installation"
+            do {
+                let result: HermesCompanionInstallationOperationResult = try await HermesCompanionSessionFactory.request(
+                    settings: settings,
+                    state: identityState,
+                    type: "hermes_installation_update",
+                    payload: HermesCompanionInstallationUpdatePayload(workspacePath: settings.hermesWorkspacePath)
+                )
+                self.applyHermesInstallationStatus(result.status)
+                self.hermesInstallationOperationOutput = result.output
+                self.connectionStatus = "Hermes Update Ready for Review"
+            } catch {
+                self.hermesInstallationStatusError = error.localizedDescription
+                self.hermesInstallationStatusMessage = "Update Failed"
+                self.connectionStatus = "Hermes Update Failed"
+            }
+            self.isUpdatingHermesInstallation = false
+        }
+    }
+
+    func mergeReviewedHermesInstallationUpdate(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            guard identityState.isEnrolled else { return }
+            self.isUpdatingHermesInstallation = true
+            self.hermesInstallationStatusError = ""
+            self.hermesInstallationOperationOutput = ""
+            self.connectionStatus = "Merging Hermes Update"
+            do {
+                let result: HermesCompanionInstallationOperationResult = try await HermesCompanionSessionFactory.request(
+                    settings: settings,
+                    state: identityState,
+                    type: "hermes_installation_merge_reviewed_update",
+                    payload: HermesCompanionInstallationMergePayload(workspacePath: settings.hermesWorkspacePath)
+                )
+                self.applyHermesInstallationStatus(result.status)
+                self.hermesInstallationOperationOutput = result.output
+                self.connectionStatus = "Hermes Update Merged"
+            } catch {
+                self.hermesInstallationStatusError = error.localizedDescription
+                self.hermesInstallationStatusMessage = "Merge Failed"
+                self.connectionStatus = "Hermes Merge Failed"
+            }
+            self.isUpdatingHermesInstallation = false
+        }
+    }
+
+    private func applyHermesInstallationStatus(_ result: HermesCompanionInstallationStatusResult) {
+        hermesInstallationStatus = result
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+        hermesInstallationStatusMessage = Self.hermesInstallationStatusMessage(for: result)
+        if result.lastUpdateOutput.isEmpty == false {
+            hermesInstallationOperationOutput = result.lastUpdateOutput
+        }
+    }
+
     private static func hermesInstallationStatusMessage(for result: HermesCompanionInstallationStatusResult) -> String {
+        if result.isUpdateBlocked {
+            let conflictCount = result.conflictFiles.count
+            if conflictCount > 0 {
+                return "Review \(conflictCount) conflict\(conflictCount == 1 ? "" : "s") before merge"
+            }
+            return "Update fetched; review before merge"
+        }
         if result.behindBy == 0 {
             return "Up to date"
         }
-        return "\(result.behindBy) commit\(result.behindBy == 1 ? "" : "s") behind main"
+        return "\(result.behindBy) commit\(result.behindBy == 1 ? "" : "s") behind official main"
     }
 
     private func loadSelectedTarget(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {

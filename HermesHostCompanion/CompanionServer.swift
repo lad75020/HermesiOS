@@ -298,6 +298,8 @@ final class CompanionClientSession {
                         "service_stop",
                         "service_restart",
                         "hermes_installation_status",
+                        "hermes_installation_update",
+                        "hermes_installation_merge_reviewed_update",
                         "list_skills",
                         "set_skill_state",
                         "list_mcp_servers",
@@ -467,6 +469,28 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "hermes_installation_status_failed", message: error.localizedDescription)
+            }
+        case "hermes_installation_update":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The hermes_installation_update request requires a payload.")
+                }
+                let updatePayload = try payload.decode(HermesInstallationUpdatePayload.self)
+                let result = try gitRegistry.updateHermesInstallation(workspacePath: updatePayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "hermes_installation_update_failed", message: error.localizedDescription)
+            }
+        case "hermes_installation_merge_reviewed_update":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The hermes_installation_merge_reviewed_update request requires a payload.")
+                }
+                let mergePayload = try payload.decode(HermesInstallationMergePayload.self)
+                let result = try gitRegistry.mergeReviewedHermesInstallationUpdate(workspacePath: mergePayload.workspacePath)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "hermes_installation_merge_reviewed_update_failed", message: error.localizedDescription)
             }
         case "list_skills":
             do {

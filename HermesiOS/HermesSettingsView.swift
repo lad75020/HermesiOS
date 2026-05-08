@@ -198,7 +198,7 @@ struct HermesSettingsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(companionRuntime.hermesInstallationStatusMessage)
                                 .font(.subheadline.weight(.semibold))
-                            Text("Compared with origin/main of the host Hermes Agent repository. Refreshes hourly.")
+                            Text("Compared with official Hermes Agent main. Refreshes hourly.")
                                 .font(.caption)
                                 .foregroundStyle(.hermesSecondaryText)
                         }
@@ -229,8 +229,30 @@ struct HermesSettingsView: View {
                         }
                         .font(.subheadline)
 
-                        settingsRow(label: "Local / main", value: "\(status.currentCommit) / \(status.upstreamCommit)")
+                        settingsRow(label: "Local / official main", value: "\(status.currentCommit) / \(status.upstreamCommit)")
                         settingsRow(label: "Last Checked", value: status.checkedAt.formatted(date: .abbreviated, time: .shortened))
+
+                        if status.isUpdateBlocked {
+                            settingsRow(label: "Pending Update", value: "\(status.pendingUpdateBranch ?? "local branch") → \(status.pendingUpdateCommit ?? status.upstreamCommit)")
+                        }
+
+                        if status.conflictFiles.isEmpty == false {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Files to review")
+                                    .font(.caption.weight(.semibold))
+                                Text(status.conflictFiles.joined(separator: "\n"))
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.hermesSecondaryText)
+                            }
+                        }
+                    }
+
+                    let trimmedOperationOutput = companionRuntime.hermesInstallationOperationOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmedOperationOutput.isEmpty == false {
+                        Text(trimmedOperationOutput)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.hermesSecondaryText)
+                            .lineLimit(8)
                     }
 
                     if !companionRuntime.hermesInstallationStatusError.isEmpty {
@@ -239,18 +261,42 @@ struct HermesSettingsView: View {
                             .foregroundStyle(.igDestructive)
                     }
 
-                    Button {
-                        Task {
-                            await companionRuntime.refreshHermesInstallationStatus(
+                    HStack(spacing: 10) {
+                        Button {
+                            Task {
+                                await companionRuntime.refreshHermesInstallationStatus(
+                                    settings: companionSettings,
+                                    identityState: companionEnrollment.identityState
+                                )
+                            }
+                        } label: {
+                            Label("Refresh Hermes Version", systemImage: "arrow.clockwise")
+                        }
+                        .hermesGlassButton()
+                        .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isCheckingHermesInstallation || companionRuntime.isUpdatingHermesInstallation)
+
+                        Button {
+                            companionRuntime.updateHermesInstallation(
                                 settings: companionSettings,
                                 identityState: companionEnrollment.identityState
                             )
+                        } label: {
+                            Label("Hermes Update", systemImage: "arrow.down.circle")
                         }
-                    } label: {
-                        Label("Refresh Hermes Version", systemImage: "arrow.clockwise")
+                        .hermesGlassProminentButton()
+                        .disabled(hermesUpdateDisabled)
+
+                        Button {
+                            companionRuntime.mergeReviewedHermesInstallationUpdate(
+                                settings: companionSettings,
+                                identityState: companionEnrollment.identityState
+                            )
+                        } label: {
+                            Label("Merge Reviewed Update", systemImage: "arrow.triangle.merge")
+                        }
+                        .hermesGlassButton()
+                        .disabled(mergeReviewedHermesUpdateDisabled)
                     }
-                    .hermesGlassButton()
-                    .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isCheckingHermesInstallation)
                 }
 
 
@@ -298,12 +344,29 @@ struct HermesSettingsView: View {
         ].joined(separator: "|")
     }
 
+    private var hermesUpdateDisabled: Bool {
+        companionEnrollment.identityState.isEnrolled == false ||
+        companionRuntime.isCheckingHermesInstallation ||
+        companionRuntime.isUpdatingHermesInstallation ||
+        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false)
+    }
+
+    private var mergeReviewedHermesUpdateDisabled: Bool {
+        companionEnrollment.identityState.isEnrolled == false ||
+        companionRuntime.isCheckingHermesInstallation ||
+        companionRuntime.isUpdatingHermesInstallation ||
+        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false) == false
+    }
+
     private var hermesInstallationStatusColor: Color {
         if companionRuntime.hermesInstallationStatusError.isEmpty == false {
             return .igDestructive
         }
         guard let status = companionRuntime.hermesInstallationStatus else {
             return .hermesSecondaryText
+        }
+        if status.isUpdateBlocked {
+            return .igGradOrange
         }
         return status.behindBy == 0 ? .igOnlineGreen : .igGradOrange
     }

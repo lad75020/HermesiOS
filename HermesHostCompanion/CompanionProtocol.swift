@@ -171,6 +171,14 @@ struct HermesInstallationStatusPayload: Codable {
     let workspacePath: String
 }
 
+struct HermesInstallationUpdatePayload: Codable {
+    let workspacePath: String
+}
+
+struct HermesInstallationMergePayload: Codable {
+    let workspacePath: String
+}
+
 struct HermesInstallationStatusResult: Codable {
     let workspacePath: String
     let resolvedWorkspacePath: String
@@ -181,6 +189,19 @@ struct HermesInstallationStatusResult: Codable {
     let upstreamCommit: String
     let behindBy: Int
     let checkedAt: Date
+    let pendingUpdateBranch: String?
+    let pendingUpdateCommit: String?
+    let conflictFiles: [String]
+    let lastUpdateOutput: String
+
+    var isUpdateBlocked: Bool {
+        pendingUpdateBranch?.isEmpty == false
+    }
+}
+
+struct HermesInstallationOperationResult: Codable {
+    let status: HermesInstallationStatusResult
+    let output: String
 }
 
 struct ListHermesSkillsPayload: Codable {

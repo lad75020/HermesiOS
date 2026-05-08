@@ -26,6 +26,8 @@ Current behavior and conventions:
 - The request `model` remains the Hermes API compatibility id, normally `hermes-agent` unless centralized elsewhere.
 - The selected profile is locked into a session once a request starts. Switching profile should start a fresh session or clear continuation state.
 - Chat and Responses can resume stored Hermes sessions where server support exists; use the persisted Hermes `SessionDB` id as the universal resume key, not transient TUI runtime ids or `resp_...` ids.
+- Ask Hermes supports up to four parallel Responses screens. The `+` control creates a new screen, numbered title-area buttons switch between screens, and each screen owns its own transcript, selected profile/session state, attachments, and request lifecycle.
+- Keep Ask Hermes busy/disabled state scoped to the active screen where possible. A sending screen must not block unrelated screens except for shared global actions that truly cannot run concurrently.
 
 ### Prompt attachments
 
@@ -50,6 +52,8 @@ Hermes chat-completions streaming can emit Hermes-specific debug SSE events in a
 - `Hermes.tool.output`
 
 Normal assistant text must remain in unnamed OpenAI-compatible `data:` chunks. Debug information should not be injected into `delta.content`.
+
+Chat must keep tool/event/debug logs out of the assistant bubble. Stream events should update a concise status pill instead, with a meaningful label capped at 40 characters. The chat SSE handler should give the UI a chance to repaint after status updates before appending further logs or assistant content.
 
 ## History and dashboard search
 
@@ -85,6 +89,14 @@ On iPad, the sidebar can show completion/attention indicators:
 ## Hermes Office
 
 `HermesOfficeView` embeds the Hermes Office / Studio web experience.
+
+Current behavior:
+
+- The Office header includes a persisted `Claw3D WebView` switch next to the title.
+- The switch uses `hermes.office.webView.enabled` and defaults to on.
+- When the switch is off, the Office tab shows a disabled-state placeholder, reload is disabled, background preload is skipped, and the shared `WKWebView` is stopped and blanked so Claw3D is cleared from memory.
+- Turning the switch back on triggers a fresh reload using the configured Office URL.
+- The Office URL remains configured in Settings through `hermes.office.url`, defaulting to `http://localhost:9116`.
 
 Environment notes:
 
@@ -141,6 +153,7 @@ Current major panels and concepts:
 - Tools/toolsets: lists and toggles Hermes toolsets through host-side config.
 - MCP servers: manages MCP server definitions through Host Companion.
 - Skills: lists and toggles Hermes skills.
+- Knowledge Eraser: uses a two-phase scan/review/erase workflow for memory/profile/skill knowledge deletion. Scans cover `memories/MEMORY.md`, `memories/USER.md`, and text-oriented files under `skills/`; erase actions must stay Host Companion mediated and should not bypass the review step.
 - Schedules: manages Hermes cron schedules and trigger/pause/resume/remove actions.
 - Observability: reads bounded host logs for diagnostics.
 - Allowlisted Targets: displays targets from Host Companion's persisted target registry, not necessarily from Settings → Host Companion → Hermes workspace path.
@@ -210,11 +223,12 @@ When `/v1/models` returns `401 Invalid API key`, the route/backend is reachable 
 
 ## Project layout
 
-- `HermesiOS/ContentView.swift`: high-level app composition and tab/sidebar orchestration.
+- `HermesiOS/ContentView.swift`: high-level app composition, tab/sidebar orchestration, parallel Ask Hermes screen state, and Office preload gating.
 - `HermesiOS/HermesWorkspaceNavigation.swift`: workspace navigation/sidebar components.
 - `HermesiOS/HermesConsoleViews.swift`: shared console UI pieces.
 - `HermesiOS/HermesResponsesAPI.swift`: Responses API request/response models.
-- `HermesiOS/HermesChatCompletionsAPI.swift`: Chat Completions API request/response models.
+- `HermesiOS/HermesChatCompletionsAPI.swift`: Chat Completions API request/response models and streaming status-pill event handling.
+- `HermesiOS/HermesOfficeView.swift`: embedded Office/Claw3D WebView, persisted URL, reload, and WebView on/off toggle.
 - `HermesiOS/HermesDashboardHistorySearch.swift`: dashboard-backed history search.
 - `HermesiOS/HermesHistoryView.swift`: history UI.
 - `HermesiOS/HermesAgentConfigView.swift`: Agent Runtime surface.

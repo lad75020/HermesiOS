@@ -120,9 +120,12 @@ struct WorkspaceSidebar: View {
                 dashboardChannelActive: dashboardChannelActive
             )
 
-            List(WorkspaceSection.allCases, selection: $selection) { section in
+            List(WorkspaceSection.allCases) { section in
                 let hasUnreadCompletion = completionUnread(for: section)
-                NavigationLink(value: section) {
+                Button {
+                    selection = section
+                    clearCompletionUnread(for: section)
+                } label: {
                     Image(systemName: section.systemImage)
                         .font(.title3.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 36)
@@ -135,9 +138,7 @@ struct WorkspaceSidebar: View {
                         .accessibilityLabel(section.title)
                         .accessibilityHint(hasUnreadCompletion ? "Completed. Tap to mark as seen." : "")
                 }
-                .simultaneousGesture(TapGesture().onEnded {
-                    clearCompletionUnread(for: section)
-                })
+                .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
                 .listRowBackground(
                     selection == section

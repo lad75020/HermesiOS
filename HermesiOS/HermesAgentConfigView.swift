@@ -237,6 +237,24 @@ struct HermesAgentConfigView: View {
                 }
 
                 HermesRuntimeAccordionPanel(
+                    title: "Knwoledge Eraser",
+                    subtitle: companionRuntime.knowledgeEraserItems.isEmpty ? "Find, review, archive, and erase topic-related knowledge" : "\(companionRuntime.knowledgeEraserItems.count) candidates · \(companionRuntime.knowledgeEraserSelectedItemIDs.count) selected",
+                    systemImage: "eraser.line.dashed.fill",
+                    isExpanded: Binding(
+                        get: { agentConfiguration.activeRuntimePanel == .knowledgeEraser },
+                        set: { isExpanded in
+                            agentConfiguration.activeRuntimePanel = isExpanded ? .knowledgeEraser : nil
+                        }
+                    )
+                ) {
+                    HermesKnowledgeEraserPanel(
+                        companionSettings: companionSettings,
+                        companionEnrollment: companionEnrollment,
+                        companionRuntime: companionRuntime
+                    )
+                }
+
+                HermesRuntimeAccordionPanel(
                     title: "Schedules",
                     subtitle: schedulesSummary,
                     systemImage: "calendar.badge.clock",

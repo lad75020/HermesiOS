@@ -780,6 +780,61 @@ struct HermesCompanionSupermemoryManagementResult: Codable, Equatable {
     let error: String?
 }
 
+enum HermesCompanionKnowledgeEraserItemKind: String, Codable, Equatable {
+    case memoryEntry
+    case userProfileBlock
+    case skillBlock
+
+    var label: String {
+        switch self {
+        case .memoryEntry: "Memory"
+        case .userProfileBlock: "User profile"
+        case .skillBlock: "Skill"
+        }
+    }
+}
+
+struct HermesCompanionKnowledgeEraserScanPayload: Codable {
+    let workspacePath: String
+    let topic: String
+}
+
+struct HermesCompanionKnowledgeEraserErasePayload: Codable {
+    let workspacePath: String
+    let topic: String
+    let selectedItemIDs: [String]
+}
+
+struct HermesCompanionKnowledgeEraserItem: Codable, Identifiable, Equatable {
+    let id: String
+    let kind: HermesCompanionKnowledgeEraserItemKind
+    let title: String
+    let path: String
+    let location: String
+    let preview: String
+    let content: String
+    let confidence: Double
+}
+
+struct HermesCompanionKnowledgeEraserScanResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let topic: String
+    let scannedAt: Date
+    let items: [HermesCompanionKnowledgeEraserItem]
+}
+
+struct HermesCompanionKnowledgeEraserEraseResult: Codable, Equatable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let topic: String
+    let erasedAt: Date
+    let archivePath: String
+    let erasedItemIDs: [String]
+    let skippedItemIDs: [String]
+    let remainingItems: [HermesCompanionKnowledgeEraserItem]
+}
+
 struct HermesCompanionProfileInfo: Codable, Identifiable, Equatable {
     let id: String
     let name: String
@@ -1174,6 +1229,12 @@ final class HermesCompanionRuntimeSession {
     var memoryEnvFilePath = ""
     var supermemoryLastResult: HermesCompanionSupermemoryManagementResult?
     var supermemoryOperationOutput = ""
+    var knowledgeEraserTopic = ""
+    var knowledgeEraserItems: [HermesCompanionKnowledgeEraserItem] = []
+    var knowledgeEraserSelectedItemIDs: Set<String> = []
+    var knowledgeEraserArchivePath = ""
+    var knowledgeEraserOperationOutput = ""
+    var knowledgeEraserLastScanAt: Date?
     var schedules: [HermesCompanionScheduleCronJob] = []
     var schedulesFilePath = ""
     var profiles: [HermesCompanionProfileInfo] = []
@@ -2366,6 +2427,50 @@ final class HermesCompanionRuntimeSession {
             lastErrorMessage = ""
         }
         connectionStatus = result.success ? fallbackStatus : "Supermemory Operation Failed"
+    }
+
+    func scanKnowledgeEraser(topic: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        knowledgeEraserTopic = topic
+        run {
+            self.connectionStatus = "Scanning Knowledge"
+            let result: HermesCompanionKnowledgeEraserScanResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "scan_knowledge_eraser",
+                payload: HermesCompanionKnowledgeEraserScanPayload(workspacePath: settings.hermesWorkspacePath, topic: topic)
+            )
+            self.knowledgeEraserTopic = result.topic
+            self.knowledgeEraserItems = result.items
+            self.knowledgeEraserSelectedItemIDs = Set(result.items.map(\.id))
+            self.knowledgeEraserLastScanAt = result.scannedAt
+            self.knowledgeEraserArchivePath = ""
+            self.knowledgeEraserOperationOutput = result.items.isEmpty ? "No matching memory or skill blocks found." : "Found \(result.items.count) candidate items. Review the checkboxes before erasing."
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = "Knowledge Scan Complete"
+        }
+    }
+
+    func eraseSelectedKnowledgeItems(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        let selectedIDs = Array(knowledgeEraserSelectedItemIDs)
+        let topic = knowledgeEraserTopic
+        run {
+            self.connectionStatus = "Erasing Knowledge"
+            let result: HermesCompanionKnowledgeEraserEraseResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "erase_knowledge_items",
+                payload: HermesCompanionKnowledgeEraserErasePayload(workspacePath: settings.hermesWorkspacePath, topic: topic, selectedItemIDs: selectedIDs)
+            )
+            self.knowledgeEraserTopic = result.topic
+            self.knowledgeEraserItems = result.remainingItems
+            self.knowledgeEraserSelectedItemIDs = []
+            self.knowledgeEraserArchivePath = result.archivePath
+            self.knowledgeEraserOperationOutput = "Archived \(result.erasedItemIDs.count) erased items to \(result.archivePath)" + (result.skippedItemIDs.isEmpty ? "" : "\nSkipped \(result.skippedItemIDs.count) items that no longer matched.")
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = "Knowledge Erased"
+            self.refreshMemoryConfig(settings: settings, identityState: identityState)
+            self.refreshHermesSkills(settings: settings, identityState: identityState)
+        }
     }
 
     private func applyMemoryOperation(_ result: HermesCompanionMemoryOperationResult) {

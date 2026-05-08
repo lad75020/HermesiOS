@@ -718,6 +718,53 @@ struct SupermemoryManagementResult: Codable {
     let error: String?
 }
 
+enum KnowledgeEraserItemKind: String, Codable {
+    case memoryEntry
+    case userProfileBlock
+    case skillBlock
+}
+
+struct KnowledgeEraserScanPayload: Codable {
+    let workspacePath: String
+    let topic: String
+}
+
+struct KnowledgeEraserErasePayload: Codable {
+    let workspacePath: String
+    let topic: String
+    let selectedItemIDs: [String]
+}
+
+struct KnowledgeEraserItem: Codable, Identifiable {
+    let id: String
+    let kind: KnowledgeEraserItemKind
+    let title: String
+    let path: String
+    let location: String
+    let preview: String
+    let content: String
+    let confidence: Double
+}
+
+struct KnowledgeEraserScanResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let topic: String
+    let scannedAt: Date
+    let items: [KnowledgeEraserItem]
+}
+
+struct KnowledgeEraserEraseResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
+    let topic: String
+    let erasedAt: Date
+    let archivePath: String
+    let erasedItemIDs: [String]
+    let skippedItemIDs: [String]
+    let remainingItems: [KnowledgeEraserItem]
+}
+
 struct ProfileInfo: Codable, Identifiable {
     let id: String
     let name: String

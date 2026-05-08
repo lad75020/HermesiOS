@@ -194,6 +194,7 @@ final class CompanionClientSession {
     private let profileRegistry = CompanionProfileRegistry()
     private let gatewayRegistry = CompanionGatewayRegistry()
     private let gitRegistry = CompanionGitRegistry()
+    private let knowledgeEraserRegistry = CompanionKnowledgeEraserRegistry()
     private let authenticationToken: String
 
     init(connection: NWConnection, authenticationToken: String) {
@@ -328,6 +329,8 @@ final class CompanionClientSession {
                         "set_memory_env",
                         "export_supermemory_delta",
                         "import_supermemory_delta",
+                        "scan_knowledge_eraser",
+                        "erase_knowledge_items",
                         "list_schedules",
                         "create_schedule",
                         "remove_schedule",
@@ -808,6 +811,24 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "import_supermemory_delta_failed", message: error.localizedDescription)
+            }
+        case "scan_knowledge_eraser":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The scan_knowledge_eraser request requires a payload.") }
+                let scanPayload = try payload.decode(KnowledgeEraserScanPayload.self)
+                let result = try knowledgeEraserRegistry.scan(workspacePath: scanPayload.workspacePath, topic: scanPayload.topic)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "scan_knowledge_eraser_failed", message: error.localizedDescription)
+            }
+        case "erase_knowledge_items":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The erase_knowledge_items request requires a payload.") }
+                let erasePayload = try payload.decode(KnowledgeEraserErasePayload.self)
+                let result = try knowledgeEraserRegistry.erase(workspacePath: erasePayload.workspacePath, topic: erasePayload.topic, selectedItemIDs: erasePayload.selectedItemIDs)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "erase_knowledge_items_failed", message: error.localizedDescription)
             }
         case "list_schedules":
             do {

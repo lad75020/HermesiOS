@@ -164,6 +164,7 @@ enum HermesRuntimePanelKind: String, Identifiable {
     case providers
     case models
     case memory
+    case knowledgeEraser
     case schedules
     case observability
 

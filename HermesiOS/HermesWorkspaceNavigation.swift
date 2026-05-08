@@ -110,6 +110,17 @@ struct WorkspaceSidebar: View {
         }
     }
 
+    private func streamingActive(for section: WorkspaceSection) -> Bool {
+        switch section {
+        case .responses:
+            responseSession.isSending
+        case .chat:
+            chatSession.isSending
+        case .history, .office, .settings, .runtime:
+            false
+        }
+    }
+
     private func clearUnreadState(for section: WorkspaceSection) {
         switch section {
         case .responses:
@@ -147,6 +158,7 @@ struct WorkspaceSidebar: View {
             List(WorkspaceSection.allCases) { section in
                 let hasUnreadCompletion = completionUnread(for: section)
                 let hasUnreadFailure = failureUnread(for: section)
+                let isStreamingActive = streamingActive(for: section)
                 Button {
                     selection = section
                     clearUnreadState(for: section)
@@ -154,14 +166,17 @@ struct WorkspaceSidebar: View {
                     Image(systemName: section.systemImage)
                         .font(.title3.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 36)
-                        .foregroundStyle(hasUnreadFailure || hasUnreadCompletion ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
+                        .foregroundStyle(hasUnreadFailure || hasUnreadCompletion || isStreamingActive ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
                         .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(hasUnreadFailure ? Color.igDestructive.opacity(0.9) : (hasUnreadCompletion ? Color.green.opacity(0.85) : Color.clear))
+                            WorkspaceSidebarIconBackground(
+                                isStreamingActive: isStreamingActive,
+                                hasUnreadFailure: hasUnreadFailure,
+                                hasUnreadCompletion: hasUnreadCompletion
+                            )
                         )
                         .contentShape(Rectangle())
                         .accessibilityLabel(section.title)
-                        .accessibilityHint(hasUnreadFailure ? "Request failed. Tap to clear the failure indicator." : (hasUnreadCompletion ? "Completed. Tap to mark as seen." : ""))
+                        .accessibilityHint(isStreamingActive ? "Streaming response in progress." : (hasUnreadFailure ? "Request failed. Tap to clear the failure indicator." : (hasUnreadCompletion ? "Completed. Tap to mark as seen." : "")))
                 }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
@@ -200,6 +215,26 @@ struct WorkspaceSidebar: View {
                 chatSession: chatSession,
                 initialSource: selectedDebugStreamSource
             )
+        }
+    }
+}
+
+private struct WorkspaceSidebarIconBackground: View {
+    let isStreamingActive: Bool
+    let hasUnreadFailure: Bool
+    let hasUnreadCompletion: Bool
+
+    var body: some View {
+        if isStreamingActive {
+            TimelineView(.animation(minimumInterval: 0.2)) { context in
+                let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
+                let opacity = 0.42 + (0.46 * (0.5 + 0.5 * sin(phase * 2 * .pi)))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.igGradOrange.opacity(opacity))
+            }
+        } else {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(hasUnreadFailure ? Color.igDestructive.opacity(0.9) : (hasUnreadCompletion ? Color.igOnlineGreen.opacity(0.85) : Color.clear))
         }
     }
 }

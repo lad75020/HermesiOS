@@ -27,13 +27,16 @@ struct HermesDashboardConversationResult: Identifiable, Decodable {
     let session: HermesDashboardSessionInfo
     let matches: [HermesDashboardMessageMatch]
     let messages: [HermesDashboardConversationMessage]
+    let title: String?
 
     var id: String { sessionID }
 
     var sessionFriendlyName: String {
-        let title = session.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !title.isEmpty {
-            return Self.normalizedTitle(title)
+        for candidate in [title, session.title] {
+            let normalized = Self.normalizedTitle(candidate ?? "")
+            if !normalized.isEmpty {
+                return normalized
+            }
         }
 
         let firstUserPrompt = messages.first { $0.role.lowercased() == "user" }?.content ?? ""
@@ -60,6 +63,51 @@ struct HermesDashboardConversationResult: Identifiable, Decodable {
         case session
         case matches
         case messages
+        case metadata
+        case title
+        case displayTitle = "display_title"
+        case friendlyName = "friendly_name"
+        case name
+        case summary
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try container.decode(String.self, forKey: .sessionID)
+        session = try container.decode(HermesDashboardSessionInfo.self, forKey: .session)
+        matches = (try? container.decode([HermesDashboardMessageMatch].self, forKey: .matches)) ?? []
+        messages = (try? container.decode([HermesDashboardConversationMessage].self, forKey: .messages)) ?? []
+
+        let metadata = try? container.decode([String: HermesFlexibleJSONValue].self, forKey: .metadata)
+        let directTitle = [
+            try? container.decode(String.self, forKey: .title),
+            try? container.decode(String.self, forKey: .displayTitle),
+            try? container.decode(String.self, forKey: .friendlyName),
+            try? container.decode(String.self, forKey: .name),
+            try? container.decode(String.self, forKey: .summary)
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty }
+        title = directTitle ?? Self.metadataTitle(metadata)
+    }
+
+    private static func metadataTitle(_ metadata: [String: HermesFlexibleJSONValue]?) -> String? {
+        guard let metadata else { return nil }
+        let titleKeys = ["title", "display_title", "friendly_name", "name", "summary", "session_title", "session_friendly_name"]
+        if let title = titleKeys
+            .compactMap({ metadata[$0]?.readableText.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .first(where: { !$0.isEmpty }) {
+            return title
+        }
+
+        for nestedKey in ["session", "conversation"] {
+            if let nested = metadata[nestedKey]?.objectValue,
+               let title = titleKeys
+                .compactMap({ nested[$0]?.readableText.trimmingCharacters(in: .whitespacesAndNewlines) })
+                .first(where: { !$0.isEmpty }) {
+                return title
+            }
+        }
+
+        return nil
     }
 }
 
@@ -239,6 +287,13 @@ private enum HermesFlexibleJSONValue: Decodable {
         case .null:
             return ""
         }
+    }
+
+    var objectValue: [String: HermesFlexibleJSONValue]? {
+        if case .object(let object) = self {
+            return object
+        }
+        return nil
     }
 
     init(from decoder: Decoder) throws {

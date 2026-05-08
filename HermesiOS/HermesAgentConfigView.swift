@@ -88,7 +88,7 @@ struct HermesAgentConfigView: View {
         ScrollView {
             HermesGlassEffectContainer(spacing: 28) {
                 VStack(alignment: .leading, spacing: 18) {
-                HermesTabHeader("Agent Runtime", systemImage: "server.rack")
+                HermesTabHeader("Hermes Agent Runtime", systemImage: "server.rack")
 
                 HermesRuntimeAccordionPanel(
                     title: "Skills",

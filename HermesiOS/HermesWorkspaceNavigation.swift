@@ -31,7 +31,7 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
         case .settings:
             "Settings"
         case .runtime:
-            "Agent Runtime"
+            "Hermes Agent Runtime"
         }
     }
 

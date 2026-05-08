@@ -9,9 +9,11 @@ import WebKit
 
 let defaultHermesOfficeURL = "http://localhost:9116"
 let hermesOfficeURLStorageKey = "hermes.office.url"
+let hermesOfficeWebViewEnabledStorageKey = "hermes.office.webView.enabled"
 
 struct HermesOfficeView: View {
     @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
+    @AppStorage(hermesOfficeWebViewEnabledStorageKey) private var isOfficeWebViewEnabled = true
     @ObservedObject var webViewStore: HermesOfficeWebViewStore
     @Binding var reloadID: UUID
 
@@ -22,11 +24,20 @@ struct HermesOfficeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HermesTabHeader("Office (beta)", systemImage: "building.2.crop.circle")
+            officeHeader
                 .padding(.horizontal)
                 .padding(.top)
 
-            if let officeURL {
+            if !isOfficeWebViewEnabled {
+                ContentUnavailableView(
+                    "Claw3D WebView is Off",
+                    systemImage: "power",
+                    description: Text("Turn it on from the Office tab header when you want to load Hermes Office / Claw3D.")
+                )
+                .foregroundStyle(.hermesSecondaryText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+            } else if let officeURL {
                 HermesOfficeWebView(store: webViewStore, url: officeURL, reloadID: reloadID)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .overlay {
@@ -54,9 +65,43 @@ struct HermesOfficeView: View {
                 } label: {
                     Label("Reload Office", systemImage: "arrow.clockwise")
                 }
-                .disabled(officeURL == nil)
+                .disabled(!isOfficeWebViewEnabled || officeURL == nil)
             }
         }
+        .onChange(of: isOfficeWebViewEnabled) { _, newValue in
+            if newValue {
+                reloadID = UUID()
+            } else {
+                webViewStore.turnOff()
+            }
+        }
+    }
+
+    private var officeHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            Image(systemName: "building.2.crop.circle")
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(.igActionBlue)
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
+
+            Text("Office (beta)")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+
+            Toggle("Claw3D WebView", isOn: $isOfficeWebViewEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel("Claw3D WebView")
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
     }
 }
 
@@ -110,6 +155,13 @@ final class HermesOfficeWebViewStore: ObservableObject {
         let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmedURL) else { return }
         loadIfNeeded(url: url, reloadID: reloadID)
+    }
+
+    func turnOff() {
+        lastURL = nil
+        lastReloadID = nil
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
     }
 }
 

@@ -18,6 +18,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
     @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
+    @AppStorage(hermesOfficeWebViewEnabledStorageKey) private var isOfficeWebViewEnabled = true
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
     @State private var selectedPhoneSection: WorkspaceSection = .responses
@@ -98,6 +99,10 @@ struct ContentView: View {
         }
         .task(id: officePreloadKey) {
             guard !isShowingSplash else { return }
+            guard isOfficeWebViewEnabled else {
+                officeWebViewStore.turnOff()
+                return
+            }
             officeWebViewStore.preload(urlString: officeURLString, reloadID: officeReloadID)
         }
         .task(id: clipboardMonitoringKey) {
@@ -179,7 +184,7 @@ struct ContentView: View {
     }
 
     private var officePreloadKey: String {
-        officeURLString + "|reload=\(officeReloadID.uuidString)|splash=\(isShowingSplash)"
+        officeURLString + "|enabled=\(isOfficeWebViewEnabled)|reload=\(officeReloadID.uuidString)|splash=\(isShowingSplash)"
     }
 
     private var clipboardMonitoringKey: String {

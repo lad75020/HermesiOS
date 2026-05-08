@@ -117,8 +117,17 @@ struct HermesUtilitiesView: View {
         .onAppear {
             clipboardHistory.captureCurrentPasteboardIfNeeded()
         }
+        .onDisappear {
+            collapseAllUtilitySections()
+        }
     }
 
+
+    private func collapseAllUtilitySections() {
+        isClipboardHistoryExpanded = false
+        isDebuggingExpanded = false
+        isSupermemoryManagementExpanded = false
+    }
 
     private var isSupermemoryActive: Bool {
         companionRuntime.memoryProvider.lowercased() == "supermemory"

@@ -11,7 +11,10 @@ import UIKit
 
 struct HermesUtilitiesView: View {
     @Bindable var clipboardHistory: HermesClipboardHistoryStore
+    @Bindable var responseSession: HermesResponsesSession
+    @Bindable var chatSession: HermesChatSession
     @AppStorage("hermes.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
+    @AppStorage("hermes.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @State private var statusMessage = "Monitoring the iOS clipboard while HermesiOS is active."
 
     var body: some View {
@@ -21,7 +24,7 @@ struct HermesUtilitiesView: View {
 
                 HermesHeroCard(
                     title: "Utilities",
-                    detail: "Quick helpers for day-to-day Hermes work. Clipboard History stores the last ten copied objects locally on this device.",
+                    detail: "Quick helpers for day-to-day Hermes work. Clipboard History stores the last ten copied objects locally on this device, and Debugging exposes streamed API JSON in-place.",
                     systemImage: "wrench.and.screwdriver.fill"
                 )
 
@@ -41,6 +44,38 @@ struct HermesUtilitiesView: View {
                                     .font(.igUsername)
                                     .foregroundStyle(.primary)
                                 Text("Last \(clipboardHistory.entries.count) of 10 copied objects")
+                                    .font(.igSecondaryMeta)
+                                    .foregroundStyle(.hermesSecondaryText)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .tint(.igActionBlue)
+
+                    Divider()
+                        .overlay(Color.hermesDivider.opacity(0.5))
+                        .padding(.vertical, 4)
+
+                    DisclosureGroup(isExpanded: $isDebuggingExpanded) {
+                        HermesStreamedJSONDebugPanel(
+                            responseSession: responseSession,
+                            chatSession: chatSession
+                        )
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "ladybug")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.igActionBlue)
+                                .frame(width: 34, height: 34)
+                                .hermesLiquidGlass(cornerRadius: 11, tint: .igActionBlue.opacity(0.16), interactive: true)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Debugging")
+                                    .font(.igUsername)
+                                    .foregroundStyle(.primary)
+                                Text("Inspect streamed Responses and Chat Completions JSON")
                                     .font(.igSecondaryMeta)
                                     .foregroundStyle(.hermesSecondaryText)
                             }

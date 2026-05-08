@@ -79,8 +79,6 @@ struct WorkspaceSidebar: View {
     @Bindable var statusMonitor: HermesStatusMonitor
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var chatSession: HermesChatSession
-    @Binding var isShowingStreamDebugJSON: Bool
-    var selectedDebugStreamSource: HermesStreamDebugSource = .responses
     var apiChannelActive = false
     var companionChannelActive = false
     var dashboardChannelActive = false
@@ -200,32 +198,8 @@ struct WorkspaceSidebar: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
 
-            Divider()
-                .overlay(Color.hermesDivider.opacity(0.4))
-
-            Button {
-                isShowingStreamDebugJSON = true
-            } label: {
-                Image(systemName: "ladybug")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.hermesSecondaryText)
-                    .frame(maxWidth: .infinity, minHeight: 36)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 12)
-            .accessibilityLabel("Debug stream JSON")
-            .accessibilityHint("Shows a modal with raw JSON streamed by the Hermes Responses and Chat Completions APIs")
         }
         .background(Color.hermesCanvas)
-        .sheet(isPresented: $isShowingStreamDebugJSON) {
-            HermesStreamedJSONDebugSheet(
-                responseSession: responseSession,
-                chatSession: chatSession,
-                initialSource: selectedDebugStreamSource
-            )
-        }
     }
 }
 
@@ -265,11 +239,10 @@ enum HermesStreamDebugSource: String, CaseIterable, Identifiable {
     }
 }
 
-struct HermesStreamedJSONDebugSheet: View {
+struct HermesStreamedJSONDebugPanel: View {
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var chatSession: HermesChatSession
     var initialSource: HermesStreamDebugSource = .responses
-    @Environment(\.dismiss) private var dismiss
     @State private var selectedSource: HermesStreamDebugSource = .responses
 
     private var debugText: String {
@@ -322,9 +295,8 @@ struct HermesStreamedJSONDebugSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                Picker("Debug stream", selection: $selectedSource) {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Debug stream", selection: $selectedSource) {
                     ForEach(HermesStreamDebugSource.allCases) { source in
                         Text(source.title).tag(source)
                     }
@@ -354,19 +326,8 @@ struct HermesStreamedJSONDebugSheet: View {
                     .frame(minHeight: 420)
                     .padding(8)
                     .igFieldBackground()
-            }
-            .padding()
-            .background(Color.hermesCanvas)
-            .navigationTitle("Streamed Hermes JSON")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        dismiss()
-                    }
-                }
-            }
         }
-        .presentationDetents([.medium, .large])
+        .padding(.top, 12)
         .onAppear {
             selectedSource = initialSource
         }

@@ -36,7 +36,6 @@ struct ContentView: View {
     @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
     @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
-    @State private var isShowingStreamDebugJSON = false
     @State private var isResponsesCompletionUnread = false
     @State private var isChatCompletionUnread = false
     @State private var isHistorySearchCompletionUnread = false
@@ -187,8 +186,6 @@ struct ContentView: View {
                 statusMonitor: statusMonitor,
                 responseSession: responseSession,
                 chatSession: chatSession,
-                isShowingStreamDebugJSON: $isShowingStreamDebugJSON,
-                selectedDebugStreamSource: selectedWorkspace == .chat ? .chat : .responses,
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive,
@@ -264,7 +261,11 @@ struct ContentView: View {
                 .tag(WorkspaceSection.history)
 
                 NavigationStack {
-                    HermesUtilitiesView(clipboardHistory: clipboardHistory)
+                    HermesUtilitiesView(
+                        clipboardHistory: clipboardHistory,
+                        responseSession: responseSession,
+                        chatSession: chatSession
+                    )
                 }
                 .tabItem {
                     Label("Utilities", systemImage: "wrench.and.screwdriver")
@@ -336,7 +337,11 @@ struct ContentView: View {
         case .office:
             HermesOfficeView(webViewStore: officeWebViewStore, reloadID: $officeReloadID)
         case .utilities:
-            HermesUtilitiesView(clipboardHistory: clipboardHistory)
+            HermesUtilitiesView(
+                clipboardHistory: clipboardHistory,
+                responseSession: responseSession,
+                chatSession: chatSession
+            )
         case .settings:
             HermesSettingsView(
                 apiSettings: $apiSettings,

@@ -107,7 +107,7 @@ struct HermesUtilitiesView: View {
             .frame(maxWidth: 980, alignment: .leading)
         }
         .background(Color.hermesCanvas.ignoresSafeArea())
-        .navigationTitle("")
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             clipboardHistory.captureCurrentPasteboardIfNeeded()
         }

@@ -1030,8 +1030,8 @@ private struct HermesBubbleImageAttachment: Identifiable, Equatable {
     func loadData() async throws -> Data {
         if source.hasPrefix("data:") {
             guard let comma = source.firstIndex(of: ",") else { throw HermesBubbleImageError.invalidImageSource }
-            let encoded = String(source[source.index(after: comma)...])
-            guard let data = Data(base64Encoded: encoded) else { throw HermesBubbleImageError.invalidImageSource }
+            let encoded = String(source[source.index(after: comma)...]).filter { !$0.isWhitespace }
+            guard let data = Data(base64Encoded: encoded, options: [.ignoreUnknownCharacters]) else { throw HermesBubbleImageError.invalidImageSource }
             return data
         }
 
@@ -1106,9 +1106,63 @@ private struct HermesBubbleImageAttachment: Identifiable, Equatable {
 
         guard let data = jsonText.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data)
-        else { return [] }
+        else { return extractLooseJSONImages(from: jsonText) }
 
         return extractJSONImages(from: object)
+    }
+
+    nonisolated private static func extractLooseJSONImages(from text: String) -> [HermesBubbleImageAttachment] {
+        guard text.contains("image_base64") || text.contains("b64_json") else { return [] }
+
+        let mimeType = firstJSONStringValue(for: "mime_type", in: text)
+            ?? firstJSONStringValue(for: "original_mime_type", in: text)
+        let resolvedMimeType = mimeType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? mimeType! : "image/png"
+        let base64Values = allJSONStringValues(for: "image_base64", in: text) + allJSONStringValues(for: "b64_json", in: text)
+
+        var images: [HermesBubbleImageAttachment] = []
+        for base64 in base64Values {
+            let cleanedBase64 = cleanBase64(base64)
+            guard !cleanedBase64.isEmpty else { continue }
+            let source = "data:\(resolvedMimeType);base64,\(cleanedBase64)"
+            if !images.contains(where: { $0.source == source }) {
+                images.append(HermesBubbleImageAttachment(source: source, altText: "Hermes image"))
+            }
+        }
+        return images
+    }
+
+    nonisolated private static func firstJSONStringValue(for key: String, in text: String) -> String? {
+        allJSONStringValues(for: key, in: text).first
+    }
+
+    nonisolated private static func allJSONStringValues(for key: String, in text: String) -> [String] {
+        let escapedKey = NSRegularExpression.escapedPattern(for: key)
+        let pattern = #""# + escapedKey + #""\s*:\s*"((?:\\.|[^"\\])*)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return [] }
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: nsRange).compactMap { match in
+            guard let range = Range(match.range(at: 1), in: text) else { return nil }
+            return unescapeJSONStringFragment(String(text[range]))
+        }
+    }
+
+    nonisolated private static func unescapeJSONStringFragment(_ value: String) -> String {
+        let wrapped = "\"\(value)\""
+        if let data = wrapped.data(using: .utf8),
+           let decoded = try? JSONSerialization.jsonObject(with: data) as? String {
+            return decoded
+        }
+        return value
+            .replacingOccurrences(of: #"\/"#, with: "/")
+            .replacingOccurrences(of: #"\n"#, with: "\n")
+            .replacingOccurrences(of: #"\r"#, with: "\r")
+            .replacingOccurrences(of: #"\t"#, with: "\t")
+            .replacingOccurrences(of: #"\""#, with: "\"")
+            .replacingOccurrences(of: #"\\"#, with: #"\"#)
+    }
+
+    nonisolated private static func cleanBase64(_ value: String) -> String {
+        value.filter { !$0.isWhitespace }
     }
 
     nonisolated private static func extractJSONImages(from object: Any) -> [HermesBubbleImageAttachment] {
@@ -1119,11 +1173,12 @@ private struct HermesBubbleImageAttachment: Identifiable, Equatable {
         guard let dictionary = object as? [String: Any] else { return [] }
         var images: [HermesBubbleImageAttachment] = []
 
-        if let base64 = dictionary["image_base64"] as? String, !base64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let parsedBase64 = (dictionary["image_base64"] as? String) ?? (dictionary["b64_json"] as? String)
+        if let base64 = parsedBase64, !base64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let mimeType = (dictionary["mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 ?? (dictionary["original_mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let resolvedMimeType = mimeType?.isEmpty == false ? mimeType! : "image/png"
-            let source = "data:\(resolvedMimeType);base64,\(base64)"
+            let source = "data:\(resolvedMimeType);base64,\(cleanBase64(base64))"
             images.append(HermesBubbleImageAttachment(source: source, altText: "Hermes image"))
         }
 

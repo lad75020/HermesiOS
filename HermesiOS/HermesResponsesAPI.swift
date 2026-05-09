@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 enum HermesStreamTextFormatter {
     static func lineBreakAfterStatementDots(_ text: String) -> String {
         guard text.contains(".") else { return text }
+        guard !looksLikeJSONPayload(text) else { return text }
 
         var formatted = ""
         var index = text.startIndex
@@ -44,6 +45,12 @@ enum HermesStreamTextFormatter {
 
     private static func isDigit(_ character: Character) -> Bool {
         character.unicodeScalars.allSatisfy { CharacterSet.decimalDigits.contains($0) }
+    }
+
+    private static func looksLikeJSONPayload(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{") || trimmed.hasPrefix("[") else { return false }
+        return trimmed.contains("\":") || trimmed.contains("image_base64") || trimmed.contains("b64_json")
     }
 }
 

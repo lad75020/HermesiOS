@@ -82,7 +82,10 @@ struct WorkspaceSidebar: View {
     var apiChannelActive = false
     var companionChannelActive = false
     var dashboardChannelActive = false
+    var isResponsesStreamingActive = false
     var isHistorySearchActive = false
+    var hasUnreadResponsesCompletion = false
+    var hasUnreadResponsesFailure = false
     @Binding var isResponsesCompletionUnread: Bool
     @Binding var isChatCompletionUnread: Bool
     @Binding var isHistorySearchCompletionUnread: Bool
@@ -93,7 +96,7 @@ struct WorkspaceSidebar: View {
     private func completionUnread(for section: WorkspaceSection) -> Bool {
         switch section {
         case .responses:
-            isResponsesCompletionUnread
+            hasUnreadResponsesCompletion
         case .chat:
             isChatCompletionUnread
         case .history:
@@ -106,7 +109,7 @@ struct WorkspaceSidebar: View {
     private func failureUnread(for section: WorkspaceSection) -> Bool {
         switch section {
         case .responses:
-            isResponsesFailureUnread
+            hasUnreadResponsesFailure
         case .chat:
             isChatFailureUnread
         case .history:
@@ -119,7 +122,7 @@ struct WorkspaceSidebar: View {
     private func streamingActive(for section: WorkspaceSection) -> Bool {
         switch section {
         case .responses:
-            responseSession.isSending
+            isResponsesStreamingActive
         case .chat:
             chatSession.isSending
         case .history:

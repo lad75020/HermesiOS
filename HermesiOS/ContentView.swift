@@ -167,8 +167,22 @@ struct ContentView: View {
         activeResponseWorkspace.session
     }
 
+    private var isAnyResponseWorkspaceStreaming: Bool {
+        responseWorkspaces.contains { $0.session.isSending }
+    }
+
+    private var hasUnreadResponseWorkspaceCompletion: Bool {
+        responseWorkspaces.contains { $0.attention == .completed }
+    }
+
+    private var hasUnreadResponseWorkspaceFailure: Bool {
+        responseWorkspaces.contains { workspace in
+            workspace.attention == .failed && workspace.session.lastErrorWasTimeoutOrNetworkLoss
+        }
+    }
+
     private var apiChannelActive: Bool {
-        responseWorkspaces.contains { $0.session.isSending } || chatSession.isSending
+        isAnyResponseWorkspaceStreaming || chatSession.isSending
     }
 
     private var companionChannelActive: Bool {
@@ -213,7 +227,10 @@ struct ContentView: View {
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive,
+                isResponsesStreamingActive: isAnyResponseWorkspaceStreaming,
                 isHistorySearchActive: dashboardHistorySearchSession.isSearching,
+                hasUnreadResponsesCompletion: hasUnreadResponseWorkspaceCompletion,
+                hasUnreadResponsesFailure: hasUnreadResponseWorkspaceFailure,
                 isResponsesCompletionUnread: $isResponsesCompletionUnread,
                 isChatCompletionUnread: $isChatCompletionUnread,
                 isHistorySearchCompletionUnread: $isHistorySearchCompletionUnread,

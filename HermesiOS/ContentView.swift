@@ -340,6 +340,7 @@ struct ContentView: View {
             companionEnrollment: companionEnrollment,
             companionRuntime: companionRuntime,
             responseSession: workspace.session,
+            responseWorkspaces: responseWorkspaces,
             workspaceNumber: workspace.number,
             workspaceCount: responseWorkspaces.count,
             canCreateWorkspace: responseWorkspaces.count < 4,
@@ -360,6 +361,7 @@ struct ContentView: View {
 
     private func selectResponseWorkspace(number: Int) {
         guard let workspace = responseWorkspaces.first(where: { $0.number == number }) else { return }
+        workspace.acknowledgeCurrentStatus()
         selectedResponseWorkspaceID = workspace.id
         responsesDraft = workspace.draft
     }

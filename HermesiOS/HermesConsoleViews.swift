@@ -414,6 +414,7 @@ struct HermesResponsesConsoleView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var responseSession: HermesResponsesSession
+    let responseWorkspaces: [HermesResponsesWorkspace]
     let workspaceNumber: Int
     let workspaceCount: Int
     let canCreateWorkspace: Bool
@@ -505,31 +506,47 @@ struct HermesResponsesConsoleView: View {
             .disabled(!canCreateWorkspace)
             .accessibilityLabel("New Hermes request screen")
 
-            ForEach(responseWorkspaceSwitcherNumbers, id: \.self) { number in
+            ForEach(responseWorkspaceSwitcherWorkspaces) { workspace in
                 Button {
-                    onSelectWorkspace(number)
+                    onSelectWorkspace(workspace.number)
                 } label: {
-                    Text("\(number)")
+                    Text("\(workspace.number)")
                         .font(.subheadline.weight(.bold))
                         .frame(width: 34, height: 34)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(number == workspaceNumber ? Color.white : Color.primary)
+                .foregroundStyle(workspaceButtonForeground(for: workspace))
                 .background(
                     RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .fill(number == workspaceNumber ? Color.igActionBlue : Color.hermesSurfaceInput.opacity(0.72))
+                        .fill(workspaceButtonBackground(for: workspace))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .stroke(Color.white.opacity(number == workspaceNumber ? 0 : 0.12), lineWidth: 1)
+                        .stroke(Color.white.opacity(workspace.number == workspaceNumber || workspace.attention != nil ? 0 : 0.12), lineWidth: 1)
                 )
-                .accessibilityLabel("Open Hermes request screen \(number)")
+                .accessibilityLabel("Open Hermes request screen \(workspace.number)")
             }
         }
     }
 
-    private var responseWorkspaceSwitcherNumbers: [Int] {
-        Array(1...max(workspaceCount, 1))
+    private var responseWorkspaceSwitcherWorkspaces: [HermesResponsesWorkspace] {
+        let sorted = responseWorkspaces.sorted { $0.number < $1.number }
+        return sorted.isEmpty ? [] : sorted
+    }
+
+    private func workspaceButtonBackground(for workspace: HermesResponsesWorkspace) -> Color {
+        switch workspace.attention {
+        case .completed:
+            return .igOnlineGreen
+        case .failed:
+            return .igDestructive
+        case nil:
+            return workspace.number == workspaceNumber ? .igActionBlue : Color.hermesSurfaceInput.opacity(0.72)
+        }
+    }
+
+    private func workspaceButtonForeground(for workspace: HermesResponsesWorkspace) -> Color {
+        workspace.number == workspaceNumber || workspace.attention != nil ? .white : .primary
     }
 
     private var responseTranscript: some View {
@@ -822,13 +839,13 @@ private struct HermesProfileSelector: View {
             Picker("Profile", selection: selection) {
                 ForEach(pickerProfiles) { profile in
                     Text(label(for: profile))
-                        .font(.caption.weight(.semibold))
+                        .font(.caption2.weight(.semibold))
                         .tag(profile.id)
                 }
             }
             .pickerStyle(.menu)
             .labelsHidden()
-            .font(.caption.weight(.semibold))
+            .font(.caption2.weight(.semibold))
             .lineLimit(1)
             .tint(.primary)
             .disabled(isDisabled)
@@ -843,10 +860,7 @@ private struct HermesProfileSelector: View {
 
     private func label(for profile: HermesAPIProfile) -> String {
         let id = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        let provider = profile.provider?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let model = profile.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let detail = [provider, model].filter { !$0.isEmpty }.joined(separator: " · ")
-        return detail.isEmpty ? id : "\(id) · \(detail)"
+        return id.isEmpty ? "default" : id
     }
 }
 

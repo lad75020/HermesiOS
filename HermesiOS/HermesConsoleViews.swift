@@ -517,12 +517,14 @@ struct HermesResponsesConsoleView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(workspaceButtonForeground(for: workspace))
                 .background(
-                    RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .fill(workspaceButtonBackground(for: workspace))
+                    WorkspaceSwitcherButtonBackground(
+                        workspace: workspace,
+                        isSelected: workspace.number == workspaceNumber
+                    )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .stroke(Color.white.opacity(workspace.number == workspaceNumber || workspace.attention != nil ? 0 : 0.12), lineWidth: 1)
+                        .stroke(Color.white.opacity(workspace.number == workspaceNumber || workspace.isStreamingActive || workspace.attention != nil ? 0 : 0.12), lineWidth: 1)
                 )
                 .accessibilityLabel("Open Hermes request screen \(workspace.number)")
             }
@@ -534,19 +536,38 @@ struct HermesResponsesConsoleView: View {
         return sorted.isEmpty ? [] : sorted
     }
 
-    private func workspaceButtonBackground(for workspace: HermesResponsesWorkspace) -> Color {
-        switch workspace.attention {
-        case .completed:
-            return .igOnlineGreen
-        case .failed:
-            return .igDestructive
-        case nil:
-            return workspace.number == workspaceNumber ? .igActionBlue : Color.hermesSurfaceInput.opacity(0.72)
-        }
+    private func workspaceButtonForeground(for workspace: HermesResponsesWorkspace) -> Color {
+        workspace.number == workspaceNumber || workspace.isStreamingActive || workspace.attention != nil ? .white : .primary
     }
 
-    private func workspaceButtonForeground(for workspace: HermesResponsesWorkspace) -> Color {
-        workspace.number == workspaceNumber || workspace.attention != nil ? .white : .primary
+    private struct WorkspaceSwitcherButtonBackground: View {
+        let workspace: HermesResponsesWorkspace
+        let isSelected: Bool
+
+        var body: some View {
+            if workspace.isStreamingActive {
+                TimelineView(.animation(minimumInterval: 0.2)) { context in
+                    let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
+                    let opacity = 0.42 + (0.46 * (0.5 + 0.5 * sin(phase * 2 * .pi)))
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .fill(Color.igGradOrange.opacity(opacity))
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .fill(staticColor)
+            }
+        }
+
+        private var staticColor: Color {
+            switch workspace.attention {
+            case .completed:
+                return .igOnlineGreen
+            case .failed:
+                return .igDestructive
+            case nil:
+                return isSelected ? .igActionBlue : Color.hermesSurfaceInput.opacity(0.72)
+            }
+        }
     }
 
     private var responseTranscript: some View {

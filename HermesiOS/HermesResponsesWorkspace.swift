@@ -28,6 +28,10 @@ final class HermesResponsesWorkspace: Identifiable {
         self.session = session
     }
 
+    var isStreamingActive: Bool {
+        session.isSending
+    }
+
     var attention: HermesResponsesWorkspaceAttention? {
         switch session.connectionStatus {
         case "Failed":

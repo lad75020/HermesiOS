@@ -240,14 +240,29 @@ struct HermesUtilitiesView: View {
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(clipboardHistory.entries) { entry in
-                        Button {
-                            clipboardHistory.copyToPasteboard(entry)
-                            statusMessage = "Copied \(entry.kind.displayName.lowercased()) back to the clipboard."
-                        } label: {
-                            HermesClipboardHistoryRow(entry: entry)
+                        HStack(alignment: .center, spacing: 10) {
+                            Button {
+                                clipboardHistory.copyToPasteboard(entry)
+                                statusMessage = "Copied \(entry.kind.displayName.lowercased()) back to the clipboard."
+                            } label: {
+                                HermesClipboardHistoryRow(entry: entry)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Copies this item back to the iOS clipboard")
+
+                            Button(role: .destructive) {
+                                clipboardHistory.delete(entry)
+                                statusMessage = "Deleted \(entry.kind.displayName.lowercased()) from clipboard history."
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.igDestructive)
+                                    .frame(width: 38, height: 38)
+                                    .hermesLiquidGlass(cornerRadius: 12, tint: Color.igDestructive.opacity(0.12), interactive: true)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Delete \(entry.kind.displayName.lowercased()) from clipboard history")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Copies this item back to the iOS clipboard")
                     }
                 }
             }
@@ -380,6 +395,11 @@ final class HermesClipboardHistoryStore {
 
     func clear() {
         entries.removeAll()
+        persist()
+    }
+
+    func delete(_ entry: HermesClipboardHistoryEntry) {
+        entries.removeAll { $0.id == entry.id }
         persist()
     }
 

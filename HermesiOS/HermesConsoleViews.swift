@@ -142,7 +142,17 @@ final class HermesSpeechTranscriptionSession {
     }
 
     func stop() {
+        guard isRecording else {
+            clearInactiveStatus()
+            return
+        }
         finishRecognition(status: liveText.isEmpty ? "Dictation stopped — no speech recognized" : "Dictation stopped")
+    }
+
+    func clearInactiveStatus() {
+        guard !isRecording else { return }
+        statusMessage = ""
+        lastErrorMessage = ""
     }
 
     func updateSeedText(_ text: String) {
@@ -469,6 +479,7 @@ struct HermesResponsesConsoleView: View {
         }
         .onChange(of: promptText) { _, text in
             requestDraft.userPrompt = text
+            speechSession.clearInactiveStatus()
         }
         .onChange(of: speechSession.composedText) { _, text in
             promptText = text
@@ -1403,6 +1414,7 @@ struct HermesChatConsoleView: View {
         }
         .onChange(of: promptText) { _, text in
             chatDraft.userPrompt = text
+            speechSession.clearInactiveStatus()
         }
         .onChange(of: speechSession.composedText) { _, text in
             promptText = text

@@ -122,10 +122,6 @@ struct HermesSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.hermesSecondaryText)
 
-                    if companionRuntime.connectionStatus != "Idle" {
-                        settingsRow(label: "Restart Status", value: companionRuntime.connectionStatus)
-                    }
-
                     if !companionRuntime.lastErrorMessage.isEmpty {
                         Text(companionRuntime.lastErrorMessage)
                             .font(.caption)
@@ -150,23 +146,7 @@ struct HermesSettingsView: View {
                     SecureField("4096-character token", text: $companionSettings.authenticationToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                }
 
-                TextField("Hermes workspace path", text: $companionSettings.hermesWorkspacePath)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                if companionEnrollment.identityState.isEnrolled {
-                    settingsRow(label: "Companion Endpoint", value: companionEnrollment.identityState.serverEndpoint)
-                }
-
-                if !companionEnrollment.lastErrorMessage.isEmpty {
-                    Text(companionEnrollment.lastErrorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.igDestructive)
-                }
-
-                HStack {
                     Button(companionEnrollment.identityState.isEnrolled ? "Verify Token Again" : "Verify Token") {
                         companionEnrollment.enroll(settings: companionSettings)
                     }
@@ -176,13 +156,22 @@ struct HermesSettingsView: View {
                         companionSettings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                         companionSettings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines).count != 4096
                     )
+                }
 
-                    if companionEnrollment.identityState.isEnrolled {
-                        Button("Clear Authentication", role: .destructive) {
-                            companionEnrollment.clearIdentity()
-                        }
-                        .hermesGlassButton()
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Hermes agent root folder")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    TextField("Hermes workspace path", text: $companionSettings.hermesWorkspacePath)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                if !companionEnrollment.lastErrorMessage.isEmpty {
+                    Text(companionEnrollment.lastErrorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.igDestructive)
                 }
                 }
 

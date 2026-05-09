@@ -18,8 +18,7 @@ struct HermesSettingsView: View {
 
     private let macServices: [HermesSettingsMacService] = [
         .init(id: "hermes-dashboard", title: "Hermes Dashboard", subtitle: "Host-rewriting dashboard proxy", icon: "rectangle.on.rectangle.angled"),
-        .init(id: "claw3d-adapter", title: "Claw3D Adapter", subtitle: "Hermes Office / Claw3D bridge", icon: "cube.transparent"),
-        .init(id: "openclaw-gateway", title: "OpenClaw Gateway", subtitle: "Claw3D gateway service", icon: "point.3.connected.trianglepath.dotted")
+        .init(id: "claw3d-adapter", title: "Claw3D Adapter", subtitle: "Hermes Office / Claw3D bridge", icon: "cube.transparent")
     ]
 
     var body: some View {
@@ -142,15 +141,20 @@ struct HermesSettingsView: View {
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
 
-                SecureField("4096-character token", text: $companionSettings.authenticationToken)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                HStack(alignment: .center, spacing: 10) {
+                    HermesSettingsStatusLED(
+                        isOn: companionEnrollment.identityState.isEnrolled,
+                        label: companionEnrollment.identityState.isEnrolled ? "Token valid" : "Token invalid"
+                    )
+
+                    SecureField("4096-character token", text: $companionSettings.authenticationToken)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
 
                 TextField("Hermes workspace path", text: $companionSettings.hermesWorkspacePath)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-
-                settingsRow(label: "Authentication Status", value: companionEnrollment.connectionStatus)
 
                 if companionEnrollment.identityState.isEnrolled {
                     settingsRow(label: "Companion Endpoint", value: companionEnrollment.identityState.serverEndpoint)
@@ -311,14 +315,14 @@ struct HermesSettingsView: View {
                 }
 
 
-                Section("/v1/responses") {
+                Section("Ask Hermes") {
                 Toggle("Streaming enabled", isOn: $responsesDraft.stream)
 
-                TextField("Instructions", text: $responsesDraft.instructions, axis: .vertical)
+                TextField("System prompt", text: $responsesDraft.instructions, axis: .vertical)
                     .lineLimit(4, reservesSpace: true)
                 }
 
-                Section("/v1/chat/completions") {
+                Section("Chat with Hermes") {
                 Toggle("Streaming enabled", isOn: $chatDraft.stream)
 
                 TextField("System prompt", text: $chatDraft.systemPrompt, axis: .vertical)
@@ -401,6 +405,24 @@ struct HermesSettingsView: View {
                 .foregroundStyle(.hermesSecondaryText)
         }
         .font(.subheadline)
+    }
+}
+
+struct HermesSettingsStatusLED: View {
+    let isOn: Bool
+    let label: String
+
+    var body: some View {
+        Circle()
+            .fill(isOn ? Color.igOnlineGreen : Color.igDestructive)
+            .frame(width: 12, height: 12)
+            .overlay {
+                Circle()
+                    .stroke(.white.opacity(0.75), lineWidth: 1)
+            }
+            .shadow(color: (isOn ? Color.igOnlineGreen : Color.igDestructive).opacity(0.6), radius: 4)
+            .accessibilityLabel(label)
+            .help(label)
     }
 }
 

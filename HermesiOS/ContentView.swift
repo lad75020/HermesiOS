@@ -402,7 +402,13 @@ struct ContentView: View {
             HermesSettingsView(
                 apiSettings: $apiSettings,
                 companionSettings: $companionSettings,
-                responsesDraft: $responsesDraft,
+                responsesDraft: Binding(
+                    get: { activeResponseWorkspace.draft },
+                    set: { newValue in
+                        activeResponseWorkspace.draft = newValue
+                        responsesDraft = newValue
+                    }
+                ),
                 chatDraft: $chatDraft,
                 appTheme: $appTheme,
                 companionEnrollment: companionEnrollment,

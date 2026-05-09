@@ -1120,7 +1120,8 @@ private struct HermesBubbleImageAttachment: Identifiable, Equatable {
         var images: [HermesBubbleImageAttachment] = []
 
         if let base64 = dictionary["image_base64"] as? String, !base64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let mimeType = (dictionary["original_mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let mimeType = (dictionary["mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? (dictionary["original_mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let resolvedMimeType = mimeType?.isEmpty == false ? mimeType! : "image/png"
             let source = "data:\(resolvedMimeType);base64,\(base64)"
             images.append(HermesBubbleImageAttachment(source: source, altText: "Hermes image"))

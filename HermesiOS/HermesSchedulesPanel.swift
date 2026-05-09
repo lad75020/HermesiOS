@@ -35,9 +35,9 @@ struct HermesSchedulesPanel: View {
     private var builtSchedule: String {
         switch frequency {
         case .minutes:
-            return "\(minutesInterval)m"
+            return "every \(minutesInterval)m"
         case .hourly:
-            return "\(hourlyInterval)h"
+            return "every \(hourlyInterval)h"
         case .daily:
             let parts = dailyTime.split(separator: ":")
             let hour = parts.first.map(String.init) ?? "09"
@@ -196,7 +196,7 @@ struct HermesSchedulesPanel: View {
                         .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Text("Use 5-field cron syntax, or Hermes expressions like 30m / 2h when supported by the CLI.")
+                    Text("Use 5-field cron syntax, or Hermes recurring interval expressions like every 30m / every 2h.")
                         .font(.caption)
                         .foregroundStyle(.hermesSecondaryText)
                 }

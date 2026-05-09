@@ -71,7 +71,7 @@ struct HermesMemoryPanel: View {
                         Button("Refresh Memory") {
                             companionRuntime.refreshMemoryConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
                         }
-                        .buttonStyle(.bordered)
+                        .hermesGlassButton()
                     }
                 }
 
@@ -119,7 +119,7 @@ struct HermesMemoryPanel: View {
                         showAddEntry.toggle()
                         if showAddEntry == false { newEntry = "" }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                 }
 
                 if showAddEntry {
@@ -142,7 +142,7 @@ struct HermesMemoryPanel: View {
                                 newEntry = ""
                                 showAddEntry = false
                             }
-                            .buttonStyle(.borderedProminent)
+                            .hermesGlassProminentButton()
                             .disabled(newEntry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
@@ -195,7 +195,7 @@ struct HermesMemoryPanel: View {
                         userSaved = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { userSaved = false }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                     .disabled(userDraft.count > (companionRuntime.memoryConfig?.user.charLimit ?? 1_375))
                 }
             }
@@ -243,13 +243,13 @@ struct HermesMemoryPanel: View {
                         editingIndex = nil
                         editContent = ""
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                     Button("Save") {
                         companionRuntime.updateMemoryEntry(index: entry.index, content: editContent.trimmingCharacters(in: .whitespacesAndNewlines), settings: companionSettings, identityState: companionEnrollment.identityState)
                         editingIndex = nil
                         editContent = ""
                     }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                 }
             } else {
                 Text(entry.content)
@@ -260,19 +260,19 @@ struct HermesMemoryPanel: View {
                         editingIndex = entry.index
                         editContent = entry.content
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                     Spacer()
                     if confirmDeleteIndex == entry.index {
                         Button("Cancel") { confirmDeleteIndex = nil }
-                            .buttonStyle(.bordered)
+                            .hermesGlassButton()
                         Button("Delete", role: .destructive) {
                             companionRuntime.removeMemoryEntry(index: entry.index, settings: companionSettings, identityState: companionEnrollment.identityState)
                             confirmDeleteIndex = nil
                         }
-                        .buttonStyle(.bordered)
+                        .hermesGlassButton()
                     } else {
                         Button(role: .destructive) { confirmDeleteIndex = entry.index } label: { Image(systemName: "trash") }
-                            .buttonStyle(.bordered)
+                            .hermesGlassButton()
                     }
                 }
             }
@@ -310,12 +310,12 @@ struct HermesMemoryPanel: View {
                     Button("Deactivate") {
                         companionRuntime.setMemoryProvider("", settings: companionSettings, identityState: companionEnrollment.identityState)
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                 } else {
                     Button("Activate") {
                         companionRuntime.setMemoryProvider(provider.name, settings: companionSettings, identityState: companionEnrollment.identityState)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                 }
             }
 
@@ -368,7 +368,7 @@ struct HermesMemoryPanel: View {
                     Button(visibleKeys.contains(key) ? "Hide" : "Show") {
                         if visibleKeys.contains(key) { visibleKeys.remove(key) } else { visibleKeys.insert(key) }
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                 }
             }
             Button("Save \(key)") {
@@ -376,7 +376,7 @@ struct HermesMemoryPanel: View {
                 savedEnvKey = key
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedEnvKey = nil }
             }
-            .buttonStyle(.bordered)
+            .hermesGlassButton()
         }
         .padding(12)
         .background(Color.hermesCanvas.opacity(0.55))

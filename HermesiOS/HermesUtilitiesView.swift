@@ -106,7 +106,7 @@ struct HermesUtilitiesView: View {
             .padding(24)
             .frame(maxWidth: 980, alignment: .leading)
         }
-        .background(Color.hermesCanvas.ignoresSafeArea())
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             clipboardHistory.captureCurrentPasteboardIfNeeded()
@@ -223,7 +223,7 @@ struct HermesUtilitiesView: View {
                     Label("Clear", systemImage: "trash")
                 }
                 .disabled(clipboardHistory.entries.isEmpty)
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
             }
 
             Text(statusMessage)

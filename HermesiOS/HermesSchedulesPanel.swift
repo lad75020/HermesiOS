@@ -104,14 +104,14 @@ struct HermesSchedulesPanel: View {
                             } label: {
                                 Label("Refresh", systemImage: "arrow.clockwise")
                             }
-                            .buttonStyle(.borderedProminent)
+                            .hermesGlassProminentButton()
 
                             Button {
                                 showCreateForm.toggle()
                             } label: {
                                 Label(showCreateForm ? "Hide Form" : "New Task", systemImage: showCreateForm ? "xmark" : "plus")
                             }
-                            .buttonStyle(.bordered)
+                            .hermesGlassButton()
                         }
                     }
                 }
@@ -244,11 +244,11 @@ struct HermesSchedulesPanel: View {
                 } label: {
                     Label("Create", systemImage: "plus.circle.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .hermesGlassProminentButton()
                 .disabled(!isScheduleValid)
 
                 Button("Reset") { resetForm() }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
             }
         }
     }
@@ -323,7 +323,7 @@ struct HermesSchedulesPanel: View {
                     } label: {
                         Label(job.state == "paused" ? "Resume" : "Pause", systemImage: job.state == "paused" ? "play.fill" : "pause.fill")
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                 }
 
                 if job.state == "active" {
@@ -332,7 +332,7 @@ struct HermesSchedulesPanel: View {
                     } label: {
                         Text("Run Now")
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                 }
 
                 Spacer()
@@ -342,7 +342,7 @@ struct HermesSchedulesPanel: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
             }
         }
         .padding(14)

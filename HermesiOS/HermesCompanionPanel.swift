@@ -102,7 +102,7 @@ struct HermesCompanionPanel: View {
                                     identityState: companionEnrollment.identityState
                                 )
                             }
-                            .buttonStyle(.borderedProminent)
+                            .hermesGlassProminentButton()
 
                             if !companionRuntime.selectedTargetID.isEmpty {
                                 Button("Reload Config") {
@@ -111,7 +111,7 @@ struct HermesCompanionPanel: View {
                                         identityState: companionEnrollment.identityState
                                     )
                                 }
-                                .buttonStyle(.bordered)
+                                .hermesGlassButton()
                             }
                         }
                     }
@@ -138,7 +138,7 @@ struct HermesCompanionPanel: View {
                                         identityState: companionEnrollment.identityState
                                     )
                                 }
-                                .buttonStyle(.borderedProminent)
+                                .hermesGlassProminentButton()
                             }
                         }
                     }
@@ -160,7 +160,7 @@ struct HermesCompanionPanel: View {
                                             identityState: companionEnrollment.identityState
                                         )
                                     }
-                                    .buttonStyle(.bordered)
+                                    .hermesGlassButton()
 
                                     Button("Restart Service") {
                                         companionRuntime.restartLinkedService(
@@ -168,7 +168,7 @@ struct HermesCompanionPanel: View {
                                             identityState: companionEnrollment.identityState
                                         )
                                     }
-                                    .buttonStyle(.borderedProminent)
+                                    .hermesGlassProminentButton()
                                 }
                             } else {
                                 Text("The selected target is not associated with a managed service.")

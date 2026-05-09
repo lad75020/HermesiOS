@@ -156,60 +156,61 @@ struct WorkspaceSidebar: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text("Hermes")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
-                .accessibilityAddTraits(.isHeader)
+        HermesGlassEffectContainer(spacing: 12) {
+            VStack(spacing: 0) {
+                Text("Hermes")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 14)
+                    .padding(.bottom, 8)
+                    .accessibilityAddTraits(.isHeader)
 
-            HermesStatusBand(
-                statusMonitor: statusMonitor,
-                showsLabels: false,
-                apiChannelActive: apiChannelActive,
-                companionChannelActive: companionChannelActive,
-                dashboardChannelActive: dashboardChannelActive
-            )
-
-            List(WorkspaceSection.allCases) { section in
-                let hasUnreadCompletion = completionUnread(for: section)
-                let hasUnreadFailure = failureUnread(for: section)
-                let isActivityBlinkActive = activityBlinkActive(for: section)
-                Button {
-                    selection = section
-                    clearUnreadState(for: section)
-                } label: {
-                    Image(systemName: section.systemImage)
-                        .font(.title3.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                        .foregroundStyle(hasUnreadFailure || hasUnreadCompletion || isActivityBlinkActive ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
-                        .background(
-                            WorkspaceSidebarIconBackground(
-                                isActivityBlinkActive: isActivityBlinkActive,
-                                hasUnreadFailure: hasUnreadFailure,
-                                hasUnreadCompletion: hasUnreadCompletion
-                            )
-                        )
-                        .contentShape(Rectangle())
-                        .accessibilityLabel(section.title)
-                        .accessibilityHint(isActivityBlinkActive ? activityAccessibilityHint(for: section) : (hasUnreadFailure ? "Request failed. Tap to clear the failure indicator." : (hasUnreadCompletion ? "Completed. Tap to mark as seen." : "")))
-                }
-                .buttonStyle(.plain)
-                .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
-                .listRowBackground(
-                    selection == section
-                        ? AnyView(HermesLiquidGlassBackground(cornerRadius: 14, tint: .igActionBlue.opacity(0.18), interactive: true))
-                        : AnyView(Color.clear)
+                HermesStatusBand(
+                    statusMonitor: statusMonitor,
+                    showsLabels: false,
+                    apiChannelActive: apiChannelActive,
+                    companionChannelActive: companionChannelActive,
+                    dashboardChannelActive: dashboardChannelActive
                 )
-                .listRowSeparatorTint(.hermesDivider.opacity(0.4))
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
 
+                List(WorkspaceSection.allCases) { section in
+                    let hasUnreadCompletion = completionUnread(for: section)
+                    let hasUnreadFailure = failureUnread(for: section)
+                    let isActivityBlinkActive = activityBlinkActive(for: section)
+                    Button {
+                        selection = section
+                        clearUnreadState(for: section)
+                    } label: {
+                        Image(systemName: section.systemImage)
+                            .font(.title3.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 36)
+                            .foregroundStyle(hasUnreadFailure || hasUnreadCompletion || isActivityBlinkActive ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
+                            .background(
+                                WorkspaceSidebarIconBackground(
+                                    isActivityBlinkActive: isActivityBlinkActive,
+                                    hasUnreadFailure: hasUnreadFailure,
+                                    hasUnreadCompletion: hasUnreadCompletion
+                                )
+                            )
+                            .contentShape(Rectangle())
+                            .accessibilityLabel(section.title)
+                            .accessibilityHint(isActivityBlinkActive ? activityAccessibilityHint(for: section) : (hasUnreadFailure ? "Request failed. Tap to clear the failure indicator." : (hasUnreadCompletion ? "Completed. Tap to mark as seen." : "")))
+                    }
+                    .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
+                    .listRowBackground(
+                        selection == section
+                            ? AnyView(HermesLiquidGlassBackground(cornerRadius: 14, tint: .igActionBlue.opacity(0.18), interactive: true))
+                            : AnyView(Color.clear)
+                    )
+                    .listRowSeparatorTint(.hermesDivider.opacity(0.4))
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+            }
         }
-        .background(Color.hermesCanvas)
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
     }
 }
 

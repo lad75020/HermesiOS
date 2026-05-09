@@ -45,7 +45,7 @@ struct HermesObservabilityPanel: View {
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.borderedProminent)
+                .hermesGlassProminentButton()
                 .disabled(canUseCompanion == false || companionRuntime.isLoadingObservabilityLog)
             }
 

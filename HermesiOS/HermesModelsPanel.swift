@@ -256,13 +256,13 @@ struct HermesRuntimeModelSlotEditorCard: View {
                     saved = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
                 }
-                .buttonStyle(.borderedProminent)
+                .hermesGlassProminentButton()
 
                 Button("Reset Draft") {
                     draftProvider = provider.isEmpty && allowEmptyProvider == false ? "auto" : provider
                     draftModel = model
                 }
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
             }
         }
         .padding(18)

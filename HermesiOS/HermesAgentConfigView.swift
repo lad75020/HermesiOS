@@ -350,7 +350,7 @@ struct HermesAgentConfigView: View {
                 .padding()
             }
         }
-        .background(Color.hermesCanvas)
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
 }

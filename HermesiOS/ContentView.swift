@@ -76,7 +76,7 @@ struct ContentView: View {
                 .transition(.opacity)
             }
         }
-        .background(Color.hermesCanvas)
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .preferredColorScheme(appTheme.colorScheme)
         .tint(.igActionBlue)
         .onChange(of: apiSettings) { _, newValue in

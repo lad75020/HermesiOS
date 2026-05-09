@@ -901,8 +901,8 @@ private struct HermesChatContentPart: Decodable {
     let originalMimeType: String?
 
     var textValue: String? {
-        if let text { return text }
-        if let outputText { return outputText }
+        if let text { return HermesImageJSONFormatter.renderableImageMarkdown(from: text) ?? text }
+        if let outputText { return HermesImageJSONFormatter.renderableImageMarkdown(from: outputText) ?? outputText }
         if let imageMarkdown { return imageMarkdown }
         return nil
     }

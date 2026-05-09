@@ -9,8 +9,104 @@ import Foundation
 import Observation
 import UniformTypeIdentifiers
 
+enum HermesImageJSONFormatter {
+    nonisolated static func renderableImageMarkdown(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("image_base64") || trimmed.contains("b64_json") else { return nil }
+
+        if let object = jsonObject(from: trimmed), let markdown = imageMarkdown(from: object) {
+            return markdown
+        }
+
+        let mimeType = firstJSONStringValue(for: "mime_type", in: trimmed)
+            ?? firstJSONStringValue(for: "original_mime_type", in: trimmed)
+        let resolvedMimeType = mimeType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? mimeType! : "image/png"
+        let base64 = firstJSONStringValue(for: "image_base64", in: trimmed)
+            ?? firstJSONStringValue(for: "b64_json", in: trimmed)
+        guard let base64, !base64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return markdown(source: "data:\(resolvedMimeType);base64,\(cleanBase64(base64))")
+    }
+
+    nonisolated private static func jsonObject(from text: String) -> Any? {
+        let jsonText: String
+        if text.hasPrefix("```") {
+            var lines = text.components(separatedBy: .newlines)
+            if lines.first?.hasPrefix("```") == true { lines.removeFirst() }
+            if lines.last?.trimmingCharacters(in: .whitespacesAndNewlines) == "```" { lines.removeLast() }
+            jsonText = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            jsonText = text
+        }
+        guard let data = jsonText.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    nonisolated private static func imageMarkdown(from object: Any) -> String? {
+        if let array = object as? [Any] {
+            return array.compactMap(imageMarkdown(from:)).first
+        }
+        guard let dictionary = object as? [String: Any] else { return nil }
+
+        if let imageURL = dictionary["image_url"] as? [String: Any], let url = imageURL["url"] as? String, !url.isEmpty {
+            return markdown(source: url)
+        }
+        if let url = dictionary["image_url"] as? String, !url.isEmpty {
+            return markdown(source: url)
+        }
+        if let url = dictionary["url"] as? String, !url.isEmpty {
+            return markdown(source: url)
+        }
+        let base64 = (dictionary["image_base64"] as? String) ?? (dictionary["b64_json"] as? String)
+        if let base64, !base64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let mimeType = (dictionary["mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? (dictionary["original_mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedMimeType = mimeType?.isEmpty == false ? mimeType! : "image/png"
+            return markdown(source: "data:\(resolvedMimeType);base64,\(cleanBase64(base64))")
+        }
+
+        return dictionary.values.compactMap(imageMarkdown(from:)).first
+    }
+
+    nonisolated private static func markdown(source: String) -> String {
+        "\n\n![Hermes image](\(source))"
+    }
+
+    nonisolated private static func firstJSONStringValue(for key: String, in text: String) -> String? {
+        let escapedKey = NSRegularExpression.escapedPattern(for: key)
+        let pattern = #""# + escapedKey + #""\s*:\s*"((?:\\.|[^"\\])*)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return nil }
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: nsRange),
+              let range = Range(match.range(at: 1), in: text)
+        else { return nil }
+        return unescapeJSONStringFragment(String(text[range]))
+    }
+
+    nonisolated private static func unescapeJSONStringFragment(_ value: String) -> String {
+        let wrapped = "\"\(value)\""
+        if let data = wrapped.data(using: .utf8),
+           let decoded = try? JSONSerialization.jsonObject(with: data) as? String {
+            return decoded
+        }
+        return value
+            .replacingOccurrences(of: #"\/"#, with: "/")
+            .replacingOccurrences(of: #"\n"#, with: "\n")
+            .replacingOccurrences(of: #"\r"#, with: "\r")
+            .replacingOccurrences(of: #"\t"#, with: "\t")
+            .replacingOccurrences(of: #"\""#, with: "\"")
+            .replacingOccurrences(of: #"\\"#, with: #"\"#)
+    }
+
+    nonisolated private static func cleanBase64(_ value: String) -> String {
+        value.filter { !$0.isWhitespace }
+    }
+}
+
 enum HermesStreamTextFormatter {
     static func lineBreakAfterStatementDots(_ text: String) -> String {
+        if let imageMarkdown = HermesImageJSONFormatter.renderableImageMarkdown(from: text) {
+            return imageMarkdown
+        }
         guard text.contains(".") else { return text }
         guard !looksLikeJSONPayload(text) else { return text }
 
@@ -990,7 +1086,8 @@ private struct HermesResponseContent: Decodable {
 
     var displayValue: String? {
         if type == "output_text" || type == "text" || type == "message" {
-            return text
+            guard let text else { return nil }
+            return HermesImageJSONFormatter.renderableImageMarkdown(from: text) ?? text
         }
         if let imageMarkdown {
             return imageMarkdown

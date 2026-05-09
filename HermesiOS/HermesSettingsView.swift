@@ -36,9 +36,6 @@ struct HermesSettingsView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    Text("Choose System to follow the device appearance, or force Hermes to Light or Dark mode.")
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
                 }
 
                 Section("Dashboard") {
@@ -306,16 +303,19 @@ struct HermesSettingsView: View {
 
                 Section("Ask Hermes") {
                 Toggle("Streaming enabled", isOn: $responsesDraft.stream)
-
-                TextField("System prompt", text: $responsesDraft.instructions, axis: .vertical)
-                    .lineLimit(4, reservesSpace: true)
                 }
 
                 Section("Chat with Hermes") {
                 Toggle("Streaming enabled", isOn: $chatDraft.stream)
 
-                TextField("System prompt", text: $chatDraft.systemPrompt, axis: .vertical)
-                    .lineLimit(4, reservesSpace: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Common system prompt (optional)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    TextField("System prompt", text: $chatDraft.systemPrompt, axis: .vertical)
+                        .lineLimit(4, reservesSpace: true)
+                }
                 }
 
             }

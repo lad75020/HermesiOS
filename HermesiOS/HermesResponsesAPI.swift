@@ -594,7 +594,6 @@ final class HermesResponsesSession {
         let payload = HermesResponsesRequestBody(
             model: "hermes-agent",
             input: HermesResponsesInput(prompt: draft.userPrompt, attachment: attachment),
-            instructions: draft.instructions,
             stream: stream,
             store: true,
             previousResponseID: previousResponseID.isEmpty ? nil : previousResponseID
@@ -822,13 +821,11 @@ enum HermesAPIProfilesClient {
 
 struct HermesRequestDraft: Codable, Equatable {
     var profile = "default"
-    var instructions = "You are a helpful coding assistant."
     var userPrompt = "Summarize the current project layout and recommend the next integration step."
     var stream = true
 
     enum CodingKeys: String, CodingKey {
         case profile
-        case instructions
         case userPrompt
         case stream
         case legacyModel = "model"
@@ -840,7 +837,6 @@ struct HermesRequestDraft: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         profile = try container.decodeIfPresent(String.self, forKey: .profile) ?? "default"
         _ = try container.decodeIfPresent(String.self, forKey: .legacyModel)
-        instructions = try container.decodeIfPresent(String.self, forKey: .instructions) ?? instructions
         userPrompt = try container.decodeIfPresent(String.self, forKey: .userPrompt) ?? userPrompt
         stream = try container.decodeIfPresent(Bool.self, forKey: .stream) ?? stream
     }
@@ -848,7 +844,6 @@ struct HermesRequestDraft: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(profile, forKey: .profile)
-        try container.encode(instructions, forKey: .instructions)
         try container.encode(userPrompt, forKey: .userPrompt)
         try container.encode(stream, forKey: .stream)
     }
@@ -931,7 +926,6 @@ private enum HermesResponsesInputContentPart: Encodable {
 private struct HermesResponsesRequestBody: Encodable {
     let model: String
     let input: HermesResponsesInput
-    let instructions: String
     let stream: Bool
     let store: Bool
     let previousResponseID: String?
@@ -939,7 +933,6 @@ private struct HermesResponsesRequestBody: Encodable {
     enum CodingKeys: String, CodingKey {
         case model
         case input
-        case instructions
         case stream
         case store
         case previousResponseID = "previous_response_id"

@@ -703,7 +703,7 @@ final class HermesChatSession {
 
 struct HermesChatDraft: Codable, Equatable {
     var profile = "default"
-    var systemPrompt = "You are a helpful coding assistant."
+    var systemPrompt = ""
     var userPrompt = "Summarize the current project layout."
     var stream = true
 
@@ -721,7 +721,8 @@ struct HermesChatDraft: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         profile = try container.decodeIfPresent(String.self, forKey: .profile) ?? "default"
         _ = try container.decodeIfPresent(String.self, forKey: .legacyModel)
-        systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? systemPrompt
+        let decodedSystemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? systemPrompt
+        systemPrompt = decodedSystemPrompt == "You are a helpful coding assistant." ? "" : decodedSystemPrompt
         userPrompt = try container.decodeIfPresent(String.self, forKey: .userPrompt) ?? userPrompt
         stream = try container.decodeIfPresent(Bool.self, forKey: .stream) ?? stream
     }

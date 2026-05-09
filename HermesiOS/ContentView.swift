@@ -38,6 +38,7 @@ struct ContentView: View {
     @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
     @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
+    @State private var didKickstartRuntimeSectionsAfterLoad = false
     @State private var isResponsesCompletionUnread = false
     @State private var isChatCompletionUnread = false
     @State private var isHistorySearchCompletionUnread = false
@@ -92,16 +93,21 @@ struct ContentView: View {
         }
         .task {
             guard isShowingSplash else { return }
-            if companionEnrollment.identityState.isEnrolled {
-                companionRuntime.kickstartRuntimeSections(
-                    settings: companionSettings,
-                    identityState: companionEnrollment.identityState
-                )
-            }
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.easeOut(duration: 0.25)) {
                 isShowingSplash = false
             }
+        }
+        .task(id: runtimeInitialLoadKey) {
+            guard !isShowingSplash else { return }
+            guard !didKickstartRuntimeSectionsAfterLoad else { return }
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            didKickstartRuntimeSectionsAfterLoad = true
+            try? await Task.sleep(for: .milliseconds(300))
+            companionRuntime.kickstartRuntimeSections(
+                settings: companionSettings,
+                identityState: companionEnrollment.identityState
+            )
         }
         .task(id: officePreloadKey) {
             guard !isShowingSplash else { return }
@@ -205,6 +211,17 @@ struct ContentView: View {
 
     private var officePreloadKey: String {
         officeURLString + "|enabled=\(isOfficeWebViewEnabled)|reload=\(officeReloadID.uuidString)|splash=\(isShowingSplash)"
+    }
+
+    private var runtimeInitialLoadKey: String {
+        [
+            "splash=\(isShowingSplash)",
+            companionEnrollment.identityState.isEnrolled ? "enrolled" : "not-enrolled",
+            companionEnrollment.identityState.deviceID,
+            companionEnrollment.identityState.serverEndpoint,
+            companionSettings.apiURL,
+            companionSettings.authenticationToken.isEmpty ? "no-companion-token" : "companion-token-set"
+        ].joined(separator: "|")
     }
 
     private var clipboardMonitoringKey: String {

@@ -829,6 +829,14 @@ private struct HermesProfileSelector: View {
         return unique
     }
 
+    private var currentProfileLabel: String {
+        let activeID = currentProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let profile = pickerProfiles.first(where: { $0.id == activeID }) {
+            return label(for: profile)
+        }
+        return activeID.isEmpty ? "default" : activeID
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("PROFILE")
@@ -836,17 +844,19 @@ private struct HermesProfileSelector: View {
                 .tracking(0.6)
                 .foregroundStyle(.hermesSecondaryText)
 
-            Picker("Profile", selection: selection) {
+            Menu {
                 ForEach(pickerProfiles) { profile in
-                    Text(label(for: profile))
-                        .font(.caption2.weight(.semibold))
-                        .tag(profile.id)
+                    Button(label(for: profile)) {
+                        selection.wrappedValue = profile.id
+                    }
                 }
+            } label: {
+                Text(currentProfileLabel)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .font(.caption2.weight(.semibold))
-            .lineLimit(1)
             .tint(.primary)
             .disabled(isDisabled)
             .opacity(isDisabled ? 0.55 : 1)

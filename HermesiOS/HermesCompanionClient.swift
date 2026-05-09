@@ -1189,6 +1189,8 @@ final class HermesCompanionRuntimeSession {
     var connectionStatus = "Idle"
     var lastErrorMessage = ""
     var isBusy = false
+    var isKickstartingRuntime = false
+    var runtimeLoadedSectionIDs: Set<String> = []
     var hermesSkills: [HermesCompanionSkillSummary] = []
     var hermesMCPServers: [HermesCompanionMCPServerSummary] = []
     var mcpListOutput = ""
@@ -1257,23 +1259,100 @@ final class HermesCompanionRuntimeSession {
         targets.first(where: { $0.id == selectedTargetID })
     }
 
+    func hasRuntimeSectionLoaded(_ id: String) -> Bool {
+        runtimeLoadedSectionIDs.contains(id)
+    }
+
+    private func markRuntimeSectionLoaded(_ id: String) {
+        runtimeLoadedSectionIDs.insert(id)
+    }
+
+    func kickstartRuntimeSections(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        Task {
+            guard identityState.isEnrolled else {
+                self.lastErrorMessage = "Enroll Host Companion before kickstarting runtime sections."
+                self.connectionStatus = "Companion Not Enrolled"
+                return
+            }
+
+            self.isKickstartingRuntime = true
+            self.isBusy = true
+            self.lastErrorMessage = ""
+            defer {
+                self.isKickstartingRuntime = false
+                self.isBusy = false
+            }
+
+            await self.kickstartSection("companion", status: "Refreshing Companion") {
+                try await self.refreshTargetsImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("skills", status: "Refreshing Skills") {
+                try await self.refreshHermesSkillsImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("profiles", status: "Refreshing Profiles") {
+                try await self.refreshProfilesImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("gateway", status: "Refreshing Messaging") {
+                try await self.refreshGatewayConfigImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("tools", status: "Refreshing Tools") {
+                try await self.refreshHermesToolsetsImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("mcpServers", status: "Refreshing MCP Servers") {
+                try await self.refreshHermesMCPServersImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("providers", status: "Refreshing Providers") {
+                try await self.refreshProvidersConfigImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("memory", status: "Refreshing Memory") {
+                try await self.refreshMemoryConfigImmediately(settings: settings, identityState: identityState)
+            }
+            self.markRuntimeSectionLoaded("knowledgeEraser")
+            await self.kickstartSection("schedules", status: "Refreshing Schedules") {
+                try await self.refreshSchedulesImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("models", status: "Refreshing Models") {
+                try await self.refreshHermesModelsImmediately(settings: settings, identityState: identityState)
+            }
+            await self.kickstartSection("observability", status: "Refreshing Observability") {
+                try await self.refreshHermesLogImmediately(settings: settings, identityState: identityState)
+            }
+            self.connectionStatus = "Runtime Refreshed"
+        }
+    }
+
+    private func kickstartSection(_ id: String, status: String, operation: @escaping @MainActor () async throws -> Void) async {
+        connectionStatus = status
+        do {
+            try await operation()
+            markRuntimeSectionLoaded(id)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
     func refreshTargets(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Targets"
-            let result: HermesCompanionListTargetsResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "list_targets",
-                payload: HermesCompanionListTargetsPayload(workspacePath: settings.hermesWorkspacePath)
-            )
-            self.targets = result.targets
-            if self.selectedTargetID.isEmpty || self.targets.contains(where: { $0.id == self.selectedTargetID }) == false {
-                self.selectedTargetID = self.targets.first?.id ?? ""
-            }
+            try await self.refreshTargetsImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("companion")
             self.connectionStatus = self.targets.isEmpty ? "No Targets" : "Targets Loaded"
-            if self.selectedTarget != nil {
-                try await self.loadSelectedTarget(settings: settings, identityState: identityState)
-            }
+        }
+    }
+
+    private func refreshTargetsImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionListTargetsResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "list_targets",
+            payload: HermesCompanionListTargetsPayload(workspacePath: settings.hermesWorkspacePath)
+        )
+        targets = result.targets
+        if selectedTargetID.isEmpty || targets.contains(where: { $0.id == selectedTargetID }) == false {
+            selectedTargetID = targets.first?.id ?? ""
+        }
+        if selectedTarget != nil {
+            try await loadSelectedTarget(settings: settings, identityState: identityState)
         }
     }
 
@@ -1606,16 +1685,21 @@ final class HermesCompanionRuntimeSession {
     func refreshHermesSkills(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Skills"
-            let result: HermesCompanionListSkillsResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "list_skills",
-                payload: HermesCompanionListSkillsPayload(workspacePath: settings.hermesWorkspacePath)
-            )
-            self.hermesSkills = result.skills
-            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
-            self.connectionStatus = result.skills.isEmpty ? "No Skills Found" : "Skills Loaded"
+            try await self.refreshHermesSkillsImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("skills")
+            self.connectionStatus = self.hermesSkills.isEmpty ? "No Skills Found" : "Skills Loaded"
         }
+    }
+
+    private func refreshHermesSkillsImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionListSkillsResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "list_skills",
+            payload: HermesCompanionListSkillsPayload(workspacePath: settings.hermesWorkspacePath)
+        )
+        hermesSkills = result.skills
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
     }
 
     func setHermesSkillState(
@@ -1668,15 +1752,20 @@ final class HermesCompanionRuntimeSession {
     func refreshGatewayConfig(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Messaging"
-            let result: HermesCompanionGatewayConfigResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "get_gateway_config",
-                payload: HermesCompanionGatewayConfigPayload(workspacePath: settings.hermesWorkspacePath, profileName: self.activeProfileName)
-            )
-            self.applyGatewayConfig(result)
+            try await self.refreshGatewayConfigImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("gateway")
             self.connectionStatus = "Messaging Loaded"
         }
+    }
+
+    private func refreshGatewayConfigImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionGatewayConfigResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "get_gateway_config",
+            payload: HermesCompanionGatewayConfigPayload(workspacePath: settings.hermesWorkspacePath, profileName: activeProfileName)
+        )
+        applyGatewayConfig(result)
     }
 
     func refreshGatewayStatus(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
@@ -1834,6 +1923,7 @@ final class HermesCompanionRuntimeSession {
                 self.observabilityLogPath = result.path
                 self.observabilityLoadedLineCount = result.loadedLineCount
                 self.observabilityUpdatedAt = result.updatedAt
+                self.markRuntimeSectionLoaded("observability")
                 self.connectionStatus = result.fileExists ? "\(result.label) Log Loaded" : "\(result.label) Log Missing"
             } catch is CancellationError {
                 return
@@ -1856,19 +1946,44 @@ final class HermesCompanionRuntimeSession {
         observabilityLineCount = min(max(lineCount, 10), 10_000)
     }
 
+    private func refreshHermesLogImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionReadLogResult = try await Self.withTimeout(seconds: 20) {
+            try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "read_hermes_log",
+                payload: HermesCompanionReadLogPayload(
+                    log: self.observabilityLogKind,
+                    lineCount: self.observabilityLineCount
+                )
+            )
+        }
+        observabilityLogKind = result.log
+        observabilityLineCount = result.requestedLineCount
+        observabilityLogContent = result.content
+        observabilityLogPath = result.path
+        observabilityLoadedLineCount = result.loadedLineCount
+        observabilityUpdatedAt = result.updatedAt
+    }
+
     func refreshHermesMCPServers(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading MCP Servers"
-            let result: HermesCompanionListMCPServersResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "list_mcp_servers",
-                payload: HermesCompanionEmptyPayload()
-            )
-            self.hermesMCPServers = result.servers
-            self.mcpListOutput = result.output
-            self.connectionStatus = result.servers.isEmpty ? "No MCP Servers" : "MCP Servers Loaded"
+            try await self.refreshHermesMCPServersImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("mcpServers")
+            self.connectionStatus = self.hermesMCPServers.isEmpty ? "No MCP Servers" : "MCP Servers Loaded"
         }
+    }
+
+    private func refreshHermesMCPServersImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionListMCPServersResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "list_mcp_servers",
+            payload: HermesCompanionEmptyPayload()
+        )
+        hermesMCPServers = result.servers
+        mcpListOutput = result.output
     }
 
     func addHermesMCPServer(
@@ -1920,17 +2035,22 @@ final class HermesCompanionRuntimeSession {
     func refreshHermesToolsets(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Toolsets"
-            let result: HermesCompanionListToolsetsResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "list_toolsets",
-                payload: HermesCompanionListToolsetsPayload(workspacePath: settings.hermesWorkspacePath)
-            )
-            self.hermesToolsets = result.toolsets
-            self.toolsetsConfigPath = result.configPath
-            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
-            self.connectionStatus = result.toolsets.isEmpty ? "No Toolsets Found" : "Toolsets Loaded"
+            try await self.refreshHermesToolsetsImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("tools")
+            self.connectionStatus = self.hermesToolsets.isEmpty ? "No Toolsets Found" : "Toolsets Loaded"
         }
+    }
+
+    private func refreshHermesToolsetsImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionListToolsetsResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "list_toolsets",
+            payload: HermesCompanionListToolsetsPayload(workspacePath: settings.hermesWorkspacePath)
+        )
+        hermesToolsets = result.toolsets
+        toolsetsConfigPath = result.configPath
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
     }
 
     func setHermesToolsetEnabled(
@@ -1982,16 +2102,9 @@ final class HermesCompanionRuntimeSession {
     func refreshHermesModels(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Models"
-            let result: HermesCompanionListModelsResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "list_models",
-                payload: HermesCompanionListModelsPayload(workspacePath: settings.hermesWorkspacePath)
-            )
-            self.hermesModels = result.models
-            self.modelsFilePath = result.modelsFilePath
-            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
-            self.connectionStatus = result.models.isEmpty ? "No Models Found" : "Models Loaded"
+            try await self.refreshHermesModelsImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("models")
+            self.connectionStatus = self.hermesModels.isEmpty ? "No Models Found" : "Models Loaded"
         }
     }
 
@@ -2081,15 +2194,20 @@ final class HermesCompanionRuntimeSession {
     func refreshProvidersConfig(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Providers"
-            let result: HermesCompanionProvidersConfigResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "get_providers_config",
-                payload: HermesCompanionProvidersConfigPayload(workspacePath: settings.hermesWorkspacePath)
-            )
-            self.applyProvidersConfig(result)
+            try await self.refreshProvidersConfigImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("providers")
             self.connectionStatus = "Providers Loaded"
         }
+    }
+
+    private func refreshProvidersConfigImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionProvidersConfigResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "get_providers_config",
+            payload: HermesCompanionProvidersConfigPayload(workspacePath: settings.hermesWorkspacePath)
+        )
+        applyProvidersConfig(result)
     }
 
     func setProviderEnvValue(
@@ -2276,15 +2394,20 @@ final class HermesCompanionRuntimeSession {
     func refreshMemoryConfig(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Memory"
-            let result: HermesCompanionMemoryConfigResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "get_memory_config",
-                payload: HermesCompanionMemoryConfigPayload(workspacePath: settings.hermesWorkspacePath)
-            )
-            self.applyMemoryConfig(result)
+            try await self.refreshMemoryConfigImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("memory")
             self.connectionStatus = "Memory Loaded"
         }
+    }
+
+    private func refreshMemoryConfigImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionMemoryConfigResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "get_memory_config",
+            payload: HermesCompanionMemoryConfigPayload(workspacePath: settings.hermesWorkspacePath)
+        )
+        applyMemoryConfig(result)
     }
 
     func addMemoryEntry(content: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
@@ -2446,6 +2569,7 @@ final class HermesCompanionRuntimeSession {
             self.knowledgeEraserArchivePath = ""
             self.knowledgeEraserOperationOutput = result.items.isEmpty ? "No matching memory or skill blocks found." : "Found \(result.items.count) candidate items. Review the checkboxes before erasing."
             self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.markRuntimeSectionLoaded("knowledgeEraser")
             self.connectionStatus = "Knowledge Scan Complete"
         }
     }
@@ -2502,15 +2626,20 @@ final class HermesCompanionRuntimeSession {
     func refreshProfiles(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Profiles"
-            let result: HermesCompanionListProfilesResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "list_profiles",
-                payload: HermesCompanionListProfilesPayload(workspacePath: settings.hermesWorkspacePath)
-            )
-            self.applyProfiles(result)
-            self.connectionStatus = result.profiles.isEmpty ? "No Profiles" : "Profiles Loaded"
+            try await self.refreshProfilesImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("profiles")
+            self.connectionStatus = self.profiles.isEmpty ? "No Profiles" : "Profiles Loaded"
         }
+    }
+
+    private func refreshProfilesImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionListProfilesResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "list_profiles",
+            payload: HermesCompanionListProfilesPayload(workspacePath: settings.hermesWorkspacePath)
+        )
+        applyProfiles(result)
     }
 
     func createProfile(name: String, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool, cloneSkills: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
@@ -2591,15 +2720,20 @@ final class HermesCompanionRuntimeSession {
     func refreshSchedules(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
         run {
             self.connectionStatus = "Loading Schedules"
-            let result: HermesCompanionListSchedulesResult = try await HermesCompanionSessionFactory.request(
-                settings: settings,
-                state: identityState,
-                type: "list_schedules",
-                payload: HermesCompanionListSchedulesPayload(workspacePath: settings.hermesWorkspacePath, includeDisabled: true)
-            )
-            self.applySchedules(result)
-            self.connectionStatus = result.jobs.isEmpty ? "No Schedules" : "Schedules Loaded"
+            try await self.refreshSchedulesImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("schedules")
+            self.connectionStatus = self.schedules.isEmpty ? "No Schedules" : "Schedules Loaded"
         }
+    }
+
+    private func refreshSchedulesImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+        let result: HermesCompanionListSchedulesResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "list_schedules",
+            payload: HermesCompanionListSchedulesPayload(workspacePath: settings.hermesWorkspacePath, includeDisabled: true)
+        )
+        applySchedules(result)
     }
 
     func createSchedule(

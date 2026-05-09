@@ -84,16 +84,64 @@ struct HermesAgentConfigView: View {
         return "\(companionRuntime.observabilityLogKind.label) · last \(companionRuntime.observabilityLineCount) lines"
     }
 
+    private var runtimeHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "server.rack")
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(.igActionBlue)
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
+
+            Text("Hermes Agent Runtime")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+
+            Button {
+                companionRuntime.kickstartRuntimeSections(
+                    settings: companionSettings,
+                    identityState: companionEnrollment.identityState
+                )
+            } label: {
+                Image(systemName: "bolt.fill")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(companionRuntime.isKickstartingRuntime ? .igOnlineGreen : .igActionBlue)
+                    .frame(width: 42, height: 42)
+                    .hermesLiquidGlass(
+                        cornerRadius: 14,
+                        tint: (companionRuntime.isKickstartingRuntime ? Color.igOnlineGreen : Color.igActionBlue).opacity(0.16),
+                        interactive: true
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isKickstartingRuntime)
+            .help("Refresh all runtime sections from the Mac companion")
+            .accessibilityLabel("Kickstart runtime refresh")
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+    }
+
+    private func runtimeSectionLoaded(_ id: String) -> Bool {
+        companionRuntime.hasRuntimeSectionLoaded(id)
+    }
+
     var body: some View {
         ScrollView {
             HermesGlassEffectContainer(spacing: 28) {
                 VStack(alignment: .leading, spacing: 18) {
-                HermesTabHeader("Hermes Agent Runtime", systemImage: "server.rack")
+                runtimeHeader
 
                 HermesRuntimeAccordionPanel(
                     title: "Skills",
                     subtitle: "\(companionRuntime.hermesSkills.filter(\.isEnabled).count) enabled, \(companionRuntime.hermesSkills.count) visible in workspace",
                     systemImage: "square.stack.3d.up.fill",
+                    isLoaded: runtimeSectionLoaded("skills"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .skills },
                         set: { isExpanded in
@@ -113,6 +161,7 @@ struct HermesAgentConfigView: View {
                     title: "Companion",
                     subtitle: companionEnrollment.identityState.isEnrolled ? companionRuntime.connectionStatus : "Authenticate with the 4096-character companion token to unlock host operations",
                     systemImage: "lock.laptopcomputer",
+                    isLoaded: runtimeSectionLoaded("companion"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .companion },
                         set: { isExpanded in
@@ -131,6 +180,7 @@ struct HermesAgentConfigView: View {
                     title: "Profiles",
                     subtitle: profilesSummary,
                     systemImage: "person.crop.rectangle.stack",
+                    isLoaded: runtimeSectionLoaded("profiles"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .profiles },
                         set: { isExpanded in
@@ -149,6 +199,7 @@ struct HermesAgentConfigView: View {
                     title: "Messaging",
                     subtitle: gatewaySummary,
                     systemImage: "antenna.radiowaves.left.and.right",
+                    isLoaded: runtimeSectionLoaded("gateway"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .gateway },
                         set: { isExpanded in
@@ -167,6 +218,7 @@ struct HermesAgentConfigView: View {
                     title: "Tools",
                     subtitle: "\(companionRuntime.hermesToolsets.filter(\.enabled).count) enabled, \(companionRuntime.hermesToolsets.count) available in config",
                     systemImage: "wrench.and.screwdriver",
+                    isLoaded: runtimeSectionLoaded("tools"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .tools },
                         set: { isExpanded in
@@ -185,6 +237,7 @@ struct HermesAgentConfigView: View {
                     title: "MCP Servers",
                     subtitle: mcpServersSummary,
                     systemImage: "point.3.connected.trianglepath.dotted",
+                    isLoaded: runtimeSectionLoaded("mcpServers"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .mcpServers },
                         set: { isExpanded in
@@ -204,6 +257,7 @@ struct HermesAgentConfigView: View {
                     title: "Providers",
                     subtitle: providerSummary,
                     systemImage: "key.horizontal",
+                    isLoaded: runtimeSectionLoaded("providers"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .providers },
                         set: { isExpanded in
@@ -222,6 +276,7 @@ struct HermesAgentConfigView: View {
                     title: "Memory",
                     subtitle: memorySummary,
                     systemImage: "brain.head.profile",
+                    isLoaded: runtimeSectionLoaded("memory"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .memory },
                         set: { isExpanded in
@@ -237,9 +292,10 @@ struct HermesAgentConfigView: View {
                 }
 
                 HermesRuntimeAccordionPanel(
-                    title: "Knwoledge Eraser",
+                    title: "Knowledge Eraser",
                     subtitle: companionRuntime.knowledgeEraserItems.isEmpty ? "Find, review, archive, and erase topic-related knowledge" : "\(companionRuntime.knowledgeEraserItems.count) candidates · \(companionRuntime.knowledgeEraserSelectedItemIDs.count) selected",
                     systemImage: "eraser.line.dashed.fill",
+                    isLoaded: runtimeSectionLoaded("knowledgeEraser"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .knowledgeEraser },
                         set: { isExpanded in
@@ -258,6 +314,7 @@ struct HermesAgentConfigView: View {
                     title: "Schedules",
                     subtitle: schedulesSummary,
                     systemImage: "calendar.badge.clock",
+                    isLoaded: runtimeSectionLoaded("schedules"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .schedules },
                         set: { isExpanded in
@@ -276,6 +333,7 @@ struct HermesAgentConfigView: View {
                     title: "Models",
                     subtitle: "Main, delegation, and auxiliary runtime model routing",
                     systemImage: "cpu",
+                    isLoaded: runtimeSectionLoaded("models"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .models },
                         set: { isExpanded in
@@ -294,6 +352,7 @@ struct HermesAgentConfigView: View {
                     title: "Observability",
                     subtitle: observabilitySummary,
                     systemImage: "waveform.and.magnifyingglass",
+                    isLoaded: runtimeSectionLoaded("observability"),
                     isExpanded: Binding(
                         get: { agentConfiguration.activeRuntimePanel == .observability },
                         set: { isExpanded in

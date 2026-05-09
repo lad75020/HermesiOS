@@ -11,9 +11,26 @@ struct HermesRuntimeAccordionPanel<Content: View>: View {
     let title: String
     let subtitle: String
     let systemImage: String
+    let isLoaded: Bool
     @Binding var isExpanded: Bool
     @ViewBuilder let content: Content
     @Namespace private var glassNamespace
+
+    init(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        isLoaded: Bool = false,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.isLoaded = isLoaded
+        self._isExpanded = isExpanded
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -37,6 +54,17 @@ struct HermesRuntimeAccordionPanel<Content: View>: View {
                             .foregroundStyle(.hermesSecondaryText)
                     }
                     Spacer()
+                    if isLoaded {
+                        Circle()
+                            .fill(Color.igOnlineGreen)
+                            .frame(width: 10, height: 10)
+                            .overlay {
+                                Circle()
+                                    .stroke(Color.white.opacity(0.75), lineWidth: 1)
+                            }
+                            .shadow(color: Color.igOnlineGreen.opacity(0.65), radius: 5)
+                            .accessibilityLabel("Configuration loaded")
+                    }
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.hermesSecondaryText)

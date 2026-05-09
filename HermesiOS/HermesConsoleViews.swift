@@ -518,11 +518,7 @@ struct HermesResponsesConsoleView: View {
     }
 
     private var responseWorkspaceSwitcherNumbers: [Int] {
-        let allNumbers = Array(1...max(workspaceCount, 1))
-        if workspaceNumber == 1 {
-            return allNumbers.filter { $0 > 1 }
-        }
-        return allNumbers
+        Array(1...max(workspaceCount, 1))
     }
 
     private var responseTranscript: some View {

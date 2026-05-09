@@ -79,6 +79,7 @@ struct WorkspaceSidebar: View {
     @Bindable var statusMonitor: HermesStatusMonitor
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var chatSession: HermesChatSession
+    @Bindable var companionRuntime: HermesCompanionRuntimeSession
     var apiChannelActive = false
     var companionChannelActive = false
     var dashboardChannelActive = false
@@ -119,7 +120,7 @@ struct WorkspaceSidebar: View {
         }
     }
 
-    private func streamingActive(for section: WorkspaceSection) -> Bool {
+    private func activityBlinkActive(for section: WorkspaceSection) -> Bool {
         switch section {
         case .responses:
             isResponsesStreamingActive
@@ -127,9 +128,15 @@ struct WorkspaceSidebar: View {
             chatSession.isSending
         case .history:
             isHistorySearchActive
-        case .office, .utilities, .settings, .runtime:
+        case .runtime:
+            companionRuntime.isKickstartingRuntime
+        case .office, .utilities, .settings:
             false
         }
+    }
+
+    private func activityAccessibilityHint(for section: WorkspaceSection) -> String {
+        section == .runtime ? "Runtime sections are loading from the Mac host companion." : "Activity in progress."
     }
 
     private func clearUnreadState(for section: WorkspaceSection) {
@@ -169,7 +176,7 @@ struct WorkspaceSidebar: View {
             List(WorkspaceSection.allCases) { section in
                 let hasUnreadCompletion = completionUnread(for: section)
                 let hasUnreadFailure = failureUnread(for: section)
-                let isStreamingActive = streamingActive(for: section)
+                let isActivityBlinkActive = activityBlinkActive(for: section)
                 Button {
                     selection = section
                     clearUnreadState(for: section)
@@ -177,17 +184,17 @@ struct WorkspaceSidebar: View {
                     Image(systemName: section.systemImage)
                         .font(.title3.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 36)
-                        .foregroundStyle(hasUnreadFailure || hasUnreadCompletion || isStreamingActive ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
+                        .foregroundStyle(hasUnreadFailure || hasUnreadCompletion || isActivityBlinkActive ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
                         .background(
                             WorkspaceSidebarIconBackground(
-                                isStreamingActive: isStreamingActive,
+                                isActivityBlinkActive: isActivityBlinkActive,
                                 hasUnreadFailure: hasUnreadFailure,
                                 hasUnreadCompletion: hasUnreadCompletion
                             )
                         )
                         .contentShape(Rectangle())
                         .accessibilityLabel(section.title)
-                        .accessibilityHint(isStreamingActive ? "Streaming response in progress." : (hasUnreadFailure ? "Request failed. Tap to clear the failure indicator." : (hasUnreadCompletion ? "Completed. Tap to mark as seen." : "")))
+                        .accessibilityHint(isActivityBlinkActive ? activityAccessibilityHint(for: section) : (hasUnreadFailure ? "Request failed. Tap to clear the failure indicator." : (hasUnreadCompletion ? "Completed. Tap to mark as seen." : "")))
                 }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
@@ -207,12 +214,12 @@ struct WorkspaceSidebar: View {
 }
 
 private struct WorkspaceSidebarIconBackground: View {
-    let isStreamingActive: Bool
+    let isActivityBlinkActive: Bool
     let hasUnreadFailure: Bool
     let hasUnreadCompletion: Bool
 
     var body: some View {
-        if isStreamingActive {
+        if isActivityBlinkActive {
             TimelineView(.animation(minimumInterval: 0.2)) { context in
                 let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
                 let opacity = 0.42 + (0.46 * (0.5 + 0.5 * sin(phase * 2 * .pi)))

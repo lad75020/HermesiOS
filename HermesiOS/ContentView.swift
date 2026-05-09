@@ -247,6 +247,7 @@ struct ContentView: View {
                 statusMonitor: statusMonitor,
                 responseSession: activeResponseSession,
                 chatSession: chatSession,
+                companionRuntime: companionRuntime,
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive,

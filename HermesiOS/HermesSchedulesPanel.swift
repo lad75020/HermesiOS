@@ -330,7 +330,7 @@ struct HermesSchedulesPanel: View {
                     Button {
                         companionRuntime.triggerSchedule(jobID: job.id, settings: companionSettings, identityState: companionEnrollment.identityState)
                     } label: {
-                        Label("Run Now", systemImage: "bolt.fill")
+                        Text("Run Now")
                     }
                     .buttonStyle(.bordered)
                 }

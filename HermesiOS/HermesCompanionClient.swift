@@ -57,6 +57,7 @@ struct HermesCompanionListTargetsResult: Codable {
 
 struct HermesCompanionListTargetsPayload: Codable {
     let workspacePath: String
+    let profileName: String?
 }
 
 struct HermesCompanionTargetSummary: Codable, Identifiable, Equatable {
@@ -70,6 +71,8 @@ struct HermesCompanionTargetSummary: Codable, Identifiable, Equatable {
 
 struct HermesCompanionReadTargetPayload: Codable {
     let targetID: String
+    let workspacePath: String?
+    let profileName: String?
 }
 
 struct HermesCompanionReadTargetResult: Codable, Equatable {
@@ -84,6 +87,8 @@ struct HermesCompanionReadTargetResult: Codable, Equatable {
 struct HermesCompanionValidateTargetPayload: Codable {
     let targetID: String
     let content: String?
+    let workspacePath: String?
+    let profileName: String?
 }
 
 struct HermesCompanionValidateTargetResult: Codable, Equatable {
@@ -98,6 +103,8 @@ struct HermesCompanionWriteTargetPayload: Codable {
     let expectedRevision: String
     let content: String
     let createBackup: Bool
+    let workspacePath: String?
+    let profileName: String?
 }
 
 struct HermesCompanionWriteTargetResult: Codable {
@@ -1176,6 +1183,7 @@ final class HermesCompanionRuntimeSession {
     var targetContent = ""
     var currentRevision = ""
     var diagnostics: [HermesCompanionValidationDiagnostic] = []
+    var companionConfigProfileName = "default"
     var linkedServiceStatus = ""
     var linkedServiceOutput = ""
     var macServiceStatuses: [String: HermesCompanionServiceStatusResult] = [:]
@@ -1315,7 +1323,7 @@ final class HermesCompanionRuntimeSession {
                 try await self.refreshHermesModelsImmediately(settings: settings, identityState: identityState)
             }
             await self.kickstartSection("observability", status: "Refreshing Observability") {
-                try await self.refreshHermesLogImmediately(settings: settings, identityState: identityState)
+                try await self.refreshHermesLogImmediately(settings: settings, identityState: identityState, lineCount: 200)
             }
             self.connectionStatus = "Runtime Refreshed"
         }
@@ -1345,7 +1353,7 @@ final class HermesCompanionRuntimeSession {
             settings: settings,
             state: identityState,
             type: "list_targets",
-            payload: HermesCompanionListTargetsPayload(workspacePath: settings.hermesWorkspacePath)
+            payload: HermesCompanionListTargetsPayload(workspacePath: settings.hermesWorkspacePath, profileName: companionConfigProfileName)
         )
         targets = result.targets
         if selectedTargetID.isEmpty || targets.contains(where: { $0.id == selectedTargetID }) == false {
@@ -1353,6 +1361,28 @@ final class HermesCompanionRuntimeSession {
         }
         if selectedTarget != nil {
             try await loadSelectedTarget(settings: settings, identityState: identityState)
+        }
+    }
+
+    func selectCompanionProfile(name: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        companionConfigProfileName = name.isEmpty ? "default" : name
+        selectedTargetID = "hermes-config"
+        targetContent = ""
+        currentRevision = ""
+        diagnostics = []
+        refreshTargets(settings: settings, identityState: identityState)
+    }
+
+    func refreshCompanionProfileConfig(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run {
+            self.connectionStatus = "Loading Profile Config"
+            try await self.refreshProfilesImmediately(settings: settings, identityState: identityState)
+            if self.selectedTargetID.isEmpty {
+                self.selectedTargetID = "hermes-config"
+            }
+            try await self.refreshTargetsImmediately(settings: settings, identityState: identityState)
+            self.markRuntimeSectionLoaded("companion")
+            self.connectionStatus = "Profile Config Loaded"
         }
     }
 
@@ -1370,7 +1400,12 @@ final class HermesCompanionRuntimeSession {
                 settings: settings,
                 state: identityState,
                 type: "validate_target",
-                payload: HermesCompanionValidateTargetPayload(targetID: selectedTarget.id, content: self.targetContent)
+                payload: HermesCompanionValidateTargetPayload(
+                    targetID: selectedTarget.id,
+                    content: self.targetContent,
+                    workspacePath: settings.hermesWorkspacePath,
+                    profileName: self.companionConfigProfileName
+                )
             )
             self.diagnostics = result.diagnostics
             self.connectionStatus = result.valid ? "Validation Passed" : "Validation Failed"
@@ -1389,7 +1424,9 @@ final class HermesCompanionRuntimeSession {
                     targetID: selectedTarget.id,
                     expectedRevision: self.currentRevision,
                     content: self.targetContent,
-                    createBackup: true
+                    createBackup: true,
+                    workspacePath: settings.hermesWorkspacePath,
+                    profileName: self.companionConfigProfileName
                 )
             )
             self.diagnostics = result.diagnostics
@@ -1638,7 +1675,11 @@ final class HermesCompanionRuntimeSession {
             settings: settings,
             state: identityState,
             type: "read_target",
-            payload: HermesCompanionReadTargetPayload(targetID: selectedTarget.id)
+            payload: HermesCompanionReadTargetPayload(
+                targetID: selectedTarget.id,
+                workspacePath: settings.hermesWorkspacePath,
+                profileName: companionConfigProfileName
+            )
         )
         targetContent = result.content
         currentRevision = result.revision
@@ -1946,7 +1987,7 @@ final class HermesCompanionRuntimeSession {
         observabilityLineCount = min(max(lineCount, 10), 10_000)
     }
 
-    private func refreshHermesLogImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {
+    private func refreshHermesLogImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState, lineCount: Int? = nil) async throws {
         let result: HermesCompanionReadLogResult = try await Self.withTimeout(seconds: 20) {
             try await HermesCompanionSessionFactory.request(
                 settings: settings,
@@ -1954,7 +1995,7 @@ final class HermesCompanionRuntimeSession {
                 type: "read_hermes_log",
                 payload: HermesCompanionReadLogPayload(
                     log: self.observabilityLogKind,
-                    lineCount: self.observabilityLineCount
+                    lineCount: lineCount ?? self.observabilityLineCount
                 )
             )
         }
@@ -2703,6 +2744,11 @@ final class HermesCompanionRuntimeSession {
         profilesDirectoryPath = result.profilesDirectoryPath
         activeProfileName = result.activeProfileName
         resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+        if profiles.contains(where: { $0.name == companionConfigProfileName }) == false {
+            companionConfigProfileName = result.activeProfileName
+        } else if companionConfigProfileName == "default", result.activeProfileName != "default", targetContent.isEmpty {
+            companionConfigProfileName = result.activeProfileName
+        }
     }
 
     private func applyProfileOperation(_ result: HermesCompanionProfileOperationResult) {

@@ -92,6 +92,12 @@ struct ContentView: View {
         }
         .task {
             guard isShowingSplash else { return }
+            if companionEnrollment.identityState.isEnrolled {
+                companionRuntime.kickstartRuntimeSections(
+                    settings: companionSettings,
+                    identityState: companionEnrollment.identityState
+                )
+            }
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.easeOut(duration: 0.25)) {
                 isShowingSplash = false

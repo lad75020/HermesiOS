@@ -98,27 +98,6 @@ struct HermesAgentConfigView: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
 
-            Button {
-                companionRuntime.kickstartRuntimeSections(
-                    settings: companionSettings,
-                    identityState: companionEnrollment.identityState
-                )
-            } label: {
-                Image(systemName: "bolt.fill")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(companionRuntime.isKickstartingRuntime ? .igOnlineGreen : .igActionBlue)
-                    .frame(width: 42, height: 42)
-                    .hermesLiquidGlass(
-                        cornerRadius: 14,
-                        tint: (companionRuntime.isKickstartingRuntime ? Color.igOnlineGreen : Color.igActionBlue).opacity(0.16),
-                        interactive: true
-                    )
-            }
-            .buttonStyle(.plain)
-            .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isKickstartingRuntime)
-            .help("Refresh all runtime sections from the Mac companion")
-            .accessibilityLabel("Kickstart runtime refresh")
-
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -216,7 +195,7 @@ struct HermesAgentConfigView: View {
 
                 HermesRuntimeAccordionPanel(
                     title: "Tools",
-                    subtitle: "\(companionRuntime.hermesToolsets.filter(\.enabled).count) enabled, \(companionRuntime.hermesToolsets.count) available in config",
+                    subtitle: "\(companionRuntime.hermesToolsets.filter(\.enabled).count) enabled, \(companionRuntime.hermesToolsets.count) available",
                     systemImage: "wrench.and.screwdriver",
                     isLoaded: runtimeSectionLoaded("tools"),
                     isExpanded: Binding(

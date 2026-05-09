@@ -56,13 +56,6 @@ struct HermesToolsPanel: View {
             } else {
                 HermesSectionCard("Hermes Toolsets") {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("This panel mirrors the desktop toolset editor and writes `platform_toolsets.cli` in the live Hermes `config.yaml` for the configured workspace.")
-                            .font(.subheadline)
-                            .foregroundStyle(.hermesSecondaryText)
-
-                        companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
-                        companionSummaryRow(label: "Config", value: companionRuntime.toolsetsConfigPath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/config.yaml" : companionRuntime.toolsetsConfigPath)
-
                         if !companionRuntime.lastErrorMessage.isEmpty {
                             Text(companionRuntime.lastErrorMessage)
                                 .font(.subheadline)
@@ -107,18 +100,5 @@ struct HermesToolsPanel: View {
             guard companionEnrollment.identityState.isEnrolled else { return }
             companionRuntime.refreshHermesToolsets(settings: companionSettings, identityState: companionEnrollment.identityState)
         }
-    }
-
-    private func companionSummaryRow(label: String, value: String) -> some View {
-        HStack(alignment: .top) {
-            Text(label)
-                .fontWeight(.semibold)
-            Spacer()
-            Text(value)
-                .multilineTextAlignment(.trailing)
-                .foregroundStyle(.hermesSecondaryText)
-                .textSelection(.enabled)
-        }
-        .font(.subheadline)
     }
 }

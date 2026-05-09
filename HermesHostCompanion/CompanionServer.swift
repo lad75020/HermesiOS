@@ -356,7 +356,7 @@ final class CompanionClientSession {
                 let payload = try request.payload?.decode(ListTargetsPayload.self)
                 return .success(
                     id: request.id,
-                    payload: ListTargetsResult(targets: try registry.listTargets(workspacePath: payload?.workspacePath))
+                    payload: ListTargetsResult(targets: try registry.listTargets(workspacePath: payload?.workspacePath, profileName: payload?.profileName))
                 )
             } catch {
                 return .error(id: request.id, code: "list_targets_failed", message: error.localizedDescription)
@@ -367,7 +367,11 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The read_target request requires a payload.")
                 }
                 let readPayload = try payload.decode(ReadTargetPayload.self)
-                let result = try registry.readTarget(id: readPayload.targetID)
+                let result = try registry.readTarget(
+                    id: readPayload.targetID,
+                    workspacePath: readPayload.workspacePath,
+                    profileName: readPayload.profileName
+                )
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "read_target_failed", message: error.localizedDescription)
@@ -380,7 +384,9 @@ final class CompanionClientSession {
                 let validatePayload = try payload.decode(ValidateTargetPayload.self)
                 let result = try registry.validateTarget(
                     id: validatePayload.targetID,
-                    proposedContent: validatePayload.content
+                    proposedContent: validatePayload.content,
+                    workspacePath: validatePayload.workspacePath,
+                    profileName: validatePayload.profileName
                 )
                 return .success(id: request.id, payload: result)
             } catch {
@@ -396,7 +402,9 @@ final class CompanionClientSession {
                     id: writePayload.targetID,
                     expectedRevision: writePayload.expectedRevision,
                     content: writePayload.content,
-                    createBackup: writePayload.createBackup
+                    createBackup: writePayload.createBackup,
+                    workspacePath: writePayload.workspacePath,
+                    profileName: writePayload.profileName
                 )
                 return .success(id: request.id, payload: result)
             } catch {

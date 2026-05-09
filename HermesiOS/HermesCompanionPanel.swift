@@ -61,7 +61,7 @@ struct HermesCompanionPanel: View {
                     ]
                 )
 
-                HermesSectionCard("Allowlisted Targets") {
+                HermesSectionCard("PROFILE") {
                     VStack(alignment: .leading, spacing: 14) {
                         if !companionRuntime.lastErrorMessage.isEmpty {
                             Text(companionRuntime.lastErrorMessage)
@@ -69,29 +69,35 @@ struct HermesCompanionPanel: View {
                                 .foregroundStyle(.igDestructive)
                         }
 
-                        if companionRuntime.targets.isEmpty {
-                            Text("Fetch the host companion target registry to begin editing allowlisted files.")
+                        if companionRuntime.profiles.isEmpty {
+                            Text("Fetch the host profiles to begin editing a profile config.yaml.")
                                 .font(.subheadline)
                                 .foregroundStyle(.hermesSecondaryText)
                         } else {
-                            Picker("Target", selection: $companionRuntime.selectedTargetID) {
-                                ForEach(companionRuntime.targets) { target in
-                                    Text(target.displayName).tag(target.id)
+                            Picker("Profile", selection: Binding(
+                                get: { companionRuntime.companionConfigProfileName },
+                                set: { newName in
+                                    companionRuntime.selectCompanionProfile(
+                                        name: newName,
+                                        settings: companionSettings,
+                                        identityState: companionEnrollment.identityState
+                                    )
+                                }
+                            )) {
+                                ForEach(companionRuntime.profiles) { profile in
+                                    Text(profile.name).tag(profile.name)
                                 }
                             }
                             .pickerStyle(.menu)
 
-                            if let selectedTarget = companionRuntime.selectedTarget {
-                                Text(selectedTarget.path)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.hermesSecondaryText)
-                                    .textSelection(.enabled)
-                            }
+                            Text("Editing config.yaml for the selected profile.")
+                                .font(.caption)
+                                .foregroundStyle(.hermesSecondaryText)
                         }
 
                         HStack {
-                            Button("Refresh Targets") {
-                                companionRuntime.refreshTargets(
+                            Button("Refresh Profiles") {
+                                companionRuntime.refreshCompanionProfileConfig(
                                     settings: companionSettings,
                                     identityState: companionEnrollment.identityState
                                 )
@@ -99,7 +105,7 @@ struct HermesCompanionPanel: View {
                             .buttonStyle(.borderedProminent)
 
                             if !companionRuntime.selectedTargetID.isEmpty {
-                                Button("Reload Target") {
+                                Button("Reload Config") {
                                     companionRuntime.loadSelectedTarget(
                                         settings: companionSettings,
                                         identityState: companionEnrollment.identityState
@@ -112,7 +118,7 @@ struct HermesCompanionPanel: View {
                 }
 
                 if companionRuntime.selectedTarget != nil {
-                    HermesSectionCard("Target Editor") {
+                    HermesSectionCard("Config Editor") {
                         VStack(alignment: .leading, spacing: 14) {
                             if !companionRuntime.currentRevision.isEmpty {
                                 Label("Revision: \(companionRuntime.currentRevision)", systemImage: "number")
@@ -126,14 +132,6 @@ struct HermesCompanionPanel: View {
                                 .frame(minHeight: 220, idealHeight: 220, maxHeight: 220)
 
                             HStack {
-                                Button("Validate") {
-                                    companionRuntime.validateSelectedTarget(
-                                        settings: companionSettings,
-                                        identityState: companionEnrollment.identityState
-                                    )
-                                }
-                                .buttonStyle(.bordered)
-
                                 Button("Save with Backup") {
                                     companionRuntime.saveSelectedTarget(
                                         settings: companionSettings,
@@ -141,37 +139,6 @@ struct HermesCompanionPanel: View {
                                     )
                                 }
                                 .buttonStyle(.borderedProminent)
-                            }
-                        }
-                    }
-
-                    HermesSectionCard("Validation") {
-                        if companionRuntime.diagnostics.isEmpty {
-                            Text("Run validation to inspect syntax and policy diagnostics before writing to the host.")
-                                .font(.subheadline)
-                                .foregroundStyle(.hermesSecondaryText)
-                        } else {
-                            VStack(alignment: .leading, spacing: 10) {
-                                ForEach(companionRuntime.diagnostics) { diagnostic in
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack {
-                                            Text(diagnostic.severity.rawValue.capitalized)
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundStyle(severityColor(for: diagnostic.severity))
-                                            Spacer()
-                                            Text(diagnostic.validator)
-                                                .font(.caption.monospaced())
-                                                .foregroundStyle(.hermesSecondaryText)
-                                        }
-                                        Text(diagnostic.message)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.hermesSecondaryText)
-                                    }
-                                    .padding(14)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.hermesSurfaceInput)
-                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                }
                             }
                         }
                     }
@@ -215,23 +182,15 @@ struct HermesCompanionPanel: View {
         }
         .task(id: companionEnrollment.identityState.deviceID) {
             guard companionEnrollment.identityState.isEnrolled else { return }
-            if companionRuntime.targets.isEmpty {
-                companionRuntime.refreshTargets(
+            if companionRuntime.selectedTargetID.isEmpty {
+                companionRuntime.selectedTargetID = "hermes-config"
+            }
+            if companionRuntime.profiles.isEmpty || companionRuntime.targets.isEmpty || companionRuntime.targetContent.isEmpty {
+                companionRuntime.refreshCompanionProfileConfig(
                     settings: companionSettings,
                     identityState: companionEnrollment.identityState
                 )
             }
-        }
-    }
-
-    private func severityColor(for severity: HermesCompanionValidationSeverity) -> Color {
-        switch severity {
-        case .error:
-            .igDestructive
-        case .warning:
-            .igGradOrange
-        case .info:
-            .igActionBlue
         }
     }
 }

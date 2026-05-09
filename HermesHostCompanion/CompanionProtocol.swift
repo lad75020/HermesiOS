@@ -52,6 +52,7 @@ struct ListTargetsResult: Codable {
 
 struct ListTargetsPayload: Codable {
     let workspacePath: String?
+    let profileName: String?
 }
 
 struct CompanionTargetSummary: Codable, Identifiable {
@@ -65,6 +66,8 @@ struct CompanionTargetSummary: Codable, Identifiable {
 
 struct ReadTargetPayload: Codable {
     let targetID: String
+    let workspacePath: String?
+    let profileName: String?
 }
 
 struct ReadTargetResult: Codable {
@@ -79,6 +82,8 @@ struct ReadTargetResult: Codable {
 struct ValidateTargetPayload: Codable {
     let targetID: String
     let content: String?
+    let workspacePath: String?
+    let profileName: String?
 }
 
 struct ValidateTargetResult: Codable {
@@ -93,6 +98,8 @@ struct WriteTargetPayload: Codable {
     let expectedRevision: String
     let content: String
     let createBackup: Bool
+    let workspacePath: String?
+    let profileName: String?
 }
 
 struct WriteTargetResult: Codable {

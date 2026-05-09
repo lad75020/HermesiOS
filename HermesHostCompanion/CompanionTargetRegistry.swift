@@ -129,8 +129,8 @@ final class CompanionTargetRegistry {
         ensureSeededTargetFilesExist()
     }
 
-    func listTargets(workspacePath: String? = nil) throws -> [CompanionTargetSummary] {
-        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath)
+    func listTargets(workspacePath: String? = nil, profileName: String? = nil) throws -> [CompanionTargetSummary] {
+        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath, profileName: profileName)
         return document.targets.map {
             CompanionTargetSummary(
                 id: $0.id,
@@ -143,13 +143,24 @@ final class CompanionTargetRegistry {
         }
     }
 
-    func readTarget(id: String) throws -> ReadTargetResult {
+    func readTarget(id: String, workspacePath: String? = nil, profileName: String? = nil) throws -> ReadTargetResult {
+        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath, profileName: profileName)
         guard let target = document.targets.first(where: { $0.id == id }) else {
             throw CompanionTargetRegistryError.targetNotFound(id)
         }
 
         let url = URL(fileURLWithPath: target.path)
         guard let data = try? Data(contentsOf: url), let content = String(data: data, encoding: .utf8) else {
+            if target.id == "hermes-config" {
+                return ReadTargetResult(
+                    targetID: target.id,
+                    displayName: target.displayName,
+                    path: target.path,
+                    revision: Self.revision(for: Data()),
+                    content: "",
+                    format: target.format
+                )
+            }
             throw CompanionTargetRegistryError.fileReadFailed(target.path)
         }
 
@@ -163,7 +174,8 @@ final class CompanionTargetRegistry {
         )
     }
 
-    func validateTarget(id: String, proposedContent: String?) throws -> ValidateTargetResult {
+    func validateTarget(id: String, proposedContent: String?, workspacePath: String? = nil, profileName: String? = nil) throws -> ValidateTargetResult {
+        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath, profileName: profileName)
         guard let target = document.targets.first(where: { $0.id == id }) else {
             throw CompanionTargetRegistryError.targetNotFound(id)
         }
@@ -175,7 +187,7 @@ final class CompanionTargetRegistry {
             content = proposedContent
             revision = Self.revision(for: Data(proposedContent.utf8))
         } else {
-            let current = try readTarget(id: id)
+            let current = try readTarget(id: id, workspacePath: workspacePath, profileName: profileName)
             content = current.content
             revision = current.revision
         }
@@ -218,18 +230,21 @@ final class CompanionTargetRegistry {
         id: String,
         expectedRevision: String,
         content: String,
-        createBackup shouldCreateBackup: Bool
+        createBackup shouldCreateBackup: Bool,
+        workspacePath: String? = nil,
+        profileName: String? = nil
     ) throws -> WriteTargetResult {
+        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath, profileName: profileName)
         guard let target = document.targets.first(where: { $0.id == id }) else {
             throw CompanionTargetRegistryError.targetNotFound(id)
         }
 
-        let current = try readTarget(id: id)
+        let current = try readTarget(id: id, workspacePath: workspacePath, profileName: profileName)
         guard current.revision == expectedRevision else {
             throw CompanionTargetRegistryError.revisionMismatch(expected: expectedRevision, actual: current.revision)
         }
 
-        let validation = try validateTarget(id: id, proposedContent: content)
+        let validation = try validateTarget(id: id, proposedContent: content, workspacePath: workspacePath, profileName: profileName)
         guard validation.valid else {
             throw CompanionTargetRegistryError.validationFailed(validation.diagnostics)
         }
@@ -447,13 +462,14 @@ final class CompanionTargetRegistry {
         return CompanionTargetRegistryDocument(targets: migratedTargets)
     }
 
-    private func updateHermesConfigTargetIfNeeded(workspacePath: String?) throws {
+    private func updateHermesConfigTargetIfNeeded(workspacePath: String?, profileName: String? = nil) throws {
         guard let workspacePath, workspacePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
             return
         }
 
         let workspaceURL = try resolvedHermesWorkspaceURL(from: workspacePath)
-        let configURL = workspaceURL.appendingPathComponent("config.yaml")
+        let profileURL = profileURL(workspaceURL: workspaceURL, profileName: profileName)
+        let configURL = profileURL.appendingPathComponent("config.yaml")
         guard document.targets.contains(where: { $0.id == "hermes-config" }) else { return }
 
         var didChange = false
@@ -514,6 +530,12 @@ final class CompanionTargetRegistry {
             throw CompanionTargetRegistryError.invalidWorkspacePath(expandedPath)
         }
         return workspaceURL
+    }
+
+    private func profileURL(workspaceURL: URL, profileName: String?) -> URL {
+        let trimmed = (profileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false, trimmed != "default" else { return workspaceURL }
+        return workspaceURL.appendingPathComponent("profiles", isDirectory: true).appendingPathComponent(trimmed, isDirectory: true)
     }
 
     private func loadHermesSkillUsageRecords(workspaceURL: URL) -> [String: CompanionHermesSkillUsageRecord] {

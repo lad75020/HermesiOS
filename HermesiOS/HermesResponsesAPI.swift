@@ -977,6 +977,8 @@ private struct HermesResponseContent: Decodable {
     let imageURL: HermesImageURLPayload?
     let url: String?
     let b64JSON: String?
+    let imageBase64: String?
+    let originalMimeType: String?
 
     var displayValue: String? {
         if type == "output_text" || type == "text" || type == "message" {
@@ -989,7 +991,9 @@ private struct HermesResponseContent: Decodable {
     }
 
     var imageMarkdown: String? {
-        let source = imageURL?.url ?? url ?? b64JSON.map { "data:image/png;base64,\($0)" }
+        let base64 = b64JSON ?? imageBase64
+        let mimeType = originalMimeType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? originalMimeType! : "image/png"
+        let source = imageURL?.url ?? url ?? base64.map { "data:\(mimeType);base64,\($0)" }
         guard let source, !source.isEmpty else { return nil }
         return "\n\n![Hermes image](\(source))"
     }
@@ -1000,6 +1004,8 @@ private struct HermesResponseContent: Decodable {
         case imageURL = "image_url"
         case url
         case b64JSON = "b64_json"
+        case imageBase64 = "image_base64"
+        case originalMimeType = "original_mime_type"
     }
 }
 
@@ -1304,6 +1310,10 @@ struct HermesLooseJSON {
             source = url
         } else if let base64 = dictionary["b64_json"] as? String {
             source = "data:image/png;base64,\(base64)"
+        } else if let base64 = dictionary["image_base64"] as? String {
+            let mimeType = (dictionary["original_mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedMimeType = mimeType?.isEmpty == false ? mimeType! : "image/png"
+            source = "data:\(resolvedMimeType);base64,\(base64)"
         } else {
             source = nil
         }

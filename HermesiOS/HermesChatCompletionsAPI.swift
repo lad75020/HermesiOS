@@ -896,6 +896,8 @@ private struct HermesChatContentPart: Decodable {
     let imageURL: HermesChatImageURLPayload?
     let url: String?
     let b64JSON: String?
+    let imageBase64: String?
+    let originalMimeType: String?
 
     var textValue: String? {
         if let text { return text }
@@ -905,7 +907,9 @@ private struct HermesChatContentPart: Decodable {
     }
 
     var imageMarkdown: String? {
-        let source = imageURL?.url ?? url ?? b64JSON.map { "data:image/png;base64,\($0)" }
+        let base64 = b64JSON ?? imageBase64
+        let mimeType = originalMimeType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? originalMimeType! : "image/png"
+        let source = imageURL?.url ?? url ?? base64.map { "data:\(mimeType);base64,\($0)" }
         guard let source, !source.isEmpty else { return nil }
         return "\n\n![Hermes image](\(source))"
     }
@@ -917,6 +921,8 @@ private struct HermesChatContentPart: Decodable {
         case imageURL = "image_url"
         case url
         case b64JSON = "b64_json"
+        case imageBase64 = "image_base64"
+        case originalMimeType = "original_mime_type"
     }
 }
 

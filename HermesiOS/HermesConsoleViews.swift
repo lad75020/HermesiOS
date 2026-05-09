@@ -1049,7 +1049,7 @@ private struct HermesBubbleImageAttachment: Identifiable, Equatable {
         return try Data(contentsOf: fileURL)
     }
 
-    static func extract(from text: String) -> (text: String, images: [HermesBubbleImageAttachment]) {
+    nonisolated static func extract(from text: String) -> (text: String, images: [HermesBubbleImageAttachment]) {
         var images: [HermesBubbleImageAttachment] = []
         var displayText = text
 
@@ -1071,6 +1071,14 @@ private struct HermesBubbleImageAttachment: Identifiable, Equatable {
             }
         }
 
+        let jsonImages = Self.extractJSONImages(from: displayText)
+        if !jsonImages.isEmpty {
+            for image in jsonImages where !images.contains(where: { $0.source == image.source }) {
+                images.append(image)
+            }
+            displayText = ""
+        }
+
         let tokenCandidates = displayText
             .components(separatedBy: .whitespacesAndNewlines)
             .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "<>()[]{}.,;\"'")) }
@@ -1082,7 +1090,52 @@ private struct HermesBubbleImageAttachment: Identifiable, Equatable {
         return (displayText.trimmingCharacters(in: .whitespacesAndNewlines), images)
     }
 
-    private static func isSupportedImageSource(_ source: String) -> Bool {
+    nonisolated private static func extractJSONImages(from text: String) -> [HermesBubbleImageAttachment] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let jsonText: String
+        if trimmed.hasPrefix("```") {
+            var lines = trimmed.components(separatedBy: .newlines)
+            if lines.first?.hasPrefix("```") == true { lines.removeFirst() }
+            if lines.last?.trimmingCharacters(in: .whitespacesAndNewlines) == "```" { lines.removeLast() }
+            jsonText = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            jsonText = trimmed
+        }
+
+        guard let data = jsonText.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data)
+        else { return [] }
+
+        return extractJSONImages(from: object)
+    }
+
+    nonisolated private static func extractJSONImages(from object: Any) -> [HermesBubbleImageAttachment] {
+        if let array = object as? [Any] {
+            return array.flatMap(extractJSONImages(from:))
+        }
+
+        guard let dictionary = object as? [String: Any] else { return [] }
+        var images: [HermesBubbleImageAttachment] = []
+
+        if let base64 = dictionary["image_base64"] as? String, !base64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let mimeType = (dictionary["original_mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedMimeType = mimeType?.isEmpty == false ? mimeType! : "image/png"
+            let source = "data:\(resolvedMimeType);base64,\(base64)"
+            images.append(HermesBubbleImageAttachment(source: source, altText: "Hermes image"))
+        }
+
+        for nested in dictionary.values {
+            for image in extractJSONImages(from: nested) where !images.contains(where: { $0.source == image.source }) {
+                images.append(image)
+            }
+        }
+
+        return images
+    }
+
+    nonisolated private static func isSupportedImageSource(_ source: String) -> Bool {
         let lowercased = source.lowercased()
         if lowercased.hasPrefix("data:image/") { return true }
         if lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://") || lowercased.hasPrefix("file://") || lowercased.hasPrefix("/") {

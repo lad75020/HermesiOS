@@ -184,7 +184,7 @@ private struct HermesStatusLED: View {
 
     var body: some View {
         Group {
-            if isActive {
+            if isActive && status == .up {
                 TimelineView(.animation(minimumInterval: 0.16)) { timeline in
                     ledContent(color: flashingColor(for: timeline.date), isFlashing: true)
                 }
@@ -194,7 +194,7 @@ private struct HermesStatusLED: View {
         }
         .help(tooltip)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(tooltip) status \(isActive ? "active" : status.accessibilityLabel)")
+        .accessibilityLabel("\(tooltip) status \(isActive && status == .up ? "active" : status.accessibilityLabel)")
     }
 
     private func flashingColor(for date: Date) -> Color {

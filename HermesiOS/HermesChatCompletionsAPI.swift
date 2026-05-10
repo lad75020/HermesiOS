@@ -14,6 +14,7 @@ final class HermesChatSession {
     var entries: [HermesChatMessage] = []
     var streamedText = ""
     var isSending = false
+    var isStreaming = false
     var activeProfile = ""
     var connectionStatus = "Idle"
     var activeChatSessionID = ""
@@ -61,6 +62,7 @@ final class HermesChatSession {
         requestTask?.cancel()
         requestTask = nil
         isSending = false
+        isStreaming = false
         connectionStatus = "Cancelled"
     }
 
@@ -71,6 +73,7 @@ final class HermesChatSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
+        isStreaming = false
         activeProfile = ""
         activeChatSessionID = ""
         connectionStatus = "Idle"
@@ -95,6 +98,7 @@ final class HermesChatSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
+        isStreaming = false
         activeChatSessionID = sessionID
         lastErrorMessage = ""
         lastErrorWasTimeoutOrNetworkLoss = false
@@ -112,6 +116,7 @@ final class HermesChatSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
+        isStreaming = false
         activeProfile = ""
         activeChatSessionID = sessionID
         if !sessionID.isEmpty {
@@ -199,6 +204,7 @@ final class HermesChatSession {
         resetForRequest()
         appendExchange(prompt: displayPrompt)
         isSending = true
+        isStreaming = draft.stream
         connectionStatus = draft.stream ? "Connecting to chat stream" : "Sending chat request"
 
         do {
@@ -225,6 +231,7 @@ final class HermesChatSession {
         }
 
         isSending = false
+        isStreaming = false
     }
 
     private func resetForRequest() {

@@ -49,6 +49,7 @@ struct ContentView: View {
     @State private var isChatFailureUnread = false
     @State private var isHistorySearchFailureUnread = false
     @State private var askHermesBusyToastID: UUID?
+    @State private var busyStreamingCloseToastID: UUID?
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -83,7 +84,17 @@ struct ContentView: View {
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .overlay(alignment: .top) {
-            if askHermesBusyToastID != nil {
+            if busyStreamingCloseToastID != nil {
+                HermesTransientToast(
+                    message: "Busy streaming",
+                    buttonTitle: "STOP",
+                    action: stopBusyStreamingCloseAttempt
+                )
+                .padding(.top, 18)
+                .padding(.horizontal, 20)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(3)
+            } else if askHermesBusyToastID != nil {
                 HermesTransientToast(message: "Ask Hermes is busy")
                     .padding(.top, 18)
                     .padding(.horizontal, 20)
@@ -140,6 +151,9 @@ struct ContentView: View {
             )
         }
         .onChange(of: scenePhase) { _, newValue in
+            if newValue != .active, isAnyHermesStreamActive {
+                showBusyStreamingCloseToast()
+            }
             guard newValue == .active else { return }
             Task {
                 await statusMonitor.refresh(
@@ -202,6 +216,10 @@ struct ContentView: View {
         responseWorkspaces.contains { $0.session.isSending }
     }
 
+    private var isAnyResponseWorkspaceActivelyStreaming: Bool {
+        responseWorkspaces.contains { $0.session.isStreaming }
+    }
+
     private var hasUnreadResponseWorkspaceCompletion: Bool {
         responseWorkspaces.contains { $0.attention == .completed }
     }
@@ -222,6 +240,10 @@ struct ContentView: View {
 
     private var dashboardChannelActive: Bool {
         dashboardHistorySearchSession.isDashboardHTTPActive
+    }
+
+    private var isAnyHermesStreamActive: Bool {
+        isAnyResponseWorkspaceActivelyStreaming || chatSession.isStreaming
     }
 
     private var visibleWorkspaceSections: [WorkspaceSection] {
@@ -552,6 +574,26 @@ struct ContentView: View {
         }
     }
 
+    private func showBusyStreamingCloseToast() {
+        let toastID = UUID()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+            busyStreamingCloseToastID = toastID
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard busyStreamingCloseToastID == toastID else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                busyStreamingCloseToastID = nil
+            }
+        }
+    }
+
+    private func stopBusyStreamingCloseAttempt() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            busyStreamingCloseToastID = nil
+        }
+    }
+
     private func resumeConversationInChat(_ result: HermesDashboardConversationResult) {
         guard !chatSession.isSending else { return }
         chatSession.resumeConversation(from: result)
@@ -562,19 +604,35 @@ struct ContentView: View {
 
 private struct HermesTransientToast: View {
     let message: String
+    var buttonTitle: String?
+    var action: (() -> Void)?
 
     var body: some View {
-        Text(message)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color.hermesSurfaceInput.opacity(0.92), in: Capsule())
-            .overlay(
-                Capsule()
-                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.22), radius: 16, x: 0, y: 8)
-            .accessibilityLabel(message)
+        HStack(spacing: 12) {
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+
+            if let buttonTitle, let action {
+                Button(buttonTitle, action: action)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.white, in: Capsule())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(buttonTitle)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.hermesSurfaceInput.opacity(0.92), in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.22), radius: 16, x: 0, y: 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
     }
 }

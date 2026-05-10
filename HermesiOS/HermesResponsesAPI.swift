@@ -363,6 +363,7 @@ final class HermesResponsesSession {
     var entries: [HermesResponseMessage] = []
     var streamedText = ""
     var isSending = false
+    var isStreaming = false
     var activeProfile = ""
     var connectionStatus = "Idle"
     var latestResponseID = ""
@@ -413,6 +414,7 @@ final class HermesResponsesSession {
         requestTask?.cancel()
         requestTask = nil
         isSending = false
+        isStreaming = false
         connectionStatus = "Cancelled"
     }
 
@@ -423,6 +425,7 @@ final class HermesResponsesSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
+        isStreaming = false
         activeProfile = ""
         connectionStatus = "Idle"
         latestResponseID = ""
@@ -454,6 +457,7 @@ final class HermesResponsesSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
+        isStreaming = false
         latestResponseID = ""
         previousResponseID = sessionID
         activeHermesSessionID = ""
@@ -472,6 +476,7 @@ final class HermesResponsesSession {
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
+        isStreaming = false
         latestResponseID = ""
         activeProfile = ""
         activeHermesSessionID = Self.hermesSessionID(from: result)
@@ -564,6 +569,7 @@ final class HermesResponsesSession {
         resetForRequest()
         appendExchange(prompt: displayPrompt)
         isSending = true
+        isStreaming = draft.stream
         connectionStatus = continuationID.isEmpty
             ? (draft.stream ? "Connecting to SSE stream" : "Sending request")
             : (draft.stream ? "Continuing SSE stream" : "Continuing request")
@@ -595,6 +601,7 @@ final class HermesResponsesSession {
         }
 
         isSending = false
+        isStreaming = false
     }
 
     private func resetForRequest() {

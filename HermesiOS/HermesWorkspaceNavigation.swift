@@ -82,6 +82,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
 }
 
 struct WorkspaceSidebar: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     @Binding var selection: WorkspaceSection?
     var sections: [WorkspaceSection] = WorkspaceSection.allCases
     @Bindable var statusMonitor: HermesStatusMonitor
@@ -143,6 +145,10 @@ struct WorkspaceSidebar: View {
         }
     }
 
+    private var sidebarLogoName: String {
+        colorScheme == .dark ? "HermesLogoDark" : "HermesLogoLight"
+    }
+
     private func activityAccessibilityHint(for section: WorkspaceSection) -> String {
         section == .runtime ? "Runtime sections are loading from the Mac host companion." : "Activity in progress."
     }
@@ -177,12 +183,14 @@ struct WorkspaceSidebar: View {
     var body: some View {
         HermesGlassEffectContainer(spacing: 12) {
             VStack(spacing: 0) {
-                Text("Hermes")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                Image(sidebarLogoName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 54, height: 36)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 14)
+                    .padding(.top, 12)
                     .padding(.bottom, 8)
+                    .accessibilityLabel("Hermes")
                     .accessibilityAddTraits(.isHeader)
 
                 HermesStatusBand(

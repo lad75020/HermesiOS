@@ -397,7 +397,7 @@ final class HermesResponsesSession {
         lastKnownResponseTitle = HermesSettingsPersistence.loadLastResponsesSessionTitle()
     }
 
-    func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment? = nil) {
+    func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment? = nil, messageHistory: HermesPromptHistoryStore? = nil) {
         requestTask?.cancel()
         let requestedProfile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
         if activeProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -405,7 +405,7 @@ final class HermesResponsesSession {
         }
         let lockedDraft = draft.locked(toProfile: activeProfile)
         requestTask = Task {
-            await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment)
+            await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment, messageHistory: messageHistory)
         }
     }
 
@@ -552,7 +552,7 @@ final class HermesResponsesSession {
         HermesSettingsPersistence.saveLastResponsesSessionTitle(normalized)
     }
 
-    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?) async {
+    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, messageHistory: HermesPromptHistoryStore?) async {
         let continuationID = previousResponseID
         let hermesSessionID = activeHermesSessionID
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -582,6 +582,7 @@ final class HermesResponsesSession {
             }
             if !Task.isCancelled {
                 connectionStatus = "Completed"
+                messageHistory?.recordResponse(currentAssistantResponseText(), source: .askHermes)
             }
         } catch is CancellationError {
             connectionStatus = "Cancelled"
@@ -629,6 +630,14 @@ final class HermesResponsesSession {
         var updatedEntries = entries
         updatedEntries[index].content = HermesStreamTextFormatter.lineBreakAfterStatementDots(content)
         entries = updatedEntries
+    }
+
+    private func currentAssistantResponseText() -> String {
+        if let activeAssistantEntryID,
+           let entry = entries.first(where: { $0.id == activeAssistantEntryID }) {
+            return entry.content
+        }
+        return entries.last(where: { $0.role.lowercased() == "assistant" })?.content ?? ""
     }
 
     private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String, hermesSessionID: String) async throws {

@@ -714,7 +714,7 @@ struct HermesResponsesConsoleView: View {
                         submittedDraft.userPrompt = promptText
                         let submittedAttachment = selectedAttachment
                         promptHistory.record(submittedDraft.userPrompt, source: .askHermes)
-                        responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment)
+                        responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment, messageHistory: promptHistory)
                         promptText = ""
                         requestDraft.userPrompt = ""
                         selectedAttachment = nil
@@ -1730,7 +1730,7 @@ struct HermesChatConsoleView: View {
                         submittedDraft.userPrompt = promptText
                         let submittedAttachment = selectedAttachment
                         promptHistory.record(submittedDraft.userPrompt, source: .chatWithHermes)
-                        chatSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment)
+                        chatSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment, messageHistory: promptHistory)
                         promptText = ""
                         chatDraft.userPrompt = ""
                         selectedAttachment = nil

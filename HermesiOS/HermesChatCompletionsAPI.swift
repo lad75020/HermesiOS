@@ -42,7 +42,7 @@ final class HermesChatSession {
         lastKnownChatSessionTitle = HermesSettingsPersistence.loadLastChatSessionTitle()
     }
 
-    func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment? = nil) {
+    func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment? = nil, messageHistory: HermesPromptHistoryStore? = nil) {
         requestTask?.cancel()
         let requestedProfile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
         if activeProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -53,7 +53,7 @@ final class HermesChatSession {
         }
         let lockedDraft = draft.locked(toProfile: activeProfile)
         requestTask = Task {
-            await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment)
+            await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment, messageHistory: messageHistory)
         }
     }
 
@@ -188,7 +188,7 @@ final class HermesChatSession {
         HermesSettingsPersistence.saveLastChatSessionTitle(normalized)
     }
 
-    private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment?) async {
+    private func runRequest(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment?, messageHistory: HermesPromptHistoryStore?) async {
         let history = entries
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayPrompt = displayPrompt(prompt, attachment: attachment)
@@ -212,6 +212,7 @@ final class HermesChatSession {
 
             if !Task.isCancelled {
                 connectionStatus = "Completed"
+                messageHistory?.recordResponse(currentAssistantResponseText(), source: .chatWithHermes)
             }
         } catch is CancellationError {
             connectionStatus = "Cancelled"
@@ -258,6 +259,14 @@ final class HermesChatSession {
         var updatedEntries = entries
         updatedEntries[index].content = HermesStreamTextFormatter.lineBreakAfterStatementDots(content)
         entries = updatedEntries
+    }
+
+    private func currentAssistantResponseText() -> String {
+        if let activeAssistantEntryID,
+           let entry = entries.first(where: { $0.id == activeAssistantEntryID }) {
+            return entry.content
+        }
+        return entries.last(where: { $0.role.lowercased() == "assistant" })?.content ?? ""
     }
 
     private func streamResponse(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment?, history: [HermesChatMessage]) async throws {

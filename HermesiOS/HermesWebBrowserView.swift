@@ -11,6 +11,7 @@ import WebKit
 struct HermesWebBrowserView: View {
     @ObservedObject var deckStore: HermesWebBrowserDeckStore
     let dashboardURLString: String
+    let officeURLString: String
     @FocusState private var isURLFieldFocused: Bool
 
     private var activeWorkspace: HermesWebBrowserWorkspace {
@@ -109,6 +110,17 @@ struct HermesWebBrowserView: View {
             .buttonStyle(.plain)
             .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
             .accessibilityLabel("Open Hermes dashboard")
+
+            Button {
+                loadOfficeURL()
+            } label: {
+                Image(systemName: "building.2.crop.circle")
+                    .font(.headline.weight(.bold))
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(.plain)
+            .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
+            .accessibilityLabel("Open Hermes Office")
 
             Button {
                 deckStore.createWorkspace()
@@ -218,7 +230,15 @@ struct HermesWebBrowserView: View {
     }
 
     private func loadDashboardURL() {
-        guard let url = normalizedURL(from: dashboardURLString) else { return }
+        loadShortcutURL(dashboardURLString)
+    }
+
+    private func loadOfficeURL() {
+        loadShortcutURL(officeURLString)
+    }
+
+    private func loadShortcutURL(_ urlString: String) {
+        guard let url = normalizedURL(from: urlString) else { return }
         deckStore.recordHistoryRoot(for: url)
         let workspace = deckStore.createWorkspace(urlString: url.absoluteString)
         workspace.store.load(url)
@@ -631,4 +651,3 @@ private struct HermesWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 }
-

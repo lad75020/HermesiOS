@@ -11,7 +11,6 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     case history
     case web
     case terminal
-    case office
     case utilities
     case settings
     case runtime
@@ -30,8 +29,6 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Web"
         case .terminal:
             "Terminal"
-        case .office:
-            "Office (beta)"
         case .utilities:
             "Utilities"
         case .settings:
@@ -53,8 +50,6 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Browse a web page inside HermesiOS."
         case .terminal:
             "Open an SSH terminal to the configured Mac host."
-        case .office:
-            "Open the Hermes Office web experience inside the app."
         case .utilities:
             "Clipboard history and other local helpers."
         case .settings:
@@ -76,8 +71,6 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "globe"
         case .terminal:
             "terminal"
-        case .office:
-            "building.2.crop.circle"
         case .utilities:
             "wrench.and.screwdriver"
         case .settings:
@@ -117,7 +110,7 @@ struct WorkspaceSidebar: View {
             isChatCompletionUnread
         case .history:
             isHistorySearchCompletionUnread
-        case .web, .office, .utilities, .settings, .runtime, .terminal:
+        case .web, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -130,7 +123,7 @@ struct WorkspaceSidebar: View {
             isChatFailureUnread
         case .history:
             isHistorySearchFailureUnread
-        case .web, .office, .utilities, .settings, .runtime, .terminal:
+        case .web, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -145,7 +138,7 @@ struct WorkspaceSidebar: View {
             isHistorySearchActive
         case .runtime:
             companionRuntime.isKickstartingRuntime
-        case .web, .office, .utilities, .settings, .terminal:
+        case .web, .utilities, .settings, .terminal:
             false
         }
     }
@@ -165,7 +158,7 @@ struct WorkspaceSidebar: View {
         case .history:
             isHistorySearchCompletionUnread = false
             isHistorySearchFailureUnread = false
-        case .web, .office, .utilities, .settings, .runtime, .terminal:
+        case .web, .utilities, .settings, .runtime, .terminal:
             break
         }
     }

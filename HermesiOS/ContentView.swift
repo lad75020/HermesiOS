@@ -20,7 +20,6 @@ struct ContentView: View {
     @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
     @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
-    @AppStorage(hermesOfficeWebViewEnabledStorageKey) private var isOfficeWebViewEnabled = true
     @AppStorage(hermesRuntimeTabEnabledStorageKey) private var isRuntimeTabEnabled = false
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
@@ -41,8 +40,6 @@ struct ContentView: View {
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
     @StateObject private var webBrowserStore = HermesWebBrowserDeckStore()
-    @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
-    @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
     @State private var didKickstartRuntimeSectionsAfterLoad = false
     @State private var isResponsesCompletionUnread = false
@@ -129,14 +126,6 @@ struct ContentView: View {
                 settings: companionSettings,
                 identityState: companionEnrollment.identityState
             )
-        }
-        .task(id: officePreloadKey) {
-            guard !isShowingSplash else { return }
-            guard isOfficeWebViewEnabled else {
-                officeWebViewStore.turnOff()
-                return
-            }
-            officeWebViewStore.preload(urlString: officeURLString, reloadID: officeReloadID)
         }
         .task(id: clipboardMonitoringKey) {
             guard !isShowingSplash, scenePhase == .active else { return }
@@ -253,10 +242,6 @@ struct ContentView: View {
         HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
     }
 
-    private var officePreloadKey: String {
-        officeURLString + "|enabled=\(isOfficeWebViewEnabled)|reload=\(officeReloadID.uuidString)|splash=\(isShowingSplash)"
-    }
-
     private var runtimeInitialLoadKey: String {
         [
             "splash=\(isShowingSplash)",
@@ -366,7 +351,7 @@ struct ContentView: View {
                 .tag(WorkspaceSection.history)
 
                 NavigationStack {
-                    HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString)
+                    HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString, officeURLString: officeURLString)
                 }
                 .tabItem {
                     Label("Web", systemImage: "globe")
@@ -500,11 +485,9 @@ struct ContentView: View {
                 onResumeChat: resumeConversationInChat
             )
         case .web:
-            HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString)
+            HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString, officeURLString: officeURLString)
         case .terminal:
             HermesTerminalView(host: macHost, terminalSettings: $terminalSettings)
-        case .office:
-            HermesOfficeView(webViewStore: officeWebViewStore, reloadID: $officeReloadID)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
@@ -595,4 +578,3 @@ private struct HermesTransientToast: View {
             .accessibilityLabel(message)
     }
 }
-

@@ -68,7 +68,7 @@ struct HermesUtilitiesView: View {
                         utilityDisclosureLabel(
                             title: "File Downloader",
                             subtitle: fileDownloaderSubtitle,
-                            systemImage: "folder.badge.arrow.down"
+                            systemImage: "tray.and.arrow.down"
                         )
                     }
                     .tint(.igActionBlue)

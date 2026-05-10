@@ -120,6 +120,9 @@ struct ContentView: View {
             HermesSettingsPersistence.saveTerminalSettings(newValue)
         }
         .task {
+            webBrowserStore.loadAllUnloadedWebPages()
+        }
+        .task {
             guard isShowingSplash else { return }
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.easeOut(duration: 0.25)) {
@@ -301,6 +304,7 @@ struct ContentView: View {
                 responseSession: activeResponseSession,
                 chatSession: chatSession,
                 companionRuntime: companionRuntime,
+                webBrowserStore: webBrowserStore,
                 apiChannelActive: apiChannelActive,
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive,

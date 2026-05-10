@@ -90,6 +90,7 @@ struct WorkspaceSidebar: View {
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var chatSession: HermesChatSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    @ObservedObject var webBrowserStore: HermesWebBrowserDeckStore
     var apiChannelActive = false
     var companionChannelActive = false
     var dashboardChannelActive = false
@@ -140,7 +141,9 @@ struct WorkspaceSidebar: View {
             isHistorySearchActive
         case .runtime:
             companionRuntime.isKickstartingRuntime
-        case .web, .utilities, .settings, .terminal:
+        case .web:
+            webBrowserStore.hasUnloadedWebPages
+        case .utilities, .settings, .terminal:
             false
         }
     }
@@ -150,7 +153,14 @@ struct WorkspaceSidebar: View {
     }
 
     private func activityAccessibilityHint(for section: WorkspaceSection) -> String {
-        section == .runtime ? "Runtime sections are loading from the Mac host companion." : "Activity in progress."
+        switch section {
+        case .runtime:
+            "Runtime sections are loading from the Mac host companion."
+        case .web:
+            "Saved web pages are loading."
+        case .responses, .chat, .history, .utilities, .settings, .terminal:
+            "Activity in progress."
+        }
     }
 
     private func clearUnreadState(for section: WorkspaceSection) {

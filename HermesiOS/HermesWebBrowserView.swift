@@ -323,6 +323,13 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         return workspaces[0]
     }
 
+    var hasUnloadedWebPages: Bool {
+        workspaces.contains { workspace in
+            guard Self.normalizedURL(from: workspace.urlString) != nil else { return false }
+            return workspace.store.currentURL == nil || workspace.store.isLoading
+        }
+    }
+
     init() {
         let legacyURLString = UserDefaults.standard.string(forKey: "hermes.web.url") ?? "https://"
         let restoredURLStrings = Self.restoredURLStrings(fallback: legacyURLString)
@@ -334,6 +341,17 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         self.selectedWorkspaceID = restoredWorkspaces.first(where: { $0.number == selectedNumber })?.id ?? restoredWorkspaces[0].id
         self.rootHistory = UserDefaults.standard.stringArray(forKey: Self.historyDefaultsKey) ?? []
         restoredWorkspaces.forEach { observe($0) }
+    }
+
+    func loadAllUnloadedWebPages() {
+        for workspace in workspaces {
+            guard workspace.store.currentURL == nil else { continue }
+            guard let url = Self.normalizedURL(from: workspace.urlString) else { continue }
+            workspace.urlString = url.absoluteString
+            persistURLStringIfNeeded(for: workspace)
+            recordHistoryRoot(for: url)
+            workspace.store.load(url)
+        }
     }
 
     @discardableResult
@@ -419,6 +437,17 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         }
         workspace.urlString = urlString
         persistURLStringIfNeeded(for: workspace)
+    }
+
+    private static func normalizedURL(from string: String) -> URL? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return nil }
+
+        if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) {
+            return url
+        }
+
+        return URL(string: "https://\(trimmed)")
     }
 
     private static func restoredURLStrings(fallback: String) -> [String] {

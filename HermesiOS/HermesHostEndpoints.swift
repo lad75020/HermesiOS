@@ -6,7 +6,7 @@
 import Foundation
 
 let hermesMacHostStorageKey = "hermes.mac.host"
-let defaultHermesMacHost = "mac-studio.tail4d2ab4.ts.net"
+let defaultHermesMacHost = ".ts.net"
 
 let hermesDashboardPortStorageKey = "hermes.history.dashboard.port"
 let defaultHermesDashboardPort = "9120"

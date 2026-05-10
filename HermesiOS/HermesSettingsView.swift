@@ -33,7 +33,7 @@ struct HermesSettingsView: View {
 
             Form {
                 Section("Mac host") {
-                    TextField("Hostname or IP, e.g. mac-studio.tail4d2ab4.ts.net", text: $macHost)
+                    TextField("Hostname or IP, e.g. .ts.net", text: $macHost)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()

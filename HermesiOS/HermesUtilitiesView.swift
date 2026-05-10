@@ -26,7 +26,7 @@ struct HermesUtilitiesView: View {
     @State private var promptHistoryStatusMessage = "Capturing prompts sent from Ask Hermes and Chat with Hermes."
     @State private var isFileDownloaderFolderImporterPresented = false
     @State private var selectedDownloadFolderURL: URL?
-    @State private var macFilePath = ""
+    @State private var macFilePath = "/Users/me"
     @State private var fileDownloaderStatus = "Pick an iOS Files folder, enter a full macOS file path, then download."
     @State private var isDownloadingFile = false
 
@@ -241,7 +241,7 @@ struct HermesUtilitiesView: View {
                 }
             }
 
-            TextField("/Users/laurent/Downloads/example.zip", text: $macFilePath)
+            TextField("/Users/me", text: $macFilePath)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.body.monospaced())

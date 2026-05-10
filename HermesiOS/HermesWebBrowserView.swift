@@ -324,12 +324,19 @@ final class HermesWebBrowserDeckStore: ObservableObject {
     }
 
     @discardableResult
-    func createWorkspace(urlString: String = "https://") -> HermesWebBrowserWorkspace {
+    func createWorkspace(
+        urlString: String = "https://",
+        configuration: WKWebViewConfiguration? = nil
+    ) -> HermesWebBrowserWorkspace {
         if canCreateWorkspace {
             let nextNumber = (1...4).first { number in
                 !workspaces.contains { $0.number == number }
             } ?? (workspaces.count + 1)
-            let workspace = HermesWebBrowserWorkspace(number: nextNumber, urlString: urlString)
+            let workspace = HermesWebBrowserWorkspace(
+                number: nextNumber,
+                urlString: urlString,
+                configuration: configuration
+            )
             observe(workspace)
             workspaces.append(workspace)
             workspaces.sort { $0.number < $1.number }
@@ -447,6 +454,18 @@ final class HermesWebBrowserDeckStore: ObservableObject {
             guard let workspace else { return }
             self?.persistNavigatedURL(url, for: workspace)
         }
+        workspace.store.newWindowHandler = { [weak self] request, configuration in
+            guard let self else { return nil }
+            let urlString = request.url?.absoluteString ?? "https://"
+            let newWorkspace = self.createWorkspace(
+                urlString: urlString,
+                configuration: configuration
+            )
+            if let url = request.url {
+                self.recordHistoryRoot(for: url)
+            }
+            return newWorkspace.store.webView
+        }
         workspaceCancellables[workspace.id] = workspace.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -461,10 +480,10 @@ final class HermesWebBrowserWorkspace: ObservableObject, Identifiable {
     let store: HermesWebBrowserStore
     private var storeCancellable: AnyCancellable?
 
-    init(number: Int, urlString: String = "https://") {
+    init(number: Int, urlString: String = "https://", configuration: WKWebViewConfiguration? = nil) {
         self.number = number
         self.urlString = urlString
-        self.store = HermesWebBrowserStore()
+        self.store = HermesWebBrowserStore(configuration: configuration)
         self.storeCancellable = store.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -472,23 +491,21 @@ final class HermesWebBrowserWorkspace: ObservableObject, Identifiable {
 }
 
 @MainActor
-final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
+final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
     @Published private(set) var canGoBack = false
     @Published private(set) var currentURL: URL?
     @Published private(set) var isLoading = false
     @Published private(set) var faviconImage: UIImage?
     var rootURLHandler: ((URL) -> Void)?
     var pageURLHandler: ((URL) -> Void)?
+    var newWindowHandler: ((URLRequest, WKWebViewConfiguration) -> WKWebView?)?
 
     let webView: WKWebView
     private var faviconTask: Task<Void, Never>?
     private var faviconPageString: String?
 
-    override init() {
-        let configuration = WKWebViewConfiguration()
-        configuration.allowsInlineMediaPlayback = true
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-
+    init(configuration: WKWebViewConfiguration? = nil) {
+        let configuration = configuration ?? Self.makeDefaultConfiguration()
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.scrollView.backgroundColor = UIColor(Color.hermesCanvas)
         webView.backgroundColor = UIColor(Color.hermesCanvas)
@@ -496,7 +513,15 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
         self.webView = webView
         super.init()
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         refreshNavigationState()
+    }
+
+    private static func makeDefaultConfiguration() -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        return configuration
     }
 
     func load(_ url: URL) {
@@ -544,6 +569,19 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         isLoading = false
         refreshNavigationState()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        guard navigationAction.targetFrame == nil || navigationAction.targetFrame?.isMainFrame == false else {
+            return nil
+        }
+
+        return newWindowHandler?(navigationAction.request, configuration)
     }
 
     private func refreshNavigationState() {

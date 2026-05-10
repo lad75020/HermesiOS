@@ -36,6 +36,7 @@ struct ContentView: View {
     @State private var statusMonitor = HermesStatusMonitor()
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
     @State private var clipboardHistory = HermesClipboardHistoryStore()
+    @State private var promptHistory = HermesPromptHistoryStore()
     @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
     @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
@@ -300,7 +301,8 @@ struct ContentView: View {
                         companionSettings: companionSettings,
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime,
-                        chatSession: chatSession
+                        chatSession: chatSession,
+                        promptHistory: promptHistory
                     )
                 }
                 .tabItem {
@@ -326,6 +328,7 @@ struct ContentView: View {
                 NavigationStack {
                     HermesUtilitiesView(
                         clipboardHistory: clipboardHistory,
+                        promptHistory: promptHistory,
                         responseSession: activeResponseSession,
                         chatSession: chatSession,
                         companionSettings: companionSettings,
@@ -386,6 +389,7 @@ struct ContentView: View {
             companionEnrollment: companionEnrollment,
             companionRuntime: companionRuntime,
             responseSession: workspace.session,
+            promptHistory: promptHistory,
             responseWorkspaces: responseWorkspaces,
             workspaceNumber: workspace.number,
             workspaceCount: responseWorkspaces.count,
@@ -424,7 +428,8 @@ struct ContentView: View {
                 companionSettings: companionSettings,
                 companionEnrollment: companionEnrollment,
                 companionRuntime: companionRuntime,
-                chatSession: chatSession
+                chatSession: chatSession,
+                promptHistory: promptHistory
             )
         case .history:
             HermesHistoryView(
@@ -440,6 +445,7 @@ struct ContentView: View {
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
+                promptHistory: promptHistory,
                 responseSession: activeResponseSession,
                 chatSession: chatSession,
                 companionSettings: companionSettings,
@@ -487,3 +493,4 @@ struct ContentView: View {
         selectedPhoneSection = .chat
     }
 }
+

@@ -11,16 +11,19 @@ import UIKit
 
 struct HermesUtilitiesView: View {
     @Bindable var clipboardHistory: HermesClipboardHistoryStore
+    @Bindable var promptHistory: HermesPromptHistoryStore
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var chatSession: HermesChatSession
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @AppStorage("hermes.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
+    @AppStorage("hermes.utilities.promptHistoryExpanded") private var isPromptHistoryExpanded = false
     @AppStorage("hermes.utilities.fileDownloaderExpanded") private var isFileDownloaderExpanded = false
     @AppStorage("hermes.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @AppStorage("hermes.utilities.supermemoryManagementExpanded") private var isSupermemoryManagementExpanded = false
     @State private var statusMessage = "Monitoring the iOS clipboard while HermesiOS is active."
+    @State private var promptHistoryStatusMessage = "Capturing prompts sent from Ask Hermes and Chat with Hermes."
     @State private var isFileDownloaderFolderImporterPresented = false
     @State private var selectedDownloadFolderURL: URL?
     @State private var macFilePath = ""
@@ -55,6 +58,21 @@ struct HermesUtilitiesView: View {
                             Spacer(minLength: 0)
                         }
                         .contentShape(Rectangle())
+                    }
+                    .tint(.igActionBlue)
+
+                    Divider()
+                        .overlay(Color.hermesDivider.opacity(0.5))
+                        .padding(.vertical, 4)
+
+                    DisclosureGroup(isExpanded: $isPromptHistoryExpanded) {
+                        promptHistoryContent
+                    } label: {
+                        utilityDisclosureLabel(
+                            title: "Prompt History",
+                            subtitle: "Last \(promptHistory.entries.count) of 10 prompts sent to Hermes",
+                            systemImage: "text.quote"
+                        )
                     }
                     .tint(.igActionBlue)
 
@@ -147,6 +165,7 @@ struct HermesUtilitiesView: View {
 
     private func collapseAllUtilitySections() {
         isClipboardHistoryExpanded = false
+        isPromptHistoryExpanded = false
         isFileDownloaderExpanded = false
         isDebuggingExpanded = false
         isSupermemoryManagementExpanded = false
@@ -455,6 +474,110 @@ struct HermesUtilitiesView: View {
             }
         }
         .padding(.top, 12)
+    }
+
+    @ViewBuilder
+    private var promptHistoryContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Button(role: .destructive) {
+                    promptHistory.clear()
+                    promptHistoryStatusMessage = "Prompt history cleared."
+                } label: {
+                    Label("Clear", systemImage: "trash")
+                }
+                .disabled(promptHistory.entries.isEmpty)
+                .hermesGlassButton()
+            }
+
+            Text(promptHistoryStatusMessage)
+                .font(.igSecondaryMeta)
+                .foregroundStyle(.hermesSecondaryText)
+
+            if promptHistory.entries.isEmpty {
+                ContentUnavailableView(
+                    "No prompt history yet",
+                    systemImage: "text.quote",
+                    description: Text("Send prompts from Ask Hermes or Chat with Hermes, then open this utility to copy them back later.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 220)
+            } else {
+                LazyVStack(spacing: 10) {
+                    ForEach(promptHistory.entries) { entry in
+                        HStack(alignment: .center, spacing: 10) {
+                            Button {
+                                promptHistory.copyToPasteboard(entry)
+                                promptHistoryStatusMessage = "Copied prompt to the clipboard."
+                            } label: {
+                                HermesPromptHistoryRow(entry: entry)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Copies this prompt back to the iOS clipboard")
+
+                            Button(role: .destructive) {
+                                promptHistory.delete(entry)
+                                promptHistoryStatusMessage = "Deleted prompt from history."
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.igDestructive)
+                                    .frame(width: 38, height: 38)
+                                    .hermesLiquidGlass(cornerRadius: 12, tint: Color.igDestructive.opacity(0.12), interactive: true)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Delete prompt from history")
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.top, 12)
+    }
+}
+
+private struct HermesPromptHistoryRow: View {
+    let entry: HermesPromptHistoryEntry
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: entry.source.systemImage)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.igActionBlue)
+                .frame(width: 72, height: 72)
+                .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Label(entry.source.displayName, systemImage: "text.quote")
+                        .font(.igSecondaryMeta.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    Text(entry.createdAt, style: .time)
+                        .font(.igSecondaryMeta)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+
+                Text(entry.title)
+                    .font(.igUsername)
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+
+                Text(entry.subtitle)
+                    .font(.igSecondaryMeta)
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "doc.on.clipboard")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.igActionBlue)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hermesLiquidGlass(cornerRadius: 20, tint: .igActionBlue.opacity(0.06), interactive: true)
     }
 }
 

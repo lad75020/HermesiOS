@@ -414,6 +414,7 @@ struct HermesResponsesConsoleView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var responseSession: HermesResponsesSession
+    @Bindable var promptHistory: HermesPromptHistoryStore
     let responseWorkspaces: [HermesResponsesWorkspace]
     let workspaceNumber: Int
     let workspaceCount: Int
@@ -712,6 +713,7 @@ struct HermesResponsesConsoleView: View {
                         var submittedDraft = requestDraft
                         submittedDraft.userPrompt = promptText
                         let submittedAttachment = selectedAttachment
+                        promptHistory.record(submittedDraft.userPrompt, source: .askHermes)
                         responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment)
                         promptText = ""
                         requestDraft.userPrompt = ""
@@ -1514,6 +1516,7 @@ struct HermesChatConsoleView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var chatSession: HermesChatSession
+    @Bindable var promptHistory: HermesPromptHistoryStore
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
@@ -1726,6 +1729,7 @@ struct HermesChatConsoleView: View {
                         var submittedDraft = chatDraft
                         submittedDraft.userPrompt = promptText
                         let submittedAttachment = selectedAttachment
+                        promptHistory.record(submittedDraft.userPrompt, source: .chatWithHermes)
                         chatSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment)
                         promptText = ""
                         chatDraft.userPrompt = ""

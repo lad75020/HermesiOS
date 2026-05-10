@@ -152,9 +152,8 @@ struct HermesWebBrowserView: View {
 
     private func loadDashboardURL() {
         guard let url = normalizedURL(from: dashboardURLString) else { return }
-        activeWorkspace.urlString = url.absoluteString
-        deckStore.persistURLStringIfNeeded(for: activeWorkspace)
-        activeWorkspace.store.load(url)
+        let workspace = deckStore.createWorkspace(urlString: url.absoluteString)
+        workspace.store.load(url)
     }
 
     private func loadIfNeeded(_ workspace: HermesWebBrowserWorkspace) {
@@ -202,16 +201,24 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         observe(workspace)
     }
 
-    func createWorkspace() {
-        guard canCreateWorkspace else { return }
-        let nextNumber = (1...4).first { number in
-            !workspaces.contains { $0.number == number }
-        } ?? (workspaces.count + 1)
-        let workspace = HermesWebBrowserWorkspace(number: nextNumber)
-        observe(workspace)
-        workspaces.append(workspace)
-        workspaces.sort { $0.number < $1.number }
-        selectedWorkspaceID = workspace.id
+    @discardableResult
+    func createWorkspace(urlString: String = "https://") -> HermesWebBrowserWorkspace {
+        if canCreateWorkspace {
+            let nextNumber = (1...4).first { number in
+                !workspaces.contains { $0.number == number }
+            } ?? (workspaces.count + 1)
+            let workspace = HermesWebBrowserWorkspace(number: nextNumber, urlString: urlString)
+            observe(workspace)
+            workspaces.append(workspace)
+            workspaces.sort { $0.number < $1.number }
+            selectedWorkspaceID = workspace.id
+            return workspace
+        }
+
+        let workspace = activeWorkspace
+        workspace.urlString = urlString
+        persistURLStringIfNeeded(for: workspace)
+        return workspace
     }
 
     func selectWorkspace(id: HermesWebBrowserWorkspace.ID) {

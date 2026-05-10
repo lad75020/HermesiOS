@@ -39,6 +39,28 @@ struct HermesSettingsView: View {
                 .padding(.top)
 
             Form {
+                Section("Appearance") {
+                    Picker("App Theme", selection: $appTheme) {
+                        ForEach(HermesAppTheme.allCases) { theme in
+                            Text(theme.title).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                }
+
+                Section("Mac host") {
+                    TextField("Hostname or IP, e.g. .ts.net", text: $macHost)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+
+                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs, and as the SSH host for the Terminal tab.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+
                 Section("Chat with Hermes") {
                 Toggle("Streaming enabled", isOn: $chatDraft.stream)
 
@@ -341,16 +363,6 @@ struct HermesSettingsView: View {
                         .foregroundStyle(.hermesSecondaryText)
                 }
 
-                Section("Appearance") {
-                    Picker("App Theme", selection: $appTheme) {
-                        ForEach(HermesAppTheme.allCases) { theme in
-                            Text(theme.title).tag(theme)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                }
-
                 Section("Terminal") {
                     TextField("SSH username", text: $terminalSettings.username)
                         .textInputAutocapitalization(.never)
@@ -401,18 +413,6 @@ struct HermesSettingsView: View {
                             .font(.caption)
                             .foregroundStyle(terminalPrivateKeyStatus.hasPrefix("Failed") ? .igDestructive : .hermesSecondaryText)
                     }
-                }
-
-                Section("Mac host") {
-                    TextField("Hostname or IP, e.g. .ts.net", text: $macHost)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .hermesRuntimeInput()
-
-                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs, and as the SSH host for the Terminal tab.")
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
                 }
 
                 Section("Tailscale Serve") {

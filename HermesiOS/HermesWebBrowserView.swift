@@ -37,6 +37,30 @@ struct HermesWebBrowserView: View {
                 .disabled(!activeWorkspace.store.canGoBack)
                 .accessibilityLabel("Back")
 
+                Button {
+                    activeWorkspace.store.reload()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.headline.weight(.semibold))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .hermesLiquidGlass(cornerRadius: 12, tint: activeWorkspace.store.currentURL == nil ? .hermesSurfaceInput.opacity(0.45) : .igActionBlue.opacity(0.14), interactive: activeWorkspace.store.currentURL != nil)
+                .disabled(activeWorkspace.store.currentURL == nil)
+                .accessibilityLabel("Refresh")
+
+                Button {
+                    deckStore.createWorkspace()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.headline.weight(.bold))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .hermesLiquidGlass(cornerRadius: 12, tint: deckStore.canCreateWorkspace ? .igActionBlue.opacity(0.16) : .hermesSurfaceInput.opacity(0.45), interactive: deckStore.canCreateWorkspace)
+                .disabled(!deckStore.canCreateWorkspace)
+                .accessibilityLabel("Open another web view")
+
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         TextField("https://example.com", text: activeURLString)
@@ -121,18 +145,6 @@ struct HermesWebBrowserView: View {
             .buttonStyle(.plain)
             .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
             .accessibilityLabel("Open Hermes Office")
-
-            Button {
-                deckStore.createWorkspace()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.headline.weight(.bold))
-                    .frame(width: 34, height: 34)
-            }
-            .buttonStyle(.plain)
-            .hermesLiquidGlass(cornerRadius: 12, tint: deckStore.canCreateWorkspace ? .igActionBlue.opacity(0.16) : .hermesSurfaceInput.opacity(0.45), interactive: deckStore.canCreateWorkspace)
-            .disabled(!deckStore.canCreateWorkspace)
-            .accessibilityLabel("Open another web view")
 
             if deckStore.workspaces.count > 1 {
                 ForEach(deckStore.workspaces) { workspace in
@@ -537,6 +549,13 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
         guard webView.canGoBack else { return }
         isLoading = true
         webView.goBack()
+        refreshNavigationState()
+    }
+
+    func reload() {
+        guard currentURL != nil || webView.url != nil else { return }
+        isLoading = true
+        webView.reload()
         refreshNavigationState()
     }
 

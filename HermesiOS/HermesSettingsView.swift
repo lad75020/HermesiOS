@@ -158,15 +158,15 @@ struct HermesSettingsView: View {
 
                 HStack(alignment: .center, spacing: 10) {
                     HermesSettingsStatusLED(
-                        isOn: companionEnrollment.identityState.isEnrolled,
-                        label: companionEnrollment.identityState.isEnrolled ? "API key valid" : "API key invalid"
+                        isOn: companionAPIKeyVerified,
+                        label: companionAPIKeyVerified ? "API key verified" : "API key not verified"
                     )
 
                     SecureField("256-character API key", text: $companionSettings.authenticationToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
 
-                    Button(companionEnrollment.identityState.isEnrolled ? "Verify API Key Again" : "Verify API Key") {
+                    Button(companionAPIKeyVerified ? "Verify API Key Again" : "Verify API Key") {
                         companionEnrollment.enroll(settings: companionSettings)
                     }
                     .hermesGlassProminentButton()
@@ -176,6 +176,10 @@ struct HermesSettingsView: View {
                         companionSettings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines).count != HermesCompanionSessionFactory.expectedAPIKeyLength
                     )
                 }
+
+                Text("Paste the 256-character API key from the macOS Host Companion, then tap Verify API Key. Changing this field marks the companion as unverified until the key is verified again.")
+                    .font(.caption)
+                    .foregroundStyle(.hermesSecondaryText)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Hermes agent root folder")
@@ -366,6 +370,13 @@ struct HermesSettingsView: View {
         }
         .onChange(of: macHost) { _, _ in
             applyMacHostToServiceURLs()
+            companionEnrollment.invalidateIfSettingsChanged(settings: companionSettings)
+        }
+        .onChange(of: companionSettings.authenticationToken) { _, _ in
+            companionEnrollment.invalidateIfSettingsChanged(settings: companionSettings)
+        }
+        .onChange(of: companionSettings.apiURL) { _, _ in
+            companionEnrollment.invalidateIfSettingsChanged(settings: companionSettings)
         }
     }
 
@@ -389,6 +400,10 @@ struct HermesSettingsView: View {
 
     private var dashboardURL: String {
         HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
+    }
+
+    private var companionAPIKeyVerified: Bool {
+        companionEnrollment.identityState.matches(settings: companionSettings)
     }
 
     private func applyMacHostToServiceURLs() {

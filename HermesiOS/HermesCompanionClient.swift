@@ -5,6 +5,7 @@
 //  Created by Codex on 05/05/2026.
 //
 
+import CryptoKit
 import Foundation
 import Observation
 
@@ -18,10 +19,55 @@ struct HermesCompanionIdentityState: Codable, Equatable {
     var deviceID = ""
     var deviceName = ""
     var serverEndpoint = ""
+    var authenticationTokenFingerprint = ""
     var issuedAt = Date()
 
+    init(
+        deviceID: String = "",
+        deviceName: String = "",
+        serverEndpoint: String = "",
+        authenticationTokenFingerprint: String = "",
+        issuedAt: Date = Date()
+    ) {
+        self.deviceID = deviceID
+        self.deviceName = deviceName
+        self.serverEndpoint = serverEndpoint
+        self.authenticationTokenFingerprint = authenticationTokenFingerprint
+        self.issuedAt = issuedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case deviceID
+        case deviceName
+        case serverEndpoint
+        case authenticationTokenFingerprint
+        case issuedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID) ?? ""
+        deviceName = try container.decodeIfPresent(String.self, forKey: .deviceName) ?? ""
+        serverEndpoint = try container.decodeIfPresent(String.self, forKey: .serverEndpoint) ?? ""
+        authenticationTokenFingerprint = try container.decodeIfPresent(String.self, forKey: .authenticationTokenFingerprint) ?? ""
+        issuedAt = try container.decodeIfPresent(Date.self, forKey: .issuedAt) ?? Date()
+    }
+
     var isEnrolled: Bool {
-        serverEndpoint.isEmpty == false
+        serverEndpoint.isEmpty == false && authenticationTokenFingerprint.isEmpty == false
+    }
+
+    func matches(settings: HermesCompanionSettings) -> Bool {
+        let endpoint = settings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = settings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isEnrolled &&
+            serverEndpoint == endpoint &&
+            authenticationTokenFingerprint == Self.fingerprint(for: token)
+    }
+
+    static func fingerprint(for token: String) -> String {
+        let digest = SHA256.hash(data: Data(token.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -1138,6 +1184,16 @@ final class HermesCompanionEnrollmentSession {
         HermesSettingsPersistence.clearCompanionIdentity()
     }
 
+    func invalidateIfSettingsChanged(settings: HermesCompanionSettings) {
+        guard identityState.isEnrolled, identityState.matches(settings: settings) == false else { return }
+        enrollmentTask?.cancel()
+        enrollmentTask = nil
+        identityState = HermesCompanionIdentityState()
+        connectionStatus = "Not Authenticated"
+        lastErrorMessage = "Host Companion settings changed. Verify the API key again."
+        HermesSettingsPersistence.clearCompanionIdentity()
+    }
+
     private func runEnrollment(settings: HermesCompanionSettings) async {
         let token = settings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard token.isEmpty == false else {
@@ -1172,6 +1228,7 @@ final class HermesCompanionEnrollmentSession {
                 deviceID: "token-auth",
                 deviceName: result.serverName,
                 serverEndpoint: url.absoluteString,
+                authenticationTokenFingerprint: HermesCompanionIdentityState.fingerprint(for: token),
                 issuedAt: Date()
             )
             HermesSettingsPersistence.saveCompanionAuthenticationState(newState)

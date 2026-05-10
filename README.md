@@ -64,7 +64,7 @@ Open or serve these TCP ports through Tailscale for full iOS functionality:
 - Optional: `9120` if you want direct access to the dashboard proxy for debugging.
 - Optional: root HTTPS/443 or the OpenClaw gateway endpoint if you use OpenClaw directly from other devices.
 
-Legacy note: older Host Companion builds used `9112` for API and `9212` for enrollment. Current Host Companion authentication is a single 4096-character token over plain WebSocket behind Tailscale Serve; no TLS certificates, QR enrollment, pairing IDs, or enrollment port should be needed.
+Legacy note: older Host Companion builds used `9112` for API and `9212` for enrollment. Current Host Companion authentication is a single 256-character token over plain WebSocket behind Tailscale Serve; no TLS certificates, QR enrollment, pairing IDs, or enrollment port should be needed.
 
 ### 3. Hermes Agent API server and gateway
 
@@ -178,7 +178,7 @@ HermesHostCompanion is required for Agent Runtime panels, macOS service controls
 4. Click Apply Network Target.
 5. Start or restart the server.
 6. Copy the displayed API URL into HermesiOS Settings → Host Companion.
-7. Copy the displayed 4096-character token into HermesiOS Settings → Host Companion → Authentication token.
+7. Copy the displayed 256-character token into HermesiOS Settings → Host Companion → Authentication token.
 8. Do not paste the token into logs, README files, screenshots, or commits.
 
 Expected URLs:
@@ -311,7 +311,7 @@ Before considering the iOS app fully functional, verify every item:
 - Dashboard host-rewriting proxy listens on `9120`.
 - Tailscale `:9119` forwards to `127.0.0.1:9120`.
 - HermesHostCompanion is built, running, listening on the configured port, and reachable through Tailscale `:9312` for physical devices.
-- The 4096-character Host Companion token is copied into HermesiOS and never committed.
+- The 256-character Host Companion token is copied into HermesiOS and never committed.
 - LaunchAgents exist and are loaded for `ai.hermes.gateway`, `fr.dubertrand.hermes-dashboard-host-proxy`, `fr.dubertrand.hermes-office-adapter`, and `ai.openclaw.gateway` if OpenClaw is used.
 - Office web app listens on `9116` and Tailscale serves `:9116`.
 - Claw3D adapter listens on `18790`.

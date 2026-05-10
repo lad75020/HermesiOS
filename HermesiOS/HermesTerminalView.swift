@@ -48,6 +48,9 @@ struct HermesTerminalView: View {
     let host: String
     @Binding var terminalSettings: HermesTerminalSettings
     @State private var session = HermesTerminalSession()
+    @State private var pasteRequestID = UUID()
+
+    private let raspberryTunnelCommand = "socat TCP-LISTEN:15900,bind=100.90.128.88,reuseaddr,fork TCP:192.168.1.19:5900"
 
     private var trimmedHost: String { host.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var trimmedUsername: String { terminalSettings.username.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -68,6 +71,19 @@ struct HermesTerminalView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.72)
+
+                Button {
+                    pasteRequestID = UUID()
+                } label: {
+                    Text("🍓")
+                        .font(.system(size: 24))
+                        .frame(width: 42, height: 42)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.igGradOrange)
+                .disabled(!session.isConnected)
+                .accessibilityLabel("Paste Raspberry VNC tunnel command")
+                .help("Paste Raspberry VNC tunnel command")
 
                 Toggle("Terminal connection", isOn: Binding(
                     get: { session.isConnectionRequested },
@@ -104,6 +120,8 @@ struct HermesTerminalView: View {
             HermesSwiftTermContainer(
                 connectionInfo: session.connectionInfo,
                 terminalID: session.terminalID,
+                pasteRequestID: pasteRequestID,
+                pasteText: raspberryTunnelCommand,
                 onConnected: session.markConnected,
                 onFailed: session.markFailed
             )
@@ -195,6 +213,8 @@ private final class HermesTerminalSession {
 private struct HermesSwiftTermContainer: UIViewRepresentable {
     let connectionInfo: HermesTerminalConnectionInfo?
     let terminalID: UUID
+    let pasteRequestID: UUID
+    let pasteText: String
     let onConnected: () -> Void
     let onFailed: (String) -> Void
 
@@ -214,6 +234,7 @@ private struct HermesSwiftTermContainer: UIViewRepresentable {
         uiView.onFailed = onFailed
         if let connectionInfo {
             uiView.configure(connectionInfo: connectionInfo, terminalID: terminalID)
+            uiView.paste(text: pasteText, requestID: pasteRequestID)
             DispatchQueue.main.async {
                 uiView.becomeFirstResponder()
             }
@@ -506,6 +527,7 @@ private final class HermesSshTerminalView: TerminalView, TerminalViewDelegate {
     private var sshConnection: HermesSSHConnection?
     private var configuredInfo: HermesTerminalConnectionInfo?
     private var configuredTerminalID: UUID?
+    private var lastPasteRequestID: UUID?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -546,6 +568,17 @@ private final class HermesSshTerminalView: TerminalView, TerminalViewDelegate {
         sshConnection = nil
         feed(text: "\u{001B}[2J\u{001B}[H")
         feed(text: "Terminal disconnected.\n")
+    }
+
+    func paste(text: String, requestID: UUID) {
+        guard lastPasteRequestID != requestID else { return }
+        guard lastPasteRequestID != nil else {
+            lastPasteRequestID = requestID
+            return
+        }
+        lastPasteRequestID = requestID
+        guard let data = text.data(using: .utf8) else { return }
+        sshConnection?.send(data)
     }
 
     func markConnected() {

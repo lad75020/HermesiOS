@@ -10,6 +10,7 @@ import WebKit
 struct HermesWebBrowserView: View {
     @ObservedObject var deckStore: HermesWebBrowserDeckStore
     let dashboardURLString: String
+    @FocusState private var isURLFieldFocused: Bool
 
     private var activeWorkspace: HermesWebBrowserWorkspace {
         deckStore.activeWorkspace
@@ -34,15 +35,22 @@ struct HermesWebBrowserView: View {
                 .disabled(!activeWorkspace.store.canGoBack)
                 .accessibilityLabel("Back")
 
-                TextField("https://example.com", text: activeURLString)
-                    .keyboardType(.URL)
-                    .textContentType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.go)
-                    .hermesRuntimeInput()
-                    .onSubmit(loadEnteredURL)
-                    .accessibilityLabel("Web URL")
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("https://example.com", text: activeURLString)
+                        .keyboardType(.URL)
+                        .textContentType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.go)
+                        .focused($isURLFieldFocused)
+                        .hermesRuntimeInput()
+                        .onSubmit(loadEnteredURL)
+                        .accessibilityLabel("Web URL")
+
+                    if isURLFieldFocused, activeHistorySuggestions.isEmpty == false {
+                        historySuggestions
+                    }
+                }
             }
             .padding(.horizontal)
             .padding(.top, 10)
@@ -143,15 +151,67 @@ struct HermesWebBrowserView: View {
         )
     }
 
+    private var activeHistorySuggestions: [String] {
+        deckStore.historySuggestions(matching: activeWorkspace.urlString)
+    }
+
+    private var historySuggestions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(activeHistorySuggestions, id: \.self) { suggestion in
+                Button {
+                    loadHistorySuggestion(suggestion)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(suggestion)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if suggestion != activeHistorySuggestions.last {
+                    Divider().opacity(0.35)
+                }
+            }
+        }
+        .background(Color.hermesSurfaceInput.opacity(0.94), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.hermesDivider.opacity(0.45), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 14, x: 0, y: 8)
+    }
+
     private func loadEnteredURL() {
         guard let url = normalizedURL(from: activeWorkspace.urlString) else { return }
         activeWorkspace.urlString = url.absoluteString
         deckStore.persistURLStringIfNeeded(for: activeWorkspace)
+        deckStore.recordHistoryRoot(for: url)
+        isURLFieldFocused = false
+        activeWorkspace.store.load(url)
+    }
+
+    private func loadHistorySuggestion(_ suggestion: String) {
+        guard let url = normalizedURL(from: suggestion) else { return }
+        activeWorkspace.urlString = url.absoluteString
+        deckStore.persistURLStringIfNeeded(for: activeWorkspace)
+        deckStore.recordHistoryRoot(for: url)
+        isURLFieldFocused = false
         activeWorkspace.store.load(url)
     }
 
     private func loadDashboardURL() {
         guard let url = normalizedURL(from: dashboardURLString) else { return }
+        deckStore.recordHistoryRoot(for: url)
         let workspace = deckStore.createWorkspace(urlString: url.absoluteString)
         workspace.store.load(url)
     }
@@ -161,6 +221,7 @@ struct HermesWebBrowserView: View {
         guard let url = normalizedURL(from: workspace.urlString) else { return }
         workspace.urlString = url.absoluteString
         deckStore.persistURLStringIfNeeded(for: workspace)
+        deckStore.recordHistoryRoot(for: url)
         workspace.store.load(url)
     }
 
@@ -180,7 +241,10 @@ struct HermesWebBrowserView: View {
 final class HermesWebBrowserDeckStore: ObservableObject {
     @Published private(set) var workspaces: [HermesWebBrowserWorkspace]
     @Published var selectedWorkspaceID: HermesWebBrowserWorkspace.ID
+    @Published private(set) var rootHistory: [String]
     private var workspaceCancellables: [HermesWebBrowserWorkspace.ID: AnyCancellable] = [:]
+    private static let historyDefaultsKey = "hermes.web.history.roots"
+    private static let maxHistoryCount = 20
 
     var activeWorkspace: HermesWebBrowserWorkspace {
         if let workspace = workspaces.first(where: { $0.id == selectedWorkspaceID }) {
@@ -198,6 +262,7 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         let workspace = HermesWebBrowserWorkspace(number: 1, urlString: initialURLString)
         self.workspaces = [workspace]
         self.selectedWorkspaceID = workspace.id
+        self.rootHistory = UserDefaults.standard.stringArray(forKey: Self.historyDefaultsKey) ?? []
         observe(workspace)
     }
 
@@ -231,7 +296,54 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         UserDefaults.standard.set(workspace.urlString, forKey: "hermes.web.url")
     }
 
+    func historySuggestions(matching text: String) -> [String] {
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "https://", with: "", options: [.caseInsensitive, .anchored])
+            .replacingOccurrences(of: "http://", with: "", options: [.caseInsensitive, .anchored])
+            .lowercased()
+
+        guard query.isEmpty == false else {
+            return Array(rootHistory.prefix(5))
+        }
+
+        return rootHistory
+            .filter { root in
+                let comparable = root
+                    .replacingOccurrences(of: "https://", with: "", options: [.caseInsensitive, .anchored])
+                    .replacingOccurrences(of: "http://", with: "", options: [.caseInsensitive, .anchored])
+                    .lowercased()
+                return comparable.contains(query) && comparable != query
+            }
+            .prefix(5)
+            .map { $0 }
+    }
+
+    func recordHistoryRoot(for url: URL) {
+        guard let root = Self.rootString(from: url) else { return }
+        rootHistory.removeAll { $0.caseInsensitiveCompare(root) == .orderedSame }
+        rootHistory.insert(root, at: 0)
+        if rootHistory.count > Self.maxHistoryCount {
+            rootHistory = Array(rootHistory.prefix(Self.maxHistoryCount))
+        }
+        UserDefaults.standard.set(rootHistory, forKey: Self.historyDefaultsKey)
+    }
+
+    private static func rootString(from url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme), let host = url.host else {
+            return nil
+        }
+
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.port = url.port
+        return components.url?.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
     private func observe(_ workspace: HermesWebBrowserWorkspace) {
+        workspace.store.rootURLHandler = { [weak self] url in
+            self?.recordHistoryRoot(for: url)
+        }
         workspaceCancellables[workspace.id] = workspace.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -260,6 +372,7 @@ final class HermesWebBrowserWorkspace: ObservableObject, Identifiable {
 final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     @Published private(set) var canGoBack = false
     @Published private(set) var currentURL: URL?
+    var rootURLHandler: ((URL) -> Void)?
 
     let webView: WKWebView
 
@@ -310,6 +423,9 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
     private func refreshNavigationState() {
         canGoBack = webView.canGoBack
         currentURL = webView.url ?? currentURL
+        if let currentURL {
+            rootURLHandler?(currentURL)
+        }
     }
 }
 

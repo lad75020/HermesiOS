@@ -215,10 +215,6 @@ struct HermesUtilitiesView: View {
 
     private var fileDownloaderContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Choose a destination folder from the iOS Files app, then ask the enrolled Mac companion to read a full macOS file path and return it over the WebSocket.")
-                .font(.subheadline)
-                .foregroundStyle(.hermesSecondaryText)
-
             HStack(spacing: 10) {
                 Button {
                     isFileDownloaderFolderImporterPresented = true

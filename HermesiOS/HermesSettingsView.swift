@@ -321,7 +321,7 @@ struct HermesSettingsView: View {
             }
             .scrollContentBackground(.hidden)
         }
-        .background(Color.hermesCanvas)
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task(id: companionEnrollment.identityState.deviceID) {
             guard companionEnrollment.identityState.isEnrolled else { return }

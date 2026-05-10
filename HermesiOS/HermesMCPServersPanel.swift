@@ -42,7 +42,7 @@ struct HermesMCPServersPanel: View {
                             } label: {
                                 Label("Refresh", systemImage: "arrow.clockwise")
                             }
-                            .buttonStyle(.bordered)
+                            .hermesGlassButton()
                             .disabled(companionRuntime.isBusy)
                         }
 
@@ -125,7 +125,7 @@ struct HermesMCPServersPanel: View {
                             Label("Add MCP Server", systemImage: "plus.circle.fill")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .hermesGlassProminentButton()
                         .disabled(companionRuntime.isBusy || !canAdd)
 
                         if !companionRuntime.mcpOperationOutput.isEmpty {
@@ -201,7 +201,7 @@ private struct MCPServerRow: View {
                 Label("Remove", systemImage: "trash")
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.bordered)
+            .hermesGlassButton()
         }
         .padding(14)
         .background(Color.hermesSurfaceInput)

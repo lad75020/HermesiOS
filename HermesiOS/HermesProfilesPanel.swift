@@ -77,7 +77,7 @@ struct HermesProfilesPanel: View {
                             } label: {
                                 Label("Refresh", systemImage: "arrow.clockwise")
                             }
-                            .buttonStyle(.borderedProminent)
+                            .hermesGlassProminentButton()
                             .disabled(companionRuntime.isBusy)
 
                             Button {
@@ -87,7 +87,7 @@ struct HermesProfilesPanel: View {
                             } label: {
                                 Label(showCreateForm ? "Hide Form" : "Create", systemImage: showCreateForm ? "xmark" : "plus")
                             }
-                            .buttonStyle(.bordered)
+                            .hermesGlassButton()
                             .disabled(companionRuntime.isBusy)
                         }
                     }
@@ -253,7 +253,7 @@ struct HermesProfilesPanel: View {
                 } label: {
                     Label(submitTitle, systemImage: submitIcon)
                 }
-                .buttonStyle(.borderedProminent)
+                .hermesGlassProminentButton()
                 .disabled(draft.wrappedValue.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || companionRuntime.isBusy)
 
                 Button("Reset") {
@@ -266,7 +266,7 @@ struct HermesProfilesPanel: View {
                         }
                     }
                 }
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
 
                 Button("Cancel") {
                     switch mode {
@@ -276,7 +276,7 @@ struct HermesProfilesPanel: View {
                         editingProfileName = nil
                     }
                 }
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
             }
         }
     }
@@ -363,7 +363,7 @@ struct HermesProfilesPanel: View {
                 } label: {
                     Label("Edit", systemImage: "square.and.pencil")
                 }
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
                 .disabled(companionRuntime.isBusy)
 
                 if !profile.isActive {
@@ -372,7 +372,7 @@ struct HermesProfilesPanel: View {
                     } label: {
                         Label("Use", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                     .disabled(companionRuntime.isBusy)
                 }
                 if !profile.isDefault {
@@ -381,7 +381,7 @@ struct HermesProfilesPanel: View {
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                     .disabled(companionRuntime.isBusy)
                 }
             }

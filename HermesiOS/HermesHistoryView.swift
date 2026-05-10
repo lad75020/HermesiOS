@@ -40,7 +40,7 @@ struct HermesHistoryView: View {
             }
             .scrollContentBackground(.hidden)
         }
-        .background(Color.hermesCanvas)
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task(id: apiSettings.baseURL) {
             await refreshProfileOptions()
@@ -81,14 +81,14 @@ struct HermesHistoryView: View {
                     Button(action: runDashboardSearch) {
                         Label(searchSession.isSearching ? "Searching…" : "Search", systemImage: "magnifyingglass")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                     .disabled(searchSession.isSearching || searchSession.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     if searchSession.isSearching {
                         Button("Cancel") {
                             searchSession.cancel()
                         }
-                        .buttonStyle(.bordered)
+                        .hermesGlassButton()
                     }
 
                     Spacer()
@@ -103,7 +103,7 @@ struct HermesHistoryView: View {
                             searchSession.matchedSessions = 0
                             expandedConversationIDs.removeAll()
                         }
-                        .buttonStyle(.bordered)
+                        .hermesGlassButton()
                     }
                 }
 
@@ -253,7 +253,7 @@ private struct HermesDashboardConversationDisclosure: View {
                     } label: {
                         Label("Resume in Responses", systemImage: "arrow.uturn.forward.circle")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                     .tint(.igActionBlue)
                     .disabled(isResumeResponsesDisabled)
                     .help(isResumeResponsesDisabled ? "Ask Hermes is streaming a response" : "Resume this conversation in Ask Hermes")
@@ -263,7 +263,7 @@ private struct HermesDashboardConversationDisclosure: View {
                     } label: {
                         Label("Resume in Chat", systemImage: "text.bubble")
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                     .disabled(isResumeChatDisabled)
                     .help(isResumeChatDisabled ? "Chat with Hermes is streaming a response" : "Resume this conversation in Chat with Hermes")
                 }
@@ -297,7 +297,7 @@ private struct HermesDashboardConversationDisclosure: View {
                     Label("Resume", systemImage: "arrow.uturn.forward")
                         .labelStyle(.titleAndIcon)
                 }
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
                 .controlSize(.small)
             }
         }

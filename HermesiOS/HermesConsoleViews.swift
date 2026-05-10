@@ -467,7 +467,7 @@ struct HermesResponsesConsoleView: View {
 
             responseComposer
         }
-        .background(Color.hermesCanvas)
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task(id: apiSettings.baseURL) {
             if promptText.isEmpty {
@@ -1555,7 +1555,7 @@ struct HermesChatConsoleView: View {
 
             chatComposer
         }
-        .background(Color.hermesCanvas)
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task(id: apiSettings.baseURL) {
             if promptText.isEmpty {

@@ -138,7 +138,7 @@ struct HermesProvidersPanel: View {
                             modelSaved = true
                             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { modelSaved = false }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .hermesGlassProminentButton()
                     }
                 }
 
@@ -169,7 +169,7 @@ struct HermesProvidersPanel: View {
                         Button("Add Pool Key") {
                             addPoolKey()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .hermesGlassProminentButton()
                         .disabled(poolProvider.isEmpty || poolNewKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                         ForEach(companionRuntime.providerCredentialPool.keys.sorted(), id: \.self) { provider in
@@ -193,7 +193,7 @@ struct HermesProvidersPanel: View {
                                             } label: {
                                                 Image(systemName: "trash")
                                             }
-                                            .buttonStyle(.bordered)
+                                            .hermesGlassButton()
                                         }
                                         .padding(12)
                                         .background(Color.hermesSurfaceInput)
@@ -257,7 +257,7 @@ struct HermesProvidersPanel: View {
                             Button("Add Provider") {
                                 addProviderEnvKey()
                             }
-                            .buttonStyle(.borderedProminent)
+                            .hermesGlassProminentButton()
                             .disabled(pendingNewEnvKey.isEmpty || newEnvValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
@@ -365,13 +365,13 @@ struct HermesProvidersPanel: View {
                     Button(visibleKeys.contains(field.key) ? "Hide" : "Show") {
                         if visibleKeys.contains(field.key) { visibleKeys.remove(field.key) } else { visibleKeys.insert(field.key) }
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                 }
             }
 
             HStack {
                 Button("Save") { saveProviderEnvField(field) }
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
                 Button(role: .destructive) {
                     companionRuntime.removeProviderEnvValue(
                         key: field.key,
@@ -383,7 +383,7 @@ struct HermesProvidersPanel: View {
                 } label: {
                     Label("Remove", systemImage: "trash")
                 }
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
             }
         }
         .padding(12)
@@ -426,7 +426,7 @@ struct HermesProvidersPanel: View {
                     Button(visibleKeys.contains(field.key) ? "Hide" : "Show") {
                         if visibleKeys.contains(field.key) { visibleKeys.remove(field.key) } else { visibleKeys.insert(field.key) }
                     }
-                    .buttonStyle(.bordered)
+                    .hermesGlassButton()
                 }
             }
 
@@ -437,7 +437,7 @@ struct HermesProvidersPanel: View {
             Button("Save \(field.label)") {
                 saveProviderEnvField(field)
             }
-            .buttonStyle(.bordered)
+            .hermesGlassButton()
         }
         .padding(12)
         .background(Color.hermesSurfaceInput)

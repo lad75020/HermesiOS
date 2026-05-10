@@ -222,11 +222,11 @@ private struct GatewayEnvFieldRow: View {
 
                 if field.isSecret {
                     Button(isVisible ? "Hide" : "Show", action: onToggleVisibility)
-                        .buttonStyle(.bordered)
+                        .hermesGlassButton()
                 }
 
                 Button("Save", action: onSave)
-                    .buttonStyle(.borderedProminent)
+                    .hermesGlassProminentButton()
             }
 
             Text(field.hint)

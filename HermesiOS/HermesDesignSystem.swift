@@ -48,10 +48,10 @@ extension Color {
     static let igCloseFriends  = Color(red: 0.184, green: 0.722, blue: 0.145) // #2FB825
 
     // Dynamic helpers (light/dark resolved at render time)
-    static let hermesCanvas       = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.black : UIColor.white })
-    static let hermesElevated     = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.071, green: 0.071, blue: 0.071, alpha: 1) : UIColor.white })
-    static let hermesSurfaceInput = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.149, green: 0.149, blue: 0.149, alpha: 1) : UIColor(red: 0.937, green: 0.937, blue: 0.937, alpha: 1) })
-    static let hermesDivider      = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.149, green: 0.149, blue: 0.149, alpha: 1) : UIColor(red: 0.859, green: 0.859, blue: 0.859, alpha: 1) })
+    static let hermesCanvas       = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.018, green: 0.019, blue: 0.024, alpha: 1) : UIColor(red: 0.982, green: 0.988, blue: 1.0, alpha: 1) })
+    static let hermesElevated     = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.11, green: 0.115, blue: 0.14, alpha: 0.72) : UIColor(red: 1, green: 1, blue: 1, alpha: 0.70) })
+    static let hermesSurfaceInput = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.17, green: 0.18, blue: 0.21, alpha: 0.62) : UIColor(red: 0.965, green: 0.975, blue: 0.995, alpha: 0.68) })
+    static let hermesDivider      = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.63, green: 0.70, blue: 0.82, alpha: 0.18) : UIColor(red: 0.32, green: 0.41, blue: 0.56, alpha: 0.18) })
     static let hermesSecondaryText = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.659, green: 0.659, blue: 0.659, alpha: 1) : UIColor(red: 0.557, green: 0.557, blue: 0.557, alpha: 1) })
     static let hermesLink         = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 0.878, green: 0.945, blue: 1.0, alpha: 1) : UIColor(red: 0.0, green: 0.216, blue: 0.420, alpha: 1) })
 }
@@ -182,6 +182,44 @@ struct HermesLiquidGlassBackground: View {
     }
 }
 
+struct HermesLiquidGlassCanvas: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            Color.hermesCanvas
+
+            LinearGradient(
+                colors: colorScheme == .dark
+                    ? [
+                        Color.igGradBlue.opacity(0.18),
+                        Color.igGradPurple.opacity(0.14),
+                        Color.black.opacity(0.0)
+                    ]
+                    : [
+                        Color.igGradOrangeYellow.opacity(0.20),
+                        Color.igActionBlue.opacity(0.12),
+                        Color.white.opacity(0.0)
+                    ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Circle()
+                .fill(Color.igActionBlue.opacity(colorScheme == .dark ? 0.24 : 0.16))
+                .frame(width: 320, height: 320)
+                .blur(radius: 72)
+                .offset(x: -160, y: -260)
+
+            Circle()
+                .fill(Color.igGradRose.opacity(colorScheme == .dark ? 0.16 : 0.10))
+                .frame(width: 280, height: 280)
+                .blur(radius: 82)
+                .offset(x: 170, y: 240)
+        }
+    }
+}
+
 /// Wraps a stack of glass surfaces so they blend and morph into each other.
 /// On iOS 26 this is `GlassEffectContainer`; on earlier OSes it is a passthrough.
 struct HermesGlassEffectContainer<Content: View>: View {
@@ -256,14 +294,12 @@ struct IGPrimaryButton: View {
             .foregroundStyle(fg)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(bg)
-            )
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(bg))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(strokeColor, lineWidth: 1)
             )
+            .hermesLiquidGlass(cornerRadius: 14, tint: glassTint, interactive: true)
         }
         .buttonStyle(IGPressableStyle())
         .disabled(isLoading)
@@ -272,7 +308,7 @@ struct IGPrimaryButton: View {
     private var bg: Color {
         switch variant {
         case .primary:     return .igActionBlue
-        case .secondary:   return .hermesSurfaceInput
+        case .secondary:   return .hermesSurfaceInput.opacity(0.42)
         case .destructive: return .clear
         case .outlined:    return .clear
         }
@@ -289,8 +325,17 @@ struct IGPrimaryButton: View {
 
     private var strokeColor: Color {
         switch variant {
-        case .primary, .secondary, .destructive: return .clear
-        case .outlined: return .hermesDivider
+        case .primary: return .white.opacity(0.18)
+        case .secondary, .destructive, .outlined: return .hermesDivider
+        }
+    }
+
+    private var glassTint: Color? {
+        switch variant {
+        case .primary: return .igActionBlue.opacity(0.30)
+        case .secondary: return .white.opacity(0.08)
+        case .destructive: return .igDestructive.opacity(0.10)
+        case .outlined: return .white.opacity(0.06)
         }
     }
 }
@@ -313,8 +358,9 @@ struct StoryRing: View {
                     .strokeBorder(Color.hermesDivider, lineWidth: 1)
             }
             Circle()
-                .fill(Color.hermesElevated)
+                .fill(Color.hermesElevated.opacity(0.54))
                 .padding(4)
+                .hermesLiquidGlass(cornerRadius: size / 2, tint: tint.opacity(0.08))
             Image(systemName: systemImage)
                 .font(.system(size: size * 0.42, weight: .semibold))
                 .foregroundStyle(tint)
@@ -349,8 +395,8 @@ struct HermesBrandBar: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 44)
-        .background(Color.hermesCanvas)
-        .overlay(alignment: .bottom) { IGHairline() }
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .bottom) { IGHairline().opacity(0.55) }
     }
 }
 
@@ -441,7 +487,12 @@ struct IGChatBubble: View {
                     .padding(.vertical, 9)
                     .background(
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(isFromUser ? Color.igActionBlue : Color.hermesSurfaceInput)
+                            .fill(isFromUser ? Color.igActionBlue.opacity(0.86) : Color.hermesSurfaceInput.opacity(0.52))
+                    )
+                    .hermesLiquidGlass(
+                        cornerRadius: 22,
+                        tint: isFromUser ? Color.igActionBlue.opacity(0.22) : Color.white.opacity(0.06),
+                        interactive: false
                     )
                     .textSelection(.enabled)
                 if let timestamp {
@@ -525,7 +576,7 @@ enum HermesAppearance {
         tab.configureWithTransparentBackground()
         tab.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
         tab.backgroundColor = .clear
-        tab.shadowColor = UIColor.separator.withAlphaComponent(0.22)
+        tab.shadowColor = UIColor.separator.withAlphaComponent(0.12)
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
 
@@ -535,7 +586,7 @@ enum HermesAppearance {
         nav.configureWithTransparentBackground()
         nav.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterial)
         nav.backgroundColor = .clear
-        nav.shadowColor = UIColor.separator.withAlphaComponent(0.16)
+        nav.shadowColor = UIColor.separator.withAlphaComponent(0.10)
         nav.titleTextAttributes = [
             .font: UIFont.systemFont(ofSize: 16, weight: .semibold)
         ]
@@ -552,10 +603,12 @@ struct IGFieldBackground: ViewModifier {
         content
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.hermesSurfaceInput)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.hermesSurfaceInput.opacity(0.42)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.hermesDivider, lineWidth: 1)
             )
+            .hermesLiquidGlass(cornerRadius: 14, tint: .white.opacity(0.05), interactive: true)
     }
 }
 

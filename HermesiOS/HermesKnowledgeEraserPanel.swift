@@ -39,7 +39,7 @@ struct HermesKnowledgeEraserPanel: View {
                 } label: {
                     Label("Find Items", systemImage: "magnifyingglass")
                 }
-                .buttonStyle(.borderedProminent)
+                .hermesGlassProminentButton()
                 .disabled(isDisabled || companionRuntime.knowledgeEraserTopic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 Button {
@@ -50,7 +50,7 @@ struct HermesKnowledgeEraserPanel: View {
                 } label: {
                     Label("Erase & Achive", systemImage: "archivebox.fill")
                 }
-                .buttonStyle(.bordered)
+                .hermesGlassButton()
                 .tint(.igDestructive)
                 .disabled(isDisabled || selectedCount == 0)
             }

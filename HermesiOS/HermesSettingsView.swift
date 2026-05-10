@@ -19,6 +19,7 @@ struct HermesSettingsView: View {
     @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
     @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
+    @AppStorage(hermesRuntimeTabEnabledStorageKey) private var isRuntimeTabEnabled = false
     @AppStorage("hermes.history.dashboardURL") private var legacyDashboardURL = ""
     @AppStorage("hermes.office.url") private var legacyOfficeURL = ""
     @State private var dashboardGatewayRestart = HermesDashboardGatewayRestartSession()
@@ -109,6 +110,14 @@ struct HermesSettingsView: View {
                     }
                     .pickerStyle(.segmented)
 
+                }
+
+                Section("Tabs") {
+                    Toggle("Hermes Agent Runtime", isOn: $isRuntimeTabEnabled)
+
+                    Text("Off by default. Enable only when you need the runtime management panels in the tab bar and iPad sidebar.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
                 }
 
                 Section("Dashboard") {

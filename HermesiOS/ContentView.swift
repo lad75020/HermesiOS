@@ -21,6 +21,7 @@ struct ContentView: View {
     @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @AppStorage(hermesOfficeWebViewEnabledStorageKey) private var isOfficeWebViewEnabled = true
+    @AppStorage(hermesRuntimeTabEnabledStorageKey) private var isRuntimeTabEnabled = false
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
     @State private var selectedPhoneSection: WorkspaceSection = .responses
@@ -119,6 +120,7 @@ struct ContentView: View {
         }
         .task(id: runtimeInitialLoadKey) {
             guard !isShowingSplash else { return }
+            guard isRuntimeTabEnabled else { return }
             guard !didKickstartRuntimeSectionsAfterLoad else { return }
             guard companionEnrollment.identityState.isEnrolled else { return }
             didKickstartRuntimeSectionsAfterLoad = true
@@ -181,6 +183,15 @@ struct ContentView: View {
             isHistorySearchFailureUnread = false
             isHistorySearchCompletionUnread = true
         }
+        .onChange(of: isRuntimeTabEnabled) { _, isEnabled in
+            guard !isEnabled else { return }
+            if selectedWorkspace == .runtime {
+                selectedWorkspace = .responses
+            }
+            if selectedPhoneSection == .runtime {
+                selectedPhoneSection = .responses
+            }
+        }
     }
 
 
@@ -224,6 +235,12 @@ struct ContentView: View {
         dashboardHistorySearchSession.isDashboardHTTPActive
     }
 
+    private var visibleWorkspaceSections: [WorkspaceSection] {
+        WorkspaceSection.allCases.filter { section in
+            section != .runtime || isRuntimeTabEnabled
+        }
+    }
+
     private var statusLoopKey: String {
         statusRefreshKey + "|scenePhase=\(scenePhase)|splash=\(isShowingSplash)"
     }
@@ -243,6 +260,7 @@ struct ContentView: View {
     private var runtimeInitialLoadKey: String {
         [
             "splash=\(isShowingSplash)",
+            isRuntimeTabEnabled ? "runtime-enabled" : "runtime-disabled",
             companionEnrollment.identityState.isEnrolled ? "enrolled" : "not-enrolled",
             companionEnrollment.identityState.deviceID,
             companionEnrollment.identityState.serverEndpoint,
@@ -271,6 +289,7 @@ struct ContentView: View {
         NavigationSplitView {
             WorkspaceSidebar(
                 selection: $selectedWorkspace,
+                sections: visibleWorkspaceSections,
                 statusMonitor: statusMonitor,
                 responseSession: activeResponseSession,
                 chatSession: chatSession,
@@ -395,18 +414,20 @@ struct ContentView: View {
                 }
                 .tag(WorkspaceSection.settings)
 
-                NavigationStack {
-                    HermesAgentConfigView(
-                        agentConfiguration: $agentConfiguration,
-                        companionSettings: companionSettings,
-                        companionEnrollment: companionEnrollment,
-                        companionRuntime: companionRuntime
-                    )
+                if isRuntimeTabEnabled {
+                    NavigationStack {
+                        HermesAgentConfigView(
+                            agentConfiguration: $agentConfiguration,
+                            companionSettings: companionSettings,
+                            companionEnrollment: companionEnrollment,
+                            companionRuntime: companionRuntime
+                        )
+                    }
+                    .tabItem {
+                        Label("Runtime", systemImage: "server.rack")
+                    }
+                    .tag(WorkspaceSection.runtime)
                 }
-                .tabItem {
-                    Label("Runtime", systemImage: "server.rack")
-                }
-                .tag(WorkspaceSection.runtime)
             }
         }
     }

@@ -90,6 +90,7 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
 
 struct WorkspaceSidebar: View {
     @Binding var selection: WorkspaceSection?
+    var sections: [WorkspaceSection] = WorkspaceSection.allCases
     @Bindable var statusMonitor: HermesStatusMonitor
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var chatSession: HermesChatSession
@@ -199,7 +200,7 @@ struct WorkspaceSidebar: View {
                     dashboardChannelActive: dashboardChannelActive
                 )
 
-                List(WorkspaceSection.allCases) { section in
+                List(sections) { section in
                     let hasUnreadCompletion = completionUnread(for: section)
                     let hasUnreadFailure = failureUnread(for: section)
                     let isActivityBlinkActive = activityBlinkActive(for: section)

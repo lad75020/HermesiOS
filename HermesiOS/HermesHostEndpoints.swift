@@ -14,6 +14,8 @@ let defaultHermesDashboardPort = "9120"
 let hermesOfficePortStorageKey = "hermes.office.port"
 let defaultHermesOfficePort = "9116"
 
+let hermesRuntimeTabEnabledStorageKey = "hermes.runtime.tab.enabled"
+
 let defaultHermesAPIPort = "8642"
 let defaultHermesCompanionPort = "9112"
 

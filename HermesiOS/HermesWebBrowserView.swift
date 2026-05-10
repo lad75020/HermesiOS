@@ -253,6 +253,8 @@ final class HermesWebBrowserDeckStore: ObservableObject {
     @Published private(set) var rootHistory: [String]
     private var workspaceCancellables: [HermesWebBrowserWorkspace.ID: AnyCancellable] = [:]
     private static let historyDefaultsKey = "hermes.web.history.roots"
+    private static let openPagesDefaultsKey = "hermes.web.open.pages"
+    private static let selectedPageDefaultsKey = "hermes.web.selected.page"
     private static let maxHistoryCount = 20
 
     var activeWorkspace: HermesWebBrowserWorkspace {
@@ -267,12 +269,16 @@ final class HermesWebBrowserDeckStore: ObservableObject {
     }
 
     init() {
-        let initialURLString = UserDefaults.standard.string(forKey: "hermes.web.url") ?? "https://"
-        let workspace = HermesWebBrowserWorkspace(number: 1, urlString: initialURLString)
-        self.workspaces = [workspace]
-        self.selectedWorkspaceID = workspace.id
+        let legacyURLString = UserDefaults.standard.string(forKey: "hermes.web.url") ?? "https://"
+        let restoredURLStrings = Self.restoredURLStrings(fallback: legacyURLString)
+        let restoredWorkspaces = restoredURLStrings.enumerated().map { index, urlString in
+            HermesWebBrowserWorkspace(number: index + 1, urlString: urlString)
+        }
+        self.workspaces = restoredWorkspaces
+        let selectedNumber = UserDefaults.standard.integer(forKey: Self.selectedPageDefaultsKey)
+        self.selectedWorkspaceID = restoredWorkspaces.first(where: { $0.number == selectedNumber })?.id ?? restoredWorkspaces[0].id
         self.rootHistory = UserDefaults.standard.stringArray(forKey: Self.historyDefaultsKey) ?? []
-        observe(workspace)
+        restoredWorkspaces.forEach { observe($0) }
     }
 
     @discardableResult
@@ -286,23 +292,30 @@ final class HermesWebBrowserDeckStore: ObservableObject {
             workspaces.append(workspace)
             workspaces.sort { $0.number < $1.number }
             selectedWorkspaceID = workspace.id
+            persistOpenPages()
             return workspace
         }
 
         let workspace = activeWorkspace
         workspace.urlString = urlString
         persistURLStringIfNeeded(for: workspace)
+        persistOpenPages()
         return workspace
     }
 
     func selectWorkspace(id: HermesWebBrowserWorkspace.ID) {
         guard workspaces.contains(where: { $0.id == id }) else { return }
         selectedWorkspaceID = id
+        persistOpenPages()
     }
 
     func persistURLStringIfNeeded(for workspace: HermesWebBrowserWorkspace) {
-        guard workspace.number == 1 else { return }
+        guard workspace.number == 1 else {
+            persistOpenPages()
+            return
+        }
         UserDefaults.standard.set(workspace.urlString, forKey: "hermes.web.url")
+        persistOpenPages()
     }
 
     func historySuggestions(matching text: String) -> [String] {
@@ -337,6 +350,41 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         UserDefaults.standard.set(rootHistory, forKey: Self.historyDefaultsKey)
     }
 
+    private func persistOpenPages() {
+        let urlStrings = workspaces
+            .sorted { $0.number < $1.number }
+            .map { $0.urlString }
+            .filter { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+        UserDefaults.standard.set(urlStrings, forKey: Self.openPagesDefaultsKey)
+        UserDefaults.standard.set(activeWorkspace.number, forKey: Self.selectedPageDefaultsKey)
+    }
+
+    private func persistNavigatedURL(_ url: URL, for workspace: HermesWebBrowserWorkspace) {
+        guard let urlString = Self.pageString(from: url) else { return }
+        guard workspace.urlString != urlString else {
+            persistOpenPages()
+            return
+        }
+        workspace.urlString = urlString
+        persistURLStringIfNeeded(for: workspace)
+    }
+
+    private static func restoredURLStrings(fallback: String) -> [String] {
+        let saved = UserDefaults.standard.stringArray(forKey: openPagesDefaultsKey) ?? []
+        let cleaned = saved
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.isEmpty == false }
+        let urls = cleaned.isEmpty ? [fallback] : cleaned
+        return Array(urls.prefix(4))
+    }
+
+    private static func pageString(from url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
+            return nil
+        }
+        return url.absoluteString
+    }
+
     private static func rootString(from url: URL) -> String? {
         guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme), let host = url.host else {
             return nil
@@ -352,6 +400,10 @@ final class HermesWebBrowserDeckStore: ObservableObject {
     private func observe(_ workspace: HermesWebBrowserWorkspace) {
         workspace.store.rootURLHandler = { [weak self] url in
             self?.recordHistoryRoot(for: url)
+        }
+        workspace.store.pageURLHandler = { [weak self, weak workspace] url in
+            guard let workspace else { return }
+            self?.persistNavigatedURL(url, for: workspace)
         }
         workspaceCancellables[workspace.id] = workspace.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
@@ -383,6 +435,7 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
     @Published private(set) var currentURL: URL?
     @Published private(set) var isLoading = false
     var rootURLHandler: ((URL) -> Void)?
+    var pageURLHandler: ((URL) -> Void)?
 
     let webView: WKWebView
 
@@ -446,6 +499,7 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
         currentURL = webView.url ?? currentURL
         if let currentURL {
             rootURLHandler?(currentURL)
+            pageURLHandler?(currentURL)
         }
     }
 }

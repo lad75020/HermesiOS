@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import LocalAuthentication
 import Security
 
 enum HermesSettingsPersistence {
@@ -18,10 +19,13 @@ enum HermesSettingsPersistence {
     private static let lastChatSessionTitleKey = "hermes.lastChatSessionTitle"
     private static let companionSettingsKey = "hermes.companionSettings"
     private static let companionIdentityStateKey = "hermes.companionIdentityState"
+    private static let terminalSettingsKey = "hermes.terminalSettings"
     private static let tokenService = "com.hermesios.api"
     private static let tokenAccount = "bearerToken"
     private static let companionService = "com.hermesios.companion"
     private static let companionTokenAccount = "authenticationToken"
+    private static let terminalService = "com.hermesios.terminal"
+    private static let terminalPrivateKeyAccount = "sshPrivateKey"
 
     static func loadAPISettings() -> HermesAPISettings {
         var settings = decode(HermesAPISettings.self, from: apiSettingsKey) ?? HermesAPISettings()
@@ -121,6 +125,45 @@ enum HermesSettingsPersistence {
         decode(HermesCompanionIdentityState.self, from: companionIdentityStateKey) ?? HermesCompanionIdentityState()
     }
 
+    static func loadTerminalSettings() -> HermesTerminalSettings {
+        var settings = decode(HermesTerminalSettings.self, from: terminalSettingsKey) ?? HermesTerminalSettings()
+        settings.hasPrivateKey = hasTerminalPrivateKey()
+        return settings
+    }
+
+    static func saveTerminalSettings(_ settings: HermesTerminalSettings) {
+        var persistedSettings = settings
+        persistedSettings.hasPrivateKey = hasTerminalPrivateKey()
+        encode(persistedSettings, to: terminalSettingsKey)
+    }
+
+    static func saveTerminalPrivateKey(_ value: String) throws {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            deleteKeychainData(service: terminalService, account: terminalPrivateKeyAccount)
+            return
+        }
+        try saveKeychainStringWithBiometry(trimmed, service: terminalService, account: terminalPrivateKeyAccount)
+    }
+
+    static func loadTerminalPrivateKeyWithBiometrics(reason: String) throws -> String {
+        guard let data = try loadKeychainDataWithBiometrics(service: terminalService, account: terminalPrivateKeyAccount, reason: reason),
+              let value = String(data: data, encoding: .utf8),
+              !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            throw KeychainError.itemNotFound
+        }
+        return value
+    }
+
+    static func deleteTerminalPrivateKey() {
+        deleteKeychainData(service: terminalService, account: terminalPrivateKeyAccount)
+    }
+
+    static func hasTerminalPrivateKey() -> Bool {
+        keychainItemExists(service: terminalService, account: terminalPrivateKeyAccount)
+    }
+
     static func saveCompanionAuthenticationState(_ state: HermesCompanionIdentityState) {
         encode(state, to: companionIdentityStateKey)
     }
@@ -209,5 +252,83 @@ enum HermesSettingsPersistence {
             kSecAttrAccount as String: account
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    private enum KeychainError: LocalizedError {
+        case itemNotFound
+        case accessControlCreationFailed
+        case unexpectedStatus(OSStatus)
+
+        var errorDescription: String? {
+            switch self {
+            case .itemNotFound:
+                return "No terminal private key is stored in Keychain."
+            case .accessControlCreationFailed:
+                return "Could not create Face ID protection for the terminal private key."
+            case .unexpectedStatus(let status):
+                return "Keychain operation failed with status \(status)."
+            }
+        }
+    }
+
+    private static func saveKeychainStringWithBiometry(_ value: String, service: String, account: String) throws {
+        guard let accessControl = SecAccessControlCreateWithFlags(
+            nil,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            .biometryCurrentSet,
+            nil
+        ) else {
+            throw KeychainError.accessControlCreationFailed
+        }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(query as CFDictionary)
+
+        let insertQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessControl as String: accessControl,
+            kSecValueData as String: Data(value.utf8)
+        ]
+        let status = SecItemAdd(insertQuery as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+    }
+
+    private static func loadKeychainDataWithBiometrics(service: String, account: String, reason: String) throws -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseOperationPrompt as String: reason
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound {
+            throw KeychainError.itemNotFound
+        }
+        guard status == errSecSuccess else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+        return item as? Data
+    }
+
+    private static func keychainItemExists(service: String, account: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        return status == errSecSuccess || status == errSecInteractionNotAllowed
     }
 }

@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		5A9D10012FB5000100000001 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 5A9D10102FB5000100000001 /* SwiftTerm */; };
+		5A9D10022FB5000100000002 /* NIOSSH in Frameworks */ = {isa = PBXBuildFile; productRef = 5A9D10112FB5000100000002 /* NIOSSH */; };
+		5A9D10032FB5000100000003 /* NIOCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5A9D10122FB5000100000003 /* NIOCore */; };
+		5A9D10042FB5000100000004 /* NIOPosix in Frameworks */ = {isa = PBXBuildFile; productRef = 5A9D10132FB5000100000004 /* NIOPosix */; };
+		5A9D10052FB5000100000005 /* Crypto in Frameworks */ = {isa = PBXBuildFile; productRef = 5A9D10142FB5000100000005 /* Crypto */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		4D4AAD2E2FA93A6D00AEE3FB /* HermesiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A8C00012FAB000100000001 /* HermesHostCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesHostCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -52,6 +60,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A9D10012FB5000100000001 /* SwiftTerm in Frameworks */,
+				5A9D10022FB5000100000002 /* NIOSSH in Frameworks */,
+				5A9D10032FB5000100000003 /* NIOCore in Frameworks */,
+				5A9D10042FB5000100000004 /* NIOPosix in Frameworks */,
+				5A9D10052FB5000100000005 /* Crypto in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -103,6 +116,11 @@
 			);
 			name = HermesiOS;
 			packageProductDependencies = (
+				5A9D10102FB5000100000001 /* SwiftTerm */,
+				5A9D10112FB5000100000002 /* NIOSSH */,
+				5A9D10122FB5000100000003 /* NIOCore */,
+				5A9D10132FB5000100000004 /* NIOPosix */,
+				5A9D10142FB5000100000005 /* Crypto */,
 			);
 			productName = HermesiOS;
 			productReference = 4D4AAD2E2FA93A6D00AEE3FB /* HermesiOS.app */;
@@ -157,6 +175,12 @@
 			);
 			mainGroup = 4D4AAD252FA93A6D00AEE3FB;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5A9D10202FB5000100000001 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+				5A9D10212FB5000100000002 /* XCRemoteSwiftPackageReference "swift-nio-ssh" */,
+				5A9D10222FB5000100000003 /* XCRemoteSwiftPackageReference "swift-nio" */,
+				5A9D10232FB5000100000004 /* XCRemoteSwiftPackageReference "swift-crypto" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4D4AAD2F2FA93A6D00AEE3FB /* Products */;
 			projectDirPath = "";
@@ -495,6 +519,69 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5A9D10202FB5000100000001 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.13.0;
+			};
+		};
+		5A9D10212FB5000100000002 /* XCRemoteSwiftPackageReference "swift-nio-ssh" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-nio-ssh.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.13.0;
+			};
+		};
+		5A9D10222FB5000100000003 /* XCRemoteSwiftPackageReference "swift-nio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-nio.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.82.0;
+			};
+		};
+		5A9D10232FB5000100000004 /* XCRemoteSwiftPackageReference "swift-crypto" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-crypto.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.12.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5A9D10102FB5000100000001 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A9D10202FB5000100000001 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+		5A9D10112FB5000100000002 /* NIOSSH */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A9D10212FB5000100000002 /* XCRemoteSwiftPackageReference "swift-nio-ssh" */;
+			productName = NIOSSH;
+		};
+		5A9D10122FB5000100000003 /* NIOCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A9D10222FB5000100000003 /* XCRemoteSwiftPackageReference "swift-nio" */;
+			productName = NIOCore;
+		};
+		5A9D10132FB5000100000004 /* NIOPosix */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A9D10222FB5000100000003 /* XCRemoteSwiftPackageReference "swift-nio" */;
+			productName = NIOPosix;
+		};
+		5A9D10142FB5000100000005 /* Crypto */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A9D10232FB5000100000004 /* XCRemoteSwiftPackageReference "swift-crypto" */;
+			productName = Crypto;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4D4AAD262FA93A6D00AEE3FB /* Project object */;
 }

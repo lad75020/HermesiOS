@@ -9,6 +9,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     case responses
     case chat
     case history
+    case web
+    case terminal
     case office
     case utilities
     case settings
@@ -24,6 +26,10 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Chat with Hermes"
         case .history:
             "History"
+        case .web:
+            "Web"
+        case .terminal:
+            "Terminal"
         case .office:
             "Office (beta)"
         case .utilities:
@@ -43,6 +49,10 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Use `/v1/chat/completions` with an independent transcript."
         case .history:
             "Review saved requests and final responses grouped by session."
+        case .web:
+            "Browse a web page inside HermesiOS."
+        case .terminal:
+            "Open an SSH terminal to the configured Mac host."
         case .office:
             "Open the Hermes Office web experience inside the app."
         case .utilities:
@@ -62,6 +72,10 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "text.bubble"
         case .history:
             "clock.arrow.circlepath"
+        case .web:
+            "globe"
+        case .terminal:
+            "terminal"
         case .office:
             "building.2.crop.circle"
         case .utilities:
@@ -102,7 +116,7 @@ struct WorkspaceSidebar: View {
             isChatCompletionUnread
         case .history:
             isHistorySearchCompletionUnread
-        case .office, .utilities, .settings, .runtime:
+        case .web, .office, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -115,7 +129,7 @@ struct WorkspaceSidebar: View {
             isChatFailureUnread
         case .history:
             isHistorySearchFailureUnread
-        case .office, .utilities, .settings, .runtime:
+        case .web, .office, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -130,7 +144,7 @@ struct WorkspaceSidebar: View {
             isHistorySearchActive
         case .runtime:
             companionRuntime.isKickstartingRuntime
-        case .office, .utilities, .settings:
+        case .web, .office, .utilities, .settings, .terminal:
             false
         }
     }
@@ -150,7 +164,7 @@ struct WorkspaceSidebar: View {
         case .history:
             isHistorySearchCompletionUnread = false
             isHistorySearchFailureUnread = false
-        case .office, .utilities, .settings, .runtime:
+        case .web, .office, .utilities, .settings, .runtime, .terminal:
             break
         }
     }

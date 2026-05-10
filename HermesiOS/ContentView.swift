@@ -30,6 +30,7 @@ struct ContentView: View {
     @State private var responseWorkspaces: [HermesResponsesWorkspace]
     @State private var selectedResponseWorkspaceID: HermesResponsesWorkspace.ID
     @State private var chatDraft: HermesChatDraft
+    @State private var terminalSettings: HermesTerminalSettings
     @State private var chatSession = HermesChatSession()
     @State private var companionEnrollment = HermesCompanionEnrollmentSession()
     @State private var companionRuntime = HermesCompanionRuntimeSession()
@@ -37,6 +38,7 @@ struct ContentView: View {
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
+    @StateObject private var webBrowserStore = HermesWebBrowserStore()
     @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
     @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
@@ -60,6 +62,7 @@ struct ContentView: View {
         _responseWorkspaces = State(initialValue: [initialResponseWorkspace])
         _selectedResponseWorkspaceID = State(initialValue: initialResponseWorkspace.id)
         _chatDraft = State(initialValue: HermesSettingsPersistence.loadChatDraft())
+        _terminalSettings = State(initialValue: HermesSettingsPersistence.loadTerminalSettings())
     }
 
     var body: some View {
@@ -102,6 +105,9 @@ struct ContentView: View {
         }
         .onChange(of: chatDraft) { _, newValue in
             HermesSettingsPersistence.saveChatDraft(newValue)
+        }
+        .onChange(of: terminalSettings) { _, newValue in
+            HermesSettingsPersistence.saveTerminalSettings(newValue)
         }
         .task {
             guard isShowingSplash else { return }
@@ -336,6 +342,22 @@ struct ContentView: View {
                 .tag(WorkspaceSection.history)
 
                 NavigationStack {
+                    HermesWebBrowserView(store: webBrowserStore)
+                }
+                .tabItem {
+                    Label("Web", systemImage: "globe")
+                }
+                .tag(WorkspaceSection.web)
+
+                NavigationStack {
+                    HermesTerminalView(host: macHost, terminalSettings: $terminalSettings)
+                }
+                .tabItem {
+                    Label("Terminal", systemImage: "terminal")
+                }
+                .tag(WorkspaceSection.terminal)
+
+                NavigationStack {
                     HermesUtilitiesView(
                         clipboardHistory: clipboardHistory,
                         promptHistory: promptHistory,
@@ -357,6 +379,7 @@ struct ContentView: View {
                         companionSettings: $companionSettings,
                         responsesDraft: $responsesDraft,
                         chatDraft: $chatDraft,
+                        terminalSettings: $terminalSettings,
                         appTheme: $appTheme,
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime
@@ -450,6 +473,10 @@ struct ContentView: View {
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
             )
+        case .web:
+            HermesWebBrowserView(store: webBrowserStore)
+        case .terminal:
+            HermesTerminalView(host: macHost, terminalSettings: $terminalSettings)
         case .office:
             HermesOfficeView(webViewStore: officeWebViewStore, reloadID: $officeReloadID)
         case .utilities:
@@ -474,6 +501,7 @@ struct ContentView: View {
                     }
                 ),
                 chatDraft: $chatDraft,
+                terminalSettings: $terminalSettings,
                 appTheme: $appTheme,
                 companionEnrollment: companionEnrollment,
                 companionRuntime: companionRuntime

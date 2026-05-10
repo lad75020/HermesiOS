@@ -5,12 +5,14 @@
 
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct HermesSettingsView: View {
     @Binding var apiSettings: HermesAPISettings
     @Binding var companionSettings: HermesCompanionSettings
     @Binding var responsesDraft: HermesRequestDraft
     @Binding var chatDraft: HermesChatDraft
+    @Binding var terminalSettings: HermesTerminalSettings
     @Binding var appTheme: HermesAppTheme
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
@@ -20,6 +22,8 @@ struct HermesSettingsView: View {
     @AppStorage("hermes.history.dashboardURL") private var legacyDashboardURL = ""
     @AppStorage("hermes.office.url") private var legacyOfficeURL = ""
     @State private var dashboardGatewayRestart = HermesDashboardGatewayRestartSession()
+    @State private var isImportingTerminalPrivateKey = false
+    @State private var terminalPrivateKeyStatus = ""
 
     private let macServices: [HermesSettingsMacService] = [
         .init(id: "hermes-dashboard", title: "Hermes Dashboard", subtitle: "Host-rewriting dashboard proxy", icon: "rectangle.on.rectangle.angled"),
@@ -40,9 +44,61 @@ struct HermesSettingsView: View {
                         .autocorrectionDisabled()
                         .hermesRuntimeInput()
 
-                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs.")
+                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs, and as the SSH host for the Terminal tab.")
                         .font(.caption)
                         .foregroundStyle(.hermesSecondaryText)
+                }
+
+                Section("Terminal") {
+                    TextField("SSH username", text: $terminalSettings.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+
+                    TextField("SSH port", text: $terminalSettings.port)
+                        .keyboardType(.numberPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+
+                    HStack(spacing: 10) {
+                        Label(
+                            terminalSettings.hasPrivateKey ? "Private key stored in Keychain" : "No private key stored",
+                            systemImage: terminalSettings.hasPrivateKey ? "key.fill" : "key"
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(terminalSettings.hasPrivateKey ? .igOnlineGreen : .hermesSecondaryText)
+
+                        Spacer()
+
+                        Button {
+                            isImportingTerminalPrivateKey = true
+                        } label: {
+                            Label("Choose Private Key", systemImage: "doc.badge.plus")
+                        }
+                        .hermesGlassButton()
+
+                        if terminalSettings.hasPrivateKey {
+                            Button(role: .destructive) {
+                                HermesSettingsPersistence.deleteTerminalPrivateKey()
+                                terminalSettings.hasPrivateKey = false
+                                terminalPrivateKeyStatus = "Private key removed from Keychain."
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                            .hermesGlassButton()
+                        }
+                    }
+
+                    Text("The selected key file is imported into Keychain and is not stored in Settings. Terminal connections require Face ID to retrieve it.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    if !terminalPrivateKeyStatus.isEmpty {
+                        Text(terminalPrivateKeyStatus)
+                            .font(.caption)
+                            .foregroundStyle(terminalPrivateKeyStatus.hasPrefix("Failed") ? .igDestructive : .hermesSecondaryText)
+                    }
                 }
 
                 Section("Appearance") {
@@ -385,6 +441,12 @@ struct HermesSettingsView: View {
         .onChange(of: companionSettings.apiURL) { _, _ in
             companionEnrollment.invalidateIfSettingsChanged(settings: companionSettings)
         }
+        .fileImporter(
+            isPresented: $isImportingTerminalPrivateKey,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false,
+            onCompletion: importTerminalPrivateKey
+        )
     }
 
     private var apiPortBinding: Binding<String> {
@@ -473,6 +535,25 @@ struct HermesSettingsView: View {
             return .igGradOrange
         }
         return status.behindBy == 0 ? .igOnlineGreen : .igGradOrange
+    }
+
+    private func importTerminalPrivateKey(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            let privateKey = try String(contentsOf: url, encoding: .utf8)
+            try HermesSettingsPersistence.saveTerminalPrivateKey(privateKey)
+            terminalSettings.hasPrivateKey = true
+            terminalPrivateKeyStatus = "Private key imported into Keychain."
+        } catch {
+            terminalSettings.hasPrivateKey = HermesSettingsPersistence.hasTerminalPrivateKey()
+            terminalPrivateKeyStatus = "Failed to import private key: \(error.localizedDescription)"
+        }
     }
 
     private func settingsRow(label: String, value: String) -> some View {

@@ -196,6 +196,7 @@ final class CompanionClientSession {
     private let gitRegistry = CompanionGitRegistry()
     private let knowledgeEraserRegistry = CompanionKnowledgeEraserRegistry()
     private let fileDownloadRegistry = CompanionFileDownloadRegistry()
+    private let sshTerminalRegistry = CompanionSSHTerminalRegistry()
     private let authenticationToken: String
 
     init(connection: NWConnection, authenticationToken: String) {
@@ -298,6 +299,7 @@ final class CompanionClientSession {
                         "download_file",
                         "download_file_info",
                         "download_file_chunk",
+                        "ssh_terminal_command",
                         "service_status",
                         "service_start",
                         "service_stop",
@@ -469,6 +471,17 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "download_file_chunk_failed", message: error.localizedDescription)
+            }
+        case "ssh_terminal_command":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The ssh_terminal_command request requires a payload.")
+                }
+                let terminalPayload = try payload.decode(SSHTerminalPayload.self)
+                let result = try sshTerminalRegistry.run(terminalPayload)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "ssh_terminal_command_failed", message: error.localizedDescription)
             }
         case "service_status":
             do {

@@ -13,6 +13,30 @@ struct HermesCompanionSettings: Codable, Equatable {
     var apiURL = HermesHostEndpoints.webSocketURLString(host: defaultHermesMacHost, port: defaultHermesCompanionPort)
     var authenticationToken = ""
     var hermesWorkspacePath = "/Volumes/WDBlack4TB/Code/HermesiOS/.hermes"
+    var sshUsername = ""
+    var sshPort = "22"
+    var sshPrivateKey = ""
+
+    init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case apiURL
+        case authenticationToken
+        case hermesWorkspacePath
+        case sshUsername
+        case sshPort
+        case sshPrivateKey
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apiURL = try container.decodeIfPresent(String.self, forKey: .apiURL) ?? HermesHostEndpoints.webSocketURLString(host: defaultHermesMacHost, port: defaultHermesCompanionPort)
+        authenticationToken = try container.decodeIfPresent(String.self, forKey: .authenticationToken) ?? ""
+        hermesWorkspacePath = try container.decodeIfPresent(String.self, forKey: .hermesWorkspacePath) ?? "/Volumes/WDBlack4TB/Code/HermesiOS/.hermes"
+        sshUsername = try container.decodeIfPresent(String.self, forKey: .sshUsername) ?? ""
+        sshPort = try container.decodeIfPresent(String.self, forKey: .sshPort) ?? "22"
+        sshPrivateKey = try container.decodeIfPresent(String.self, forKey: .sshPrivateKey) ?? ""
+    }
 }
 
 struct HermesCompanionIdentityState: Codable, Equatable {
@@ -197,6 +221,22 @@ struct HermesCompanionFileDownloadChunkResult: Codable {
     let totalByteCount: Int
     let isComplete: Bool
     let base64Data: String
+}
+
+struct HermesCompanionSSHTerminalPayload: Codable {
+    let host: String
+    let port: Int
+    let username: String
+    let privateKey: String
+    let command: String
+}
+
+struct HermesCompanionSSHTerminalResult: Codable {
+    let host: String
+    let username: String
+    let command: String
+    let exitCode: Int32
+    let output: String
 }
 
 struct HermesCompanionServiceStatusResult: Codable, Equatable {

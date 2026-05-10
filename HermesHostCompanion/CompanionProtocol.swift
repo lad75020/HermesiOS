@@ -173,6 +173,22 @@ struct FileDownloadChunkResult: Codable {
     let base64Data: String
 }
 
+struct SSHTerminalPayload: Codable {
+    let host: String
+    let port: Int
+    let username: String
+    let privateKey: String
+    let command: String
+}
+
+struct SSHTerminalResult: Codable {
+    let host: String
+    let username: String
+    let command: String
+    let exitCode: Int32
+    let output: String
+}
+
 struct ServiceStatusResult: Codable {
     let serviceID: String
     let status: CompanionManagedServiceStatus

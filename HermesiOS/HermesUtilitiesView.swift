@@ -20,6 +20,7 @@ struct HermesUtilitiesView: View {
     @AppStorage("hermes.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
     @AppStorage("hermes.utilities.promptHistoryExpanded") private var isPromptHistoryExpanded = false
     @AppStorage("hermes.utilities.fileDownloaderExpanded") private var isFileDownloaderExpanded = false
+    @AppStorage("hermes.utilities.sshTerminalExpanded") private var isSSHTerminalExpanded = false
     @AppStorage("hermes.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @AppStorage("hermes.utilities.supermemoryManagementExpanded") private var isSupermemoryManagementExpanded = false
     @State private var statusMessage = "Monitoring the iOS clipboard while HermesiOS is active."
@@ -29,6 +30,10 @@ struct HermesUtilitiesView: View {
     @State private var macFilePath = "/Users/me"
     @State private var fileDownloaderStatus = "Pick an iOS Files folder, enter a full macOS file path, then download."
     @State private var isDownloadingFile = false
+    @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
+    @State private var terminalCommand = "uname -a"
+    @State private var terminalOutput = "Configure SSH username and private key in Settings, then run a command."
+    @State private var isRunningTerminalCommand = false
 
     var body: some View {
         ScrollView {
@@ -95,6 +100,20 @@ struct HermesUtilitiesView: View {
                         .overlay(Color.hermesDivider.opacity(0.5))
                         .padding(.vertical, 4)
 
+                    DisclosureGroup(isExpanded: $isSSHTerminalExpanded) {
+                        sshTerminalContent
+                    } label: {
+                        utilityDisclosureLabel(
+                            title: "Terminal",
+                            subtitle: sshTerminalSubtitle,
+                            systemImage: "terminal"
+                        )
+                    }
+                    .tint(.igActionBlue)
+
+                    Divider()
+                        .overlay(Color.hermesDivider.opacity(0.5))
+                        .padding(.vertical, 4)
 
                     if isSupermemoryActive {
                         DisclosureGroup(isExpanded: $isSupermemoryManagementExpanded) {
@@ -167,6 +186,7 @@ struct HermesUtilitiesView: View {
         isClipboardHistoryExpanded = false
         isPromptHistoryExpanded = false
         isFileDownloaderExpanded = false
+        isSSHTerminalExpanded = false
         isDebuggingExpanded = false
         isSupermemoryManagementExpanded = false
     }
@@ -191,6 +211,15 @@ struct HermesUtilitiesView: View {
         return "Download a Mac file into an iOS Files folder"
     }
 
+    private var sshTerminalSubtitle: String {
+        let user = companionSettings.sshUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = macHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !user.isEmpty, !host.isEmpty {
+            return "Run SSH commands as \(user)@\(host)"
+        }
+        return "Run commands on the Mac over SSH"
+    }
+
     private func utilityDisclosureLabel(title: String, subtitle: String, systemImage: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
@@ -211,6 +240,97 @@ struct HermesUtilitiesView: View {
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
+    }
+
+    private var sshTerminalContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Runs one command over SSH against the Mac host configured in Settings using the saved username and private key.")
+                .font(.subheadline)
+                .foregroundStyle(.hermesSecondaryText)
+
+            TextField("Command", text: $terminalCommand, axis: .vertical)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.body.monospaced())
+                .lineLimit(3, reservesSpace: true)
+                .padding(12)
+                .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .textSelection(.enabled)
+
+            HStack(spacing: 10) {
+                Button {
+                    runSSHTerminalCommand()
+                } label: {
+                    Label(isRunningTerminalCommand ? "Running…" : "Run Command", systemImage: "play.fill")
+                }
+                .hermesGlassButton()
+                .disabled(!canRunSSHTerminalCommand)
+
+                if isRunningTerminalCommand {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            ScrollView {
+                Text(terminalOutput)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(terminalOutput.hasPrefix("Exit 0") ? Color.primary : Color.hermesSecondaryText)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .frame(minHeight: 160, maxHeight: 320)
+            .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .padding(.top, 12)
+    }
+
+    private var canRunSSHTerminalCommand: Bool {
+        companionEnrollment.identityState.isEnrolled
+            && !isRunningTerminalCommand
+            && !companionRuntime.isBusy
+            && !macHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !companionSettings.sshUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !companionSettings.sshPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !terminalCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func runSSHTerminalCommand() {
+        let host = macHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = companionSettings.sshUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let privateKey = companionSettings.sshPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let command = terminalCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        let port = Int(companionSettings.sshPort.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 22
+
+        Task { @MainActor in
+            isRunningTerminalCommand = true
+            terminalOutput = "Running over SSH…"
+            companionRuntime.connectionStatus = "SSH Terminal"
+            companionRuntime.lastErrorMessage = ""
+            defer { isRunningTerminalCommand = false }
+
+            do {
+                let result: HermesCompanionSSHTerminalResult = try await HermesCompanionSessionFactory.request(
+                    settings: companionSettings,
+                    state: companionEnrollment.identityState,
+                    type: "ssh_terminal_command",
+                    payload: HermesCompanionSSHTerminalPayload(
+                        host: host,
+                        port: port,
+                        username: username,
+                        privateKey: privateKey,
+                        command: command
+                    )
+                )
+                terminalOutput = "Exit \(result.exitCode) • \(result.username)@\(result.host)\n$ \(result.command)\n\n\(result.output)"
+                companionRuntime.connectionStatus = result.exitCode == 0 ? "SSH Complete" : "SSH Failed"
+            } catch {
+                terminalOutput = error.localizedDescription
+                companionRuntime.lastErrorMessage = error.localizedDescription
+                companionRuntime.connectionStatus = "SSH Failed"
+            }
+        }
     }
 
     private var fileDownloaderContent: some View {

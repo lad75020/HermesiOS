@@ -19,6 +19,7 @@ struct HermesSettingsView: View {
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @AppStorage("hermes.history.dashboardURL") private var legacyDashboardURL = ""
     @AppStorage("hermes.office.url") private var legacyOfficeURL = ""
+    @State private var dashboardGatewayRestart = HermesDashboardGatewayRestartSession()
 
     private let macServices: [HermesSettingsMacService] = [
         .init(id: "hermes-dashboard", title: "Hermes Dashboard", subtitle: "Host-rewriting dashboard proxy", icon: "rectangle.on.rectangle.angled"),
@@ -125,22 +126,28 @@ struct HermesSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
-                        companionRuntime.restartAPIService(
-                            settings: companionSettings,
-                            identityState: companionEnrollment.identityState
+                        dashboardGatewayRestart.restart(
+                            dashboardBaseURL: dashboardURL,
+                            apiSettings: apiSettings
                         )
                     } label: {
                         Label("Restart API Server", systemImage: "arrow.clockwise.circle")
                     }
                     .hermesGlassProminentButton()
-                    .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isBusy)
+                    .disabled(dashboardGatewayRestart.isRestarting)
 
-                    Text(companionEnrollment.identityState.isEnrolled ? "Uses the authenticated Host Companion to restart the host-side Hermes API server service." : "Authenticate Host Companion before restarting the API server from iOS.")
+                    Text("Uses the Hermes dashboard URL to POST /api/gateway/restart.")
                         .font(.caption)
                         .foregroundStyle(.hermesSecondaryText)
 
-                    if !companionRuntime.lastErrorMessage.isEmpty {
-                        Text(companionRuntime.lastErrorMessage)
+                    if dashboardGatewayRestart.status != "Idle" {
+                        Text(dashboardGatewayRestart.status)
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+
+                    if !dashboardGatewayRestart.lastErrorMessage.isEmpty {
+                        Text(dashboardGatewayRestart.lastErrorMessage)
                             .font(.caption)
                             .foregroundStyle(.igDestructive)
                     }

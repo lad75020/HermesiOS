@@ -260,8 +260,7 @@ private struct HermesDashboardConversationDisclosure: View {
                     }
                     .hermesGlassProminentButton()
                     .tint(.igActionBlue)
-                    .disabled(isResumeResponsesDisabled)
-                    .help(isResumeResponsesDisabled ? "Ask Hermes is streaming a response" : "Resume this conversation in Ask Hermes")
+                    .help(isResumeResponsesDisabled ? "All Ask Hermes screens are streaming; tapping shows a busy message" : "Resume this conversation in Ask Hermes")
 
                     Button {
                         onResumeChat(result)
@@ -290,7 +289,6 @@ private struct HermesDashboardConversationDisclosure: View {
                     } label: {
                         Label("Resume in Responses", systemImage: "arrow.uturn.forward.circle")
                     }
-                    .disabled(isResumeResponsesDisabled)
 
                     Button {
                         onResumeChat(result)

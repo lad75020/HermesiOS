@@ -47,6 +47,7 @@ struct ContentView: View {
     @State private var isResponsesFailureUnread = false
     @State private var isChatFailureUnread = false
     @State private var isHistorySearchFailureUnread = false
+    @State private var askHermesBusyToastID: UUID?
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -79,6 +80,15 @@ struct ContentView: View {
             }
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
+        .overlay(alignment: .top) {
+            if askHermesBusyToastID != nil {
+                HermesTransientToast(message: "Ask Hermes is busy")
+                    .padding(.top, 18)
+                    .padding(.horizontal, 20)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(2)
+            }
+        }
         .preferredColorScheme(appTheme.colorScheme)
         .tint(.igActionBlue)
         .onChange(of: apiSettings) { _, newValue in
@@ -314,7 +324,7 @@ struct ContentView: View {
                     HermesHistoryView(
                         apiSettings: $apiSettings,
                         searchSession: dashboardHistorySearchSession,
-                        isResponsesStreaming: responseWorkspaces.contains { $0.session.isSending },
+                        isResponsesStreaming: !responseWorkspaces.contains { !$0.session.isSending },
                         isChatStreaming: chatSession.isSending,
                         onResumeResponses: resumeConversationInResponses,
                         onResumeChat: resumeConversationInChat
@@ -435,7 +445,7 @@ struct ContentView: View {
             HermesHistoryView(
                 apiSettings: $apiSettings,
                 searchSession: dashboardHistorySearchSession,
-                isResponsesStreaming: responseWorkspaces.contains { $0.session.isSending },
+                isResponsesStreaming: !responseWorkspaces.contains { !$0.session.isSending },
                 isChatStreaming: chatSession.isSending,
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
@@ -479,11 +489,30 @@ struct ContentView: View {
     }
 
     private func resumeConversationInResponses(_ result: HermesDashboardConversationResult) {
-        let session = activeResponseSession
-        guard !session.isSending else { return }
-        session.resumeConversation(from: result)
+        guard let workspace = responseWorkspaces.first(where: { !$0.session.isSending }) else {
+            showAskHermesBusyToast()
+            return
+        }
+        workspace.session.resumeConversation(from: result)
+        workspace.acknowledgeCurrentStatus()
+        selectedResponseWorkspaceID = workspace.id
+        responsesDraft = workspace.draft
         selectedWorkspace = .responses
         selectedPhoneSection = .responses
+    }
+
+    private func showAskHermesBusyToast() {
+        let toastID = UUID()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+            askHermesBusyToastID = toastID
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard askHermesBusyToastID == toastID else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                askHermesBusyToastID = nil
+            }
+        }
     }
 
     private func resumeConversationInChat(_ result: HermesDashboardConversationResult) {
@@ -491,6 +520,25 @@ struct ContentView: View {
         chatSession.resumeConversation(from: result)
         selectedWorkspace = .chat
         selectedPhoneSection = .chat
+    }
+}
+
+private struct HermesTransientToast: View {
+    let message: String
+
+    var body: some View {
+        Text(message)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.hermesSurfaceInput.opacity(0.92), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.22), radius: 16, x: 0, y: 8)
+            .accessibilityLabel(message)
     }
 }
 

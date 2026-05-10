@@ -36,16 +36,25 @@ struct HermesWebBrowserView: View {
                 .accessibilityLabel("Back")
 
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("https://example.com", text: activeURLString)
-                        .keyboardType(.URL)
-                        .textContentType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .submitLabel(.go)
-                        .focused($isURLFieldFocused)
-                        .hermesRuntimeInput()
-                        .onSubmit(loadEnteredURL)
-                        .accessibilityLabel("Web URL")
+                    HStack(spacing: 8) {
+                        TextField("https://example.com", text: activeURLString)
+                            .keyboardType(.URL)
+                            .textContentType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.go)
+                            .focused($isURLFieldFocused)
+                            .hermesRuntimeInput()
+                            .onSubmit(loadEnteredURL)
+                            .accessibilityLabel("Web URL")
+
+                        if activeWorkspace.store.isLoading {
+                            ProgressView()
+                                .controlSize(.regular)
+                                .frame(width: 28, height: 28)
+                                .accessibilityLabel("Page loading")
+                        }
+                    }
 
                     if isURLFieldFocused, activeHistorySuggestions.isEmpty == false {
                         historySuggestions
@@ -372,6 +381,7 @@ final class HermesWebBrowserWorkspace: ObservableObject, Identifiable {
 final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDelegate {
     @Published private(set) var canGoBack = false
     @Published private(set) var currentURL: URL?
+    @Published private(set) var isLoading = false
     var rootURLHandler: ((URL) -> Void)?
 
     let webView: WKWebView
@@ -393,6 +403,7 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
 
     func load(_ url: URL) {
         currentURL = url
+        isLoading = true
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         webView.load(request)
         refreshNavigationState()
@@ -400,23 +411,33 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
 
     func goBack() {
         guard webView.canGoBack else { return }
+        isLoading = true
         webView.goBack()
         refreshNavigationState()
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        isLoading = true
+        refreshNavigationState()
+    }
+
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        isLoading = true
         refreshNavigationState()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        isLoading = false
         refreshNavigationState()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        isLoading = false
         refreshNavigationState()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        isLoading = false
         refreshNavigationState()
     }
 

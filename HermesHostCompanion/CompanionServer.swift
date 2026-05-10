@@ -296,6 +296,8 @@ final class CompanionClientSession {
                         "list_backups",
                         "restore_backup",
                         "download_file",
+                        "download_file_info",
+                        "download_file_chunk",
                         "service_status",
                         "service_start",
                         "service_stop",
@@ -441,6 +443,32 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "download_file_failed", message: error.localizedDescription)
+            }
+        case "download_file_info":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The download_file_info request requires a payload.")
+                }
+                let downloadPayload = try payload.decode(FileDownloadPayload.self)
+                let result = try fileDownloadRegistry.downloadFileInfo(path: downloadPayload.path)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "download_file_info_failed", message: error.localizedDescription)
+            }
+        case "download_file_chunk":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The download_file_chunk request requires a payload.")
+                }
+                let chunkPayload = try payload.decode(FileDownloadChunkPayload.self)
+                let result = try fileDownloadRegistry.downloadFileChunk(
+                    path: chunkPayload.path,
+                    offset: chunkPayload.offset,
+                    length: chunkPayload.length
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "download_file_chunk_failed", message: error.localizedDescription)
             }
         case "service_status":
             do {

@@ -150,6 +150,29 @@ struct FileDownloadResult: Codable {
     let base64Data: String
 }
 
+struct FileDownloadInfoResult: Codable {
+    let path: String
+    let fileName: String
+    let byteCount: Int
+    let contentType: String
+    let chunkSize: Int
+}
+
+struct FileDownloadChunkPayload: Codable {
+    let path: String
+    let offset: Int
+    let length: Int
+}
+
+struct FileDownloadChunkResult: Codable {
+    let path: String
+    let offset: Int
+    let byteCount: Int
+    let totalByteCount: Int
+    let isComplete: Bool
+    let base64Data: String
+}
+
 struct ServiceStatusResult: Codable {
     let serviceID: String
     let status: CompanionManagedServiceStatus

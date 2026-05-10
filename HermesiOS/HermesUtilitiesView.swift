@@ -305,16 +305,37 @@ struct HermesUtilitiesView: View {
             defer { isDownloadingFile = false }
 
             do {
-                let result: HermesCompanionFileDownloadResult = try await HermesCompanionSessionFactory.request(
+                let info: HermesCompanionFileDownloadInfoResult = try await HermesCompanionSessionFactory.request(
                     settings: companionSettings,
                     state: companionEnrollment.identityState,
-                    type: "download_file",
+                    type: "download_file_info",
                     payload: HermesCompanionFileDownloadPayload(path: path)
                 )
-                guard let data = Data(base64Encoded: result.base64Data) else {
-                    throw HermesFileDownloaderError.invalidPayload
+                var data = Data()
+                data.reserveCapacity(info.byteCount)
+                var offset = 0
+                let chunkSize = max(1, info.chunkSize)
+
+                repeat {
+                    let chunk: HermesCompanionFileDownloadChunkResult = try await HermesCompanionSessionFactory.request(
+                        settings: companionSettings,
+                        state: companionEnrollment.identityState,
+                        type: "download_file_chunk",
+                        payload: HermesCompanionFileDownloadChunkPayload(path: path, offset: offset, length: chunkSize)
+                    )
+                    guard let chunkData = Data(base64Encoded: chunk.base64Data) else {
+                        throw HermesFileDownloaderError.invalidPayload
+                    }
+                    data.append(chunkData)
+                    offset += chunk.byteCount
+                    fileDownloaderStatus = "Downloading from Mac… \(Self.byteCountFormatter.string(fromByteCount: Int64(data.count))) / \(Self.byteCountFormatter.string(fromByteCount: Int64(info.byteCount)))"
+                    if chunk.isComplete || chunk.byteCount == 0 { break }
+                } while offset < info.byteCount
+
+                guard data.count == info.byteCount else {
+                    throw HermesFileDownloaderError.incompleteDownload(expected: info.byteCount, actual: data.count)
                 }
-                let savedURL = try saveDownloadedFile(data, fileName: result.fileName, in: folderURL)
+                let savedURL = try saveDownloadedFile(data, fileName: info.fileName, in: folderURL)
                 fileDownloaderStatus = "Saved \(savedURL.lastPathComponent) (\(Self.byteCountFormatter.string(fromByteCount: Int64(data.count)))) to \(folderURL.lastPathComponent)."
                 companionRuntime.connectionStatus = "File Downloaded"
             } catch {
@@ -579,11 +600,14 @@ private struct HermesPromptHistoryRow: View {
 
 private enum HermesFileDownloaderError: LocalizedError {
     case invalidPayload
+    case incompleteDownload(expected: Int, actual: Int)
 
     var errorDescription: String? {
         switch self {
         case .invalidPayload:
             return "The Mac companion returned an invalid file payload."
+        case .incompleteDownload(let expected, let actual):
+            return "The Mac companion returned an incomplete file (\(actual) of \(expected) bytes)."
         }
     }
 }

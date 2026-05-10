@@ -8,8 +8,54 @@ import UniformTypeIdentifiers
 
 struct CompanionFileDownloadRegistry {
     private let maxDownloadBytes = 100 * 1024 * 1024
+    private let maxChunkBytes = 384 * 1024
 
     func downloadFile(path rawPath: String) throws -> FileDownloadResult {
+        let metadata = try fileMetadata(for: rawPath)
+        let data = try Data(contentsOf: metadata.url, options: [.mappedIfSafe])
+        return FileDownloadResult(
+            path: metadata.path,
+            fileName: metadata.fileName,
+            byteCount: data.count,
+            contentType: metadata.contentType,
+            base64Data: data.base64EncodedString()
+        )
+    }
+
+    func downloadFileInfo(path rawPath: String) throws -> FileDownloadInfoResult {
+        let metadata = try fileMetadata(for: rawPath)
+        return FileDownloadInfoResult(
+            path: metadata.path,
+            fileName: metadata.fileName,
+            byteCount: metadata.byteCount,
+            contentType: metadata.contentType,
+            chunkSize: maxChunkBytes
+        )
+    }
+
+    func downloadFileChunk(path rawPath: String, offset: Int, length: Int) throws -> FileDownloadChunkResult {
+        let metadata = try fileMetadata(for: rawPath)
+        guard offset >= 0 else { throw FileDownloadError.invalidChunk }
+        guard length > 0 else { throw FileDownloadError.invalidChunk }
+        guard offset <= metadata.byteCount else { throw FileDownloadError.invalidChunk }
+
+        let safeLength = min(length, maxChunkBytes, metadata.byteCount - offset)
+        let handle = try FileHandle(forReadingFrom: metadata.url)
+        defer { try? handle.close() }
+        try handle.seek(toOffset: UInt64(offset))
+        let data = try handle.read(upToCount: safeLength) ?? Data()
+        let nextOffset = offset + data.count
+        return FileDownloadChunkResult(
+            path: metadata.path,
+            offset: offset,
+            byteCount: data.count,
+            totalByteCount: metadata.byteCount,
+            isComplete: nextOffset >= metadata.byteCount,
+            base64Data: data.base64EncodedString()
+        )
+    }
+
+    private func fileMetadata(for rawPath: String) throws -> FileDownloadMetadata {
         let trimmedPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedPath.isEmpty == false else {
             throw FileDownloadError.emptyPath
@@ -27,17 +73,23 @@ struct CompanionFileDownloadRegistry {
         guard byteCount <= maxDownloadBytes else {
             throw FileDownloadError.fileTooLarge(byteCount: byteCount, limit: maxDownloadBytes)
         }
-
-        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
         let fileName = values.localizedName?.isEmpty == false ? values.localizedName! : url.lastPathComponent
-        return FileDownloadResult(
+        return FileDownloadMetadata(
+            url: url,
             path: trimmedPath,
             fileName: fileName.isEmpty ? "downloaded-file" : fileName,
-            byteCount: data.count,
-            contentType: values.contentType?.preferredMIMEType ?? "application/octet-stream",
-            base64Data: data.base64EncodedString()
+            byteCount: byteCount,
+            contentType: values.contentType?.preferredMIMEType ?? "application/octet-stream"
         )
     }
+}
+
+private struct FileDownloadMetadata {
+    let url: URL
+    let path: String
+    let fileName: String
+    let byteCount: Int
+    let contentType: String
 }
 
 enum FileDownloadError: LocalizedError {
@@ -45,6 +97,7 @@ enum FileDownloadError: LocalizedError {
     case notAbsolutePath
     case notRegularFile
     case fileTooLarge(byteCount: Int, limit: Int)
+    case invalidChunk
 
     var errorDescription: String? {
         switch self {
@@ -59,6 +112,8 @@ enum FileDownloadError: LocalizedError {
             formatter.allowedUnits = [.useMB, .useGB]
             formatter.countStyle = .file
             return "File is too large for WebSocket download (\(formatter.string(fromByteCount: Int64(byteCount))) / \(formatter.string(fromByteCount: Int64(limit))) limit)."
+        case .invalidChunk:
+            return "The requested file chunk is invalid."
         }
     }
 }

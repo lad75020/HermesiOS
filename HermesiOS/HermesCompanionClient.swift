@@ -176,6 +176,29 @@ struct HermesCompanionFileDownloadResult: Codable {
     let base64Data: String
 }
 
+struct HermesCompanionFileDownloadInfoResult: Codable {
+    let path: String
+    let fileName: String
+    let byteCount: Int
+    let contentType: String
+    let chunkSize: Int
+}
+
+struct HermesCompanionFileDownloadChunkPayload: Codable {
+    let path: String
+    let offset: Int
+    let length: Int
+}
+
+struct HermesCompanionFileDownloadChunkResult: Codable {
+    let path: String
+    let offset: Int
+    let byteCount: Int
+    let totalByteCount: Int
+    let isComplete: Bool
+    let base64Data: String
+}
+
 struct HermesCompanionServiceStatusResult: Codable, Equatable {
     let serviceID: String
     let status: HermesCompanionManagedServiceStatus

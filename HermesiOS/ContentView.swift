@@ -38,7 +38,7 @@ struct ContentView: View {
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
-    @StateObject private var webBrowserStore = HermesWebBrowserStore()
+    @StateObject private var webBrowserStore = HermesWebBrowserDeckStore()
     @StateObject private var officeWebViewStore = HermesOfficeWebViewStore()
     @State private var officeReloadID = UUID()
     @State private var isShowingSplash = true
@@ -342,7 +342,7 @@ struct ContentView: View {
                 .tag(WorkspaceSection.history)
 
                 NavigationStack {
-                    HermesWebBrowserView(store: webBrowserStore)
+                    HermesWebBrowserView(deckStore: webBrowserStore)
                 }
                 .tabItem {
                     Label("Web", systemImage: "globe")
@@ -474,7 +474,7 @@ struct ContentView: View {
                 onResumeChat: resumeConversationInChat
             )
         case .web:
-            HermesWebBrowserView(store: webBrowserStore)
+            HermesWebBrowserView(deckStore: webBrowserStore)
         case .terminal:
             HermesTerminalView(host: macHost, terminalSettings: $terminalSettings)
         case .office:

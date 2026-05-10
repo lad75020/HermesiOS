@@ -18,6 +18,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
     @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
+    @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @AppStorage(hermesOfficeWebViewEnabledStorageKey) private var isOfficeWebViewEnabled = true
 
@@ -231,6 +232,10 @@ struct ContentView: View {
         HermesHostEndpoints.httpURLString(host: macHost, port: officePort)
     }
 
+    private var dashboardURLString: String {
+        HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
+    }
+
     private var officePreloadKey: String {
         officeURLString + "|enabled=\(isOfficeWebViewEnabled)|reload=\(officeReloadID.uuidString)|splash=\(isShowingSplash)"
     }
@@ -342,7 +347,7 @@ struct ContentView: View {
                 .tag(WorkspaceSection.history)
 
                 NavigationStack {
-                    HermesWebBrowserView(deckStore: webBrowserStore)
+                    HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString)
                 }
                 .tabItem {
                     Label("Web", systemImage: "globe")
@@ -474,7 +479,7 @@ struct ContentView: View {
                 onResumeChat: resumeConversationInChat
             )
         case .web:
-            HermesWebBrowserView(deckStore: webBrowserStore)
+            HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString)
         case .terminal:
             HermesTerminalView(host: macHost, terminalSettings: $terminalSettings)
         case .office:

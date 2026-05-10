@@ -9,6 +9,7 @@ import WebKit
 
 struct HermesWebBrowserView: View {
     @ObservedObject var deckStore: HermesWebBrowserDeckStore
+    let dashboardURLString: String
 
     private var activeWorkspace: HermesWebBrowserWorkspace {
         deckStore.activeWorkspace
@@ -81,6 +82,17 @@ struct HermesWebBrowserView: View {
                 .minimumScaleFactor(0.72)
 
             Button {
+                loadDashboardURL()
+            } label: {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.headline.weight(.bold))
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(.plain)
+            .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
+            .accessibilityLabel("Open Hermes dashboard")
+
+            Button {
                 deckStore.createWorkspace()
             } label: {
                 Image(systemName: "plus")
@@ -133,6 +145,13 @@ struct HermesWebBrowserView: View {
 
     private func loadEnteredURL() {
         guard let url = normalizedURL(from: activeWorkspace.urlString) else { return }
+        activeWorkspace.urlString = url.absoluteString
+        deckStore.persistURLStringIfNeeded(for: activeWorkspace)
+        activeWorkspace.store.load(url)
+    }
+
+    private func loadDashboardURL() {
+        guard let url = normalizedURL(from: dashboardURLString) else { return }
         activeWorkspace.urlString = url.absoluteString
         deckStore.persistURLStringIfNeeded(for: activeWorkspace)
         activeWorkspace.store.load(url)

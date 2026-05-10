@@ -211,11 +211,7 @@ struct WorkspaceSidebar: View {
                     }
                     .buttonStyle(.plain)
                     .listRowInsets(EdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10))
-                    .listRowBackground(
-                        selection == section
-                            ? AnyView(HermesLiquidGlassBackground(cornerRadius: 14, tint: .igActionBlue.opacity(0.18), interactive: true))
-                            : AnyView(Color.clear)
-                    )
+                    .listRowBackground(Color.clear)
                     .listRowSeparatorTint(.hermesDivider.opacity(0.4))
                 }
                 .listStyle(.sidebar)

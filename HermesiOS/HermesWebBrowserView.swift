@@ -5,6 +5,7 @@
 
 import Combine
 import SwiftUI
+import UIKit
 import WebKit
 
 struct HermesWebBrowserView: View {
@@ -126,10 +127,8 @@ struct HermesWebBrowserView: View {
                     Button {
                         deckStore.selectWorkspace(id: workspace.id)
                     } label: {
-                        Text("\(workspace.number)")
-                            .font(.subheadline.weight(.bold))
-                            .monospacedDigit()
-                            .frame(minWidth: 32, minHeight: 32)
+                        HermesWebWorkspaceIcon(workspace: workspace)
+                            .frame(width: 32, height: 32)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(deckStore.selectedWorkspaceID == workspace.id ? .white : .primary)
@@ -243,6 +242,27 @@ struct HermesWebBrowserView: View {
         }
 
         return URL(string: "https://\(trimmed)")
+    }
+}
+
+private struct HermesWebWorkspaceIcon: View {
+    @ObservedObject var workspace: HermesWebBrowserWorkspace
+
+    var body: some View {
+        Group {
+            if let faviconImage = workspace.store.faviconImage {
+                Image(uiImage: faviconImage)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            } else {
+                Image(systemName: "safari")
+                    .font(.headline.weight(.semibold))
+                    .symbolRenderingMode(.hierarchical)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .frame(width: 32, height: 32)
     }
 }
 
@@ -434,10 +454,13 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
     @Published private(set) var canGoBack = false
     @Published private(set) var currentURL: URL?
     @Published private(set) var isLoading = false
+    @Published private(set) var faviconImage: UIImage?
     var rootURLHandler: ((URL) -> Void)?
     var pageURLHandler: ((URL) -> Void)?
 
     let webView: WKWebView
+    private var faviconTask: Task<Void, Never>?
+    private var faviconPageString: String?
 
     override init() {
         let configuration = WKWebViewConfiguration()
@@ -457,6 +480,7 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
     func load(_ url: URL) {
         currentURL = url
         isLoading = true
+        clearFaviconIfPageChanged(to: url)
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         webView.load(request)
         refreshNavigationState()
@@ -477,11 +501,17 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         isLoading = true
         refreshNavigationState()
+        if let currentURL {
+            clearFaviconIfPageChanged(to: currentURL)
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isLoading = false
         refreshNavigationState()
+        if let currentURL {
+            loadFavicon(for: currentURL)
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -502,6 +532,94 @@ final class HermesWebBrowserStore: NSObject, ObservableObject, WKNavigationDeleg
             pageURLHandler?(currentURL)
         }
     }
+
+    private func clearFaviconIfPageChanged(to url: URL) {
+        let pageString = url.absoluteString
+        guard faviconPageString != pageString else { return }
+        faviconTask?.cancel()
+        faviconTask = nil
+        faviconPageString = pageString
+        faviconImage = nil
+    }
+
+    private func loadFavicon(for pageURL: URL) {
+        guard let scheme = pageURL.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
+            faviconImage = nil
+            faviconPageString = nil
+            return
+        }
+
+        let pageString = pageURL.absoluteString
+        faviconPageString = pageString
+        faviconTask?.cancel()
+        faviconTask = Task { [weak self] in
+            guard let self else { return }
+            let candidateURLs = await self.faviconCandidateURLs(for: pageURL)
+            for iconURL in candidateURLs {
+                if Task.isCancelled { return }
+                if let image = await Self.downloadFavicon(from: iconURL) {
+                    await MainActor.run {
+                        guard self.faviconPageString == pageString else { return }
+                        self.faviconImage = image
+                    }
+                    return
+                }
+            }
+            await MainActor.run {
+                guard self.faviconPageString == pageString else { return }
+                self.faviconImage = nil
+            }
+        }
+    }
+
+    private func faviconCandidateURLs(for pageURL: URL) async -> [URL] {
+        let script = """
+        (() => {
+            const selectors = [
+                'link[rel~="icon"]',
+                'link[rel="shortcut icon"]',
+                'link[rel="apple-touch-icon"]',
+                'link[rel="apple-touch-icon-precomposed"]'
+            ];
+            for (const selector of selectors) {
+                const link = document.querySelector(selector);
+                if (link && link.href) { return link.href; }
+            }
+            return null;
+        })()
+        """
+
+        var urls: [URL] = []
+        if let href = try? await webView.evaluateJavaScript(script) as? String,
+           let faviconURL = URL(string: href),
+           ["http", "https"].contains(faviconURL.scheme?.lowercased() ?? "") {
+            urls.append(faviconURL)
+        }
+
+        if let rootFaviconURL = Self.rootFaviconURL(for: pageURL), urls.contains(rootFaviconURL) == false {
+            urls.append(rootFaviconURL)
+        }
+        return urls
+    }
+
+    private static func rootFaviconURL(for pageURL: URL) -> URL? {
+        var components = URLComponents()
+        components.scheme = pageURL.scheme
+        components.host = pageURL.host
+        components.port = pageURL.port
+        components.path = "/favicon.ico"
+        return components.url
+    }
+
+    private static func downloadFavicon(from url: URL) async -> UIImage? {
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode),
+              let image = UIImage(data: data) else {
+            return nil
+        }
+        return image
+    }
 }
 
 private struct HermesWebView: UIViewRepresentable {
@@ -513,3 +631,4 @@ private struct HermesWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 }
+

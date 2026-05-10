@@ -38,7 +38,8 @@ final class HermesStatusMonitor {
     var isAPIProbeActive = false
     var isCompanionProbeActive = false
 
-    private let refreshInterval: Duration = .seconds(10)
+    private let normalRefreshInterval: Duration = .seconds(60)
+    private let apiRecoveryRefreshInterval: Duration = .seconds(2)
 
     func runStatusLoop(
         apiSettings: HermesAPISettings,
@@ -52,8 +53,12 @@ final class HermesStatusMonitor {
                 identityState: identityState
             )
 
+            let nextRefreshInterval = apiServerStatus == .down
+                ? apiRecoveryRefreshInterval
+                : normalRefreshInterval
+
             do {
-                try await Task.sleep(for: refreshInterval)
+                try await Task.sleep(for: nextRefreshInterval)
             } catch {
                 return
             }

@@ -7,19 +7,22 @@ import Combine
 import SwiftUI
 import WebKit
 
-let defaultHermesOfficeURL = "http://localhost:9116"
-let hermesOfficeURLStorageKey = "hermes.office.url"
+let defaultHermesOfficeURL = HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesOfficePort)
 let hermesOfficeWebViewEnabledStorageKey = "hermes.office.webView.enabled"
 
 struct HermesOfficeView: View {
-    @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
+    @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
+    @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @AppStorage(hermesOfficeWebViewEnabledStorageKey) private var isOfficeWebViewEnabled = true
     @ObservedObject var webViewStore: HermesOfficeWebViewStore
     @Binding var reloadID: UUID
 
+    private var officeURLString: String {
+        HermesHostEndpoints.httpURLString(host: macHost, port: officePort)
+    }
+
     private var officeURL: URL? {
-        let trimmedURL = officeURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        return URL(string: trimmedURL)
+        URL(string: officeURLString)
     }
 
     var body: some View {
@@ -106,8 +109,13 @@ struct HermesOfficeView: View {
 }
 
 struct HermesOfficeSettingsSection: View {
-    @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
+    @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
+    @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @State private var officeReturnsHTTP200 = false
+
+    private var officeURLString: String {
+        HermesHostEndpoints.httpURLString(host: macHost, port: officePort)
+    }
 
     var body: some View {
         Section("Office") {
@@ -117,14 +125,14 @@ struct HermesOfficeSettingsSection: View {
                     label: officeReturnsHTTP200 ? "Office URL returns HTTP 200" : "Office URL does not return HTTP 200"
                 )
 
-                TextField("URL, e.g. http://localhost:9116", text: $officeURLString)
-                    .keyboardType(.URL)
+                TextField("TCP port, e.g. 9116", text: $officePort)
+                    .keyboardType(.numberPad)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .hermesRuntimeInput()
             }
 
-            Text("The Office tab opens this URL in an embedded WebView. Use http://localhost:9116 for the iOS Simulator on the Mac, or a reachable HTTPS/Tailscale URL when running on a physical device.")
+            Text("Office URL: \(officeURLString)")
                 .font(.caption)
                 .foregroundStyle(.hermesSecondaryText)
         }

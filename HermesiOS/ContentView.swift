@@ -17,7 +17,8 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
-    @AppStorage(hermesOfficeURLStorageKey) private var officeURLString = defaultHermesOfficeURL
+    @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
+    @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @AppStorage(hermesOfficeWebViewEnabledStorageKey) private var isOfficeWebViewEnabled = true
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
@@ -207,6 +208,10 @@ struct ContentView: View {
 
     private var statusLoopKey: String {
         statusRefreshKey + "|scenePhase=\(scenePhase)|splash=\(isShowingSplash)"
+    }
+
+    private var officeURLString: String {
+        HermesHostEndpoints.httpURLString(host: macHost, port: officePort)
     }
 
     private var officePreloadKey: String {

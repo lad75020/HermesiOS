@@ -14,7 +14,8 @@ struct HermesHistoryView: View {
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
     let onResumeChat: (HermesDashboardConversationResult) -> Void
 
-    @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
+    @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
+    @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @State private var expandedConversationIDs: Set<String> = []
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedProfileFilter = "all"
@@ -170,6 +171,10 @@ struct HermesHistoryView: View {
         expandedConversationIDs.removeAll()
         let limit = selectedProfileFilter == "all" ? 25 : 100
         searchSession.search(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profileFilter: selectedProfileFilter, limit: limit)
+    }
+
+    private var dashboardURL: String {
+        HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
     }
 
     private var profileFilterOptions: [HermesHistoryProfileFilterOption] {

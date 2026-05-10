@@ -17,9 +17,15 @@ struct HermesUtilitiesView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @AppStorage("hermes.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
+    @AppStorage("hermes.utilities.fileDownloaderExpanded") private var isFileDownloaderExpanded = false
     @AppStorage("hermes.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @AppStorage("hermes.utilities.supermemoryManagementExpanded") private var isSupermemoryManagementExpanded = false
     @State private var statusMessage = "Monitoring the iOS clipboard while HermesiOS is active."
+    @State private var isFileDownloaderFolderImporterPresented = false
+    @State private var selectedDownloadFolderURL: URL?
+    @State private var macFilePath = ""
+    @State private var fileDownloaderStatus = "Pick an iOS Files folder, enter a full macOS file path, then download."
+    @State private var isDownloadingFile = false
 
     var body: some View {
         ScrollView {
@@ -49,6 +55,21 @@ struct HermesUtilitiesView: View {
                             Spacer(minLength: 0)
                         }
                         .contentShape(Rectangle())
+                    }
+                    .tint(.igActionBlue)
+
+                    Divider()
+                        .overlay(Color.hermesDivider.opacity(0.5))
+                        .padding(.vertical, 4)
+
+                    DisclosureGroup(isExpanded: $isFileDownloaderExpanded) {
+                        fileDownloaderContent
+                    } label: {
+                        utilityDisclosureLabel(
+                            title: "File Downloader",
+                            subtitle: fileDownloaderSubtitle,
+                            systemImage: "folder.badge.arrow.down"
+                        )
                     }
                     .tint(.igActionBlue)
 
@@ -108,6 +129,13 @@ struct HermesUtilitiesView: View {
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .fileImporter(
+            isPresented: $isFileDownloaderFolderImporterPresented,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            handleFileDownloaderFolderImport(result)
+        }
         .onAppear {
             clipboardHistory.captureCurrentPasteboardIfNeeded()
         }
@@ -119,6 +147,7 @@ struct HermesUtilitiesView: View {
 
     private func collapseAllUtilitySections() {
         isClipboardHistoryExpanded = false
+        isFileDownloaderExpanded = false
         isDebuggingExpanded = false
         isSupermemoryManagementExpanded = false
     }
@@ -134,6 +163,13 @@ struct HermesUtilitiesView: View {
             return "Last export: \(result.exportedCount) documents"
         }
         return "Export Supermemory deltas and import them into Hermes files"
+    }
+
+    private var fileDownloaderSubtitle: String {
+        if let folderName = selectedDownloadFolderURL?.lastPathComponent, folderName.isEmpty == false {
+            return "Save macOS files into \(folderName)"
+        }
+        return "Download a Mac file into an iOS Files folder"
     }
 
     private func utilityDisclosureLabel(title: String, subtitle: String, systemImage: String) -> some View {
@@ -157,6 +193,157 @@ struct HermesUtilitiesView: View {
         }
         .contentShape(Rectangle())
     }
+
+    private var fileDownloaderContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Choose a destination folder from the iOS Files app, then ask the enrolled Mac companion to read a full macOS file path and return it over the WebSocket.")
+                .font(.subheadline)
+                .foregroundStyle(.hermesSecondaryText)
+
+            HStack(spacing: 10) {
+                Button {
+                    isFileDownloaderFolderImporterPresented = true
+                } label: {
+                    Label("Pick iOS Folder", systemImage: "folder")
+                }
+                .hermesGlassButton()
+
+                if let selectedDownloadFolderURL {
+                    Text(selectedDownloadFolderURL.lastPathComponent)
+                        .font(.igSecondaryMeta)
+                        .foregroundStyle(.hermesSecondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                } else {
+                    Text("No destination folder selected")
+                        .font(.igSecondaryMeta)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+            }
+
+            TextField("/Users/laurent/Downloads/example.zip", text: $macFilePath)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.body.monospaced())
+                .padding(12)
+                .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .textSelection(.enabled)
+
+            HStack(spacing: 10) {
+                Button {
+                    downloadFileFromMac()
+                } label: {
+                    Label(isDownloadingFile ? "Downloading…" : "Download", systemImage: "arrow.down.doc")
+                }
+                .hermesGlassButton()
+                .disabled(!canDownloadFile)
+
+                if isDownloadingFile {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            Text(fileDownloaderStatus)
+                .font(.igSecondaryMeta)
+                .foregroundStyle(fileDownloaderStatus.hasPrefix("Saved") ? .igOnlineGreen : .hermesSecondaryText)
+                .textSelection(.enabled)
+        }
+        .padding(.top, 12)
+    }
+
+    private var canDownloadFile: Bool {
+        companionEnrollment.identityState.isEnrolled
+            && selectedDownloadFolderURL != nil
+            && macFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && !isDownloadingFile
+            && !companionRuntime.isBusy
+    }
+
+    private func handleFileDownloaderFolderImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            selectedDownloadFolderURL = url
+            fileDownloaderStatus = "Destination folder selected: \(url.lastPathComponent)."
+        } catch {
+            fileDownloaderStatus = error.localizedDescription
+        }
+    }
+
+    private func downloadFileFromMac() {
+        guard let folderURL = selectedDownloadFolderURL else {
+            fileDownloaderStatus = "Pick an iOS destination folder first."
+            return
+        }
+        let path = macFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard path.isEmpty == false else {
+            fileDownloaderStatus = "Enter a full macOS file path."
+            return
+        }
+
+        Task { @MainActor in
+            isDownloadingFile = true
+            fileDownloaderStatus = "Downloading from Mac…"
+            companionRuntime.connectionStatus = "Downloading File"
+            companionRuntime.lastErrorMessage = ""
+            defer { isDownloadingFile = false }
+
+            do {
+                let result: HermesCompanionFileDownloadResult = try await HermesCompanionSessionFactory.request(
+                    settings: companionSettings,
+                    state: companionEnrollment.identityState,
+                    type: "download_file",
+                    payload: HermesCompanionFileDownloadPayload(path: path)
+                )
+                guard let data = Data(base64Encoded: result.base64Data) else {
+                    throw HermesFileDownloaderError.invalidPayload
+                }
+                let savedURL = try saveDownloadedFile(data, fileName: result.fileName, in: folderURL)
+                fileDownloaderStatus = "Saved \(savedURL.lastPathComponent) (\(Self.byteCountFormatter.string(fromByteCount: Int64(data.count)))) to \(folderURL.lastPathComponent)."
+                companionRuntime.connectionStatus = "File Downloaded"
+            } catch {
+                fileDownloaderStatus = error.localizedDescription
+                companionRuntime.lastErrorMessage = error.localizedDescription
+                companionRuntime.connectionStatus = "Download Failed"
+            }
+        }
+    }
+
+    private func saveDownloadedFile(_ data: Data, fileName: String, in folderURL: URL) throws -> URL {
+        let didAccess = folderURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { folderURL.stopAccessingSecurityScopedResource() }
+        }
+
+        var destinationURL = folderURL.appendingPathComponent(fileName.isEmpty ? "downloaded-file" : fileName, isDirectory: false)
+        destinationURL = uniqueFileURL(for: destinationURL)
+        try data.write(to: destinationURL, options: [.atomic])
+        return destinationURL
+    }
+
+    private func uniqueFileURL(for url: URL) -> URL {
+        guard FileManager.default.fileExists(atPath: url.path) else { return url }
+        let directory = url.deletingLastPathComponent()
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let pathExtension = url.pathExtension
+
+        for index in 1...999 {
+            let candidateName = pathExtension.isEmpty ? "\(baseName)-\(index)" : "\(baseName)-\(index).\(pathExtension)"
+            let candidateURL = directory.appendingPathComponent(candidateName, isDirectory: false)
+            if !FileManager.default.fileExists(atPath: candidateURL.path) {
+                return candidateURL
+            }
+        }
+        return directory.appendingPathComponent(UUID().uuidString + (pathExtension.isEmpty ? "" : ".\(pathExtension)"), isDirectory: false)
+    }
+
+    private static let byteCountFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter
+    }()
 
     private var supermemoryManagementContent: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -268,6 +455,17 @@ struct HermesUtilitiesView: View {
             }
         }
         .padding(.top, 12)
+    }
+}
+
+private enum HermesFileDownloaderError: LocalizedError {
+    case invalidPayload
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidPayload:
+            return "The Mac companion returned an invalid file payload."
+        }
     }
 }
 
@@ -562,3 +760,4 @@ struct HermesClipboardHistoryEntry: Identifiable, Codable, Equatable {
         }
     }
 }
+

@@ -14,7 +14,11 @@ struct HermesSettingsView: View {
     @Binding var appTheme: HermesAppTheme
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
-    @AppStorage("hermes.history.dashboardURL") private var dashboardURL = ""
+    @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
+    @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
+    @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
+    @AppStorage("hermes.history.dashboardURL") private var legacyDashboardURL = ""
+    @AppStorage("hermes.office.url") private var legacyOfficeURL = ""
 
     private let macServices: [HermesSettingsMacService] = [
         .init(id: "hermes-dashboard", title: "Hermes Dashboard", subtitle: "Host-rewriting dashboard proxy", icon: "rectangle.on.rectangle.angled"),
@@ -28,6 +32,18 @@ struct HermesSettingsView: View {
                 .padding(.top)
 
             Form {
+                Section("Mac host") {
+                    TextField("Hostname or IP, e.g. mac-studio.tail4d2ab4.ts.net", text: $macHost)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+
+                    Text("Used with the service TCP ports below to build the HTTP and WebSocket URLs.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+
                 Section("Appearance") {
                     Picker("App Theme", selection: $appTheme) {
                         ForEach(HermesAppTheme.allCases) { theme in
@@ -39,11 +55,13 @@ struct HermesSettingsView: View {
                 }
 
                 Section("Dashboard") {
-                    TextField("URL, e.g. https://hermes-mac.example.ts.net", text: $dashboardURL)
-                        .keyboardType(.URL)
+                    TextField("TCP port, e.g. 9120", text: $dashboardPort)
+                        .keyboardType(.numberPad)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .hermesRuntimeInput()
+
+                    settingsRow(label: "Dashboard URL", value: dashboardURL)
                 }
 
                 Section("Mac Services") {
@@ -92,7 +110,8 @@ struct HermesSettingsView: View {
                 HermesOfficeSettingsSection()
 
                 Section("Gateway") {
-                TextField("Base URL", text: $apiSettings.baseURL)
+                TextField("TCP port", text: apiPortBinding)
+                    .keyboardType(.numberPad)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
 
@@ -100,6 +119,7 @@ struct HermesSettingsView: View {
 
                 Toggle("Allow self-signed HTTPS certificates", isOn: $apiSettings.allowSelfSignedCertificates)
 
+                settingsRow(label: "Base URL", value: apiSettings.baseURL)
                 settingsRow(label: "Responses URL", value: HermesAPISettings.responseURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
                 settingsRow(label: "Chat URL", value: HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
 
@@ -129,29 +149,31 @@ struct HermesSettingsView: View {
                 }
 
                 Section("Host Companion") {
-                TextField("API URL", text: $companionSettings.apiURL)
+                TextField("TCP port", text: companionPortBinding)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .keyboardType(.URL)
+                    .keyboardType(.numberPad)
+
+                settingsRow(label: "WebSocket URL", value: companionSettings.apiURL)
 
                 HStack(alignment: .center, spacing: 10) {
                     HermesSettingsStatusLED(
                         isOn: companionEnrollment.identityState.isEnrolled,
-                        label: companionEnrollment.identityState.isEnrolled ? "Token valid" : "Token invalid"
+                        label: companionEnrollment.identityState.isEnrolled ? "API key valid" : "API key invalid"
                     )
 
-                    SecureField("4096-character token", text: $companionSettings.authenticationToken)
+                    SecureField("256-character API key", text: $companionSettings.authenticationToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
 
-                    Button(companionEnrollment.identityState.isEnrolled ? "Verify Token Again" : "Verify Token") {
+                    Button(companionEnrollment.identityState.isEnrolled ? "Verify API Key Again" : "Verify API Key") {
                         companionEnrollment.enroll(settings: companionSettings)
                     }
                     .hermesGlassProminentButton()
                     .disabled(
                         companionEnrollment.isEnrolling ||
                         companionSettings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                        companionSettings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines).count != 4096
+                        companionSettings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines).count != HermesCompanionSessionFactory.expectedAPIKeyLength
                     )
                 }
 
@@ -337,6 +359,53 @@ struct HermesSettingsView: View {
                 settings: companionSettings,
                 identityState: companionEnrollment.identityState
             )
+        }
+        .onAppear {
+            migrateLegacyURLPortsIfNeeded()
+            applyMacHostToServiceURLs()
+        }
+        .onChange(of: macHost) { _, _ in
+            applyMacHostToServiceURLs()
+        }
+    }
+
+    private var apiPortBinding: Binding<String> {
+        Binding(
+            get: { HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort) },
+            set: { newPort in
+                apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: macHost, port: newPort, path: "/v1")
+            }
+        )
+    }
+
+    private var companionPortBinding: Binding<String> {
+        Binding(
+            get: { HermesHostEndpoints.tcpPort(from: companionSettings.apiURL, fallback: defaultHermesCompanionPort) },
+            set: { newPort in
+                companionSettings.apiURL = HermesHostEndpoints.webSocketURLString(host: macHost, port: newPort)
+            }
+        )
+    }
+
+    private var dashboardURL: String {
+        HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
+    }
+
+    private func applyMacHostToServiceURLs() {
+        apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: macHost, port: apiPortBinding.wrappedValue, path: "/v1")
+        companionSettings.apiURL = HermesHostEndpoints.webSocketURLString(host: macHost, port: companionPortBinding.wrappedValue)
+        dashboardPort = HermesHostEndpoints.tcpPort(from: dashboardPort, fallback: defaultHermesDashboardPort)
+        officePort = HermesHostEndpoints.tcpPort(from: officePort, fallback: defaultHermesOfficePort)
+    }
+
+    private func migrateLegacyURLPortsIfNeeded() {
+        if !legacyDashboardURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            dashboardPort = HermesHostEndpoints.tcpPort(from: legacyDashboardURL, fallback: dashboardPort)
+            legacyDashboardURL = ""
+        }
+        if !legacyOfficeURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            officePort = HermesHostEndpoints.tcpPort(from: legacyOfficeURL, fallback: officePort)
+            legacyOfficeURL = ""
         }
     }
 

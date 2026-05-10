@@ -195,6 +195,7 @@ final class CompanionClientSession {
     private let gatewayRegistry = CompanionGatewayRegistry()
     private let gitRegistry = CompanionGitRegistry()
     private let knowledgeEraserRegistry = CompanionKnowledgeEraserRegistry()
+    private let fileDownloadRegistry = CompanionFileDownloadRegistry()
     private let authenticationToken: String
 
     init(connection: NWConnection, authenticationToken: String) {
@@ -251,7 +252,7 @@ final class CompanionClientSession {
                 if request.authenticationToken == self.authenticationToken {
                     response = self.route(request: request)
                 } else {
-                    response = .error(id: request.id, code: "invalid_token", message: "The Host Companion authentication token is invalid.")
+                    response = .error(id: request.id, code: "invalid_token", message: "The Host Companion API key is invalid.")
                 }
                 let responseData = try self.encoder.encode(response)
                 self.send(responseData)
@@ -294,6 +295,7 @@ final class CompanionClientSession {
                         "write_target",
                         "list_backups",
                         "restore_backup",
+                        "download_file",
                         "service_status",
                         "service_start",
                         "service_stop",
@@ -428,6 +430,17 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "restore_backup_failed", message: error.localizedDescription)
+            }
+        case "download_file":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The download_file request requires a payload.")
+                }
+                let downloadPayload = try payload.decode(FileDownloadPayload.self)
+                let result = try fileDownloadRegistry.downloadFile(path: downloadPayload.path)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "download_file_failed", message: error.localizedDescription)
             }
         case "service_status":
             do {
@@ -1002,6 +1015,7 @@ final class CompanionClientSession {
 
 final class CompanionAuthenticationTokenStore {
     static let shared = CompanionAuthenticationTokenStore()
+    static let apiKeyLength = 256
 
     private let defaults = UserDefaults.standard
     private let tokenKey = "companion.authentication.token"
@@ -1011,7 +1025,7 @@ final class CompanionAuthenticationTokenStore {
 
     var token: String {
         let existing = defaults.string(forKey: tokenKey) ?? ""
-        guard existing.count == 4096 else {
+        guard existing.count == Self.apiKeyLength else {
             return regenerateToken()
         }
         return existing
@@ -1019,10 +1033,10 @@ final class CompanionAuthenticationTokenStore {
 
     @discardableResult
     func regenerateToken() -> String {
-        var randomBytes = [UInt8](repeating: 0, count: 4096)
+        var randomBytes = [UInt8](repeating: 0, count: Self.apiKeyLength)
         let status = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
         if status != errSecSuccess {
-            randomBytes = (0..<4096).map { _ in UInt8.random(in: 0...255) }
+            randomBytes = (0..<Self.apiKeyLength).map { _ in UInt8.random(in: 0...255) }
         }
         let token = String(randomBytes.map { alphabet[Int($0) % alphabet.count] })
         defaults.set(token, forKey: tokenKey)

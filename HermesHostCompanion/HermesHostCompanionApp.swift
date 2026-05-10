@@ -31,7 +31,7 @@ private struct HermesHostCompanionRootView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Hermes Host Companion")
                         .font(.largeTitle.bold())
-                    Text("Minimal V1 companion daemon shell for plain HTTP WebSocket access protected by one 4096-character token.")
+                    Text("Minimal V1 companion daemon shell for plain HTTP WebSocket access protected by one 256-character API key.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -81,33 +81,44 @@ private struct HermesHostCompanionRootView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Authentication")
                             .font(.headline)
-                        Text("The companion uses a single 4096-character token over plain HTTP WebSocket. Copy this token into HermesiOS settings. No TLS, certificates, QR codes, enrollment ports, pairing IDs, or CA material are used.")
+                        Text("The companion uses a single 256-character API key over plain HTTP WebSocket. Copy this key into HermesiOS settings. No TLS, certificates, QR codes, enrollment ports, pairing IDs, or CA material are used.")
                             .foregroundStyle(.secondary)
 
                         statusRow("API URL", controller.apiURL)
 
-                        Text("Token")
+                        Text("API Key")
                             .font(.subheadline.bold())
-                        Text(controller.authenticationToken)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                            .lineLimit(6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(controller.authenticationToken)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                                .lineLimit(6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Button {
+                                controller.copyAuthenticationToken()
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .accessibilityLabel("Copy API key")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Copy API key")
+                        }
 
                         HStack {
-                            Button("Regenerate 4096-character Token", role: .destructive) {
+                            Button("Regenerate 256-character API Key", role: .destructive) {
                                 controller.regenerateToken()
                             }
                             .buttonStyle(.borderedProminent)
 
-                            Text("Regenerating invalidates every iOS device until the new token is copied into settings.")
+                            Text("Regenerating invalidates every iOS device until the new API key is copied into settings.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } label: {
-                    Label("Token Authentication", systemImage: "key")
+                    Label("API Key Authentication", systemImage: "key")
                 }
 
                 HStack {
@@ -189,6 +200,12 @@ final class CompanionServerController {
 
     func stopServer() {
         server.stop()
+    }
+
+    func copyAuthenticationToken() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(authenticationToken, forType: .string)
     }
 
     func regenerateToken() {

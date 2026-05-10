@@ -51,7 +51,7 @@ struct HermesCompanionPanel: View {
                 ContentUnavailableView(
                     "Authentication Required",
                     systemImage: "person.badge.key",
-                    description: Text("Use Settings → Host Companion to authenticate this iOS device with the host token before attempting host configuration changes.")
+                    description: Text("Use Settings → Host Companion to authenticate this iOS device with the host API key before attempting host configuration changes.")
                 )
             } else {
                 HermesStatusRow(

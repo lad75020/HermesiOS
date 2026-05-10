@@ -138,6 +138,18 @@ struct ServiceStatusPayload: Codable {
     let serviceID: String
 }
 
+struct FileDownloadPayload: Codable {
+    let path: String
+}
+
+struct FileDownloadResult: Codable {
+    let path: String
+    let fileName: String
+    let byteCount: Int
+    let contentType: String
+    let base64Data: String
+}
+
 struct ServiceStatusResult: Codable {
     let serviceID: String
     let status: CompanionManagedServiceStatus

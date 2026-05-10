@@ -265,7 +265,7 @@ struct HermesProvidersPanel: View {
 
                 HermesSectionCard("Environment") {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Edits the same provider and tool API keys as desktop Providers, writing to `.env` on the macOS host via the token-authenticated WebSocket companion.")
+                        Text("Edits the same provider and tool API keys as desktop Providers, writing to `.env` on the macOS host via the API-key-authenticated WebSocket companion.")
                             .font(.subheadline)
                             .foregroundStyle(.hermesSecondaryText)
                         companionSummaryRow(label: "Env File", value: companionRuntime.providerEnvFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/.env" : companionRuntime.providerEnvFilePath)

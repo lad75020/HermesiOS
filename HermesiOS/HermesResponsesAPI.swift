@@ -826,7 +826,7 @@ struct HermesResponseMessage: Identifiable {
 }
 
 struct HermesAPISettings: Codable, Equatable {
-    var baseURL = "http://127.0.0.1:8642/v1"
+    var baseURL = HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesAPIPort, path: "/v1")
     var apiKey = ""
     var allowSelfSignedCertificates = false
 

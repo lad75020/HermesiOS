@@ -9,7 +9,7 @@ import Foundation
 import Observation
 
 struct HermesCompanionSettings: Codable, Equatable {
-    var apiURL = "ws://127.0.0.1:9112/ws"
+    var apiURL = HermesHostEndpoints.webSocketURLString(host: defaultHermesMacHost, port: defaultHermesCompanionPort)
     var authenticationToken = ""
     var hermesWorkspacePath = "/Volumes/WDBlack4TB/Code/HermesiOS/.hermes"
 }
@@ -116,6 +116,18 @@ struct HermesCompanionWriteTargetResult: Codable {
 
 struct HermesCompanionServiceStatusPayload: Codable {
     let serviceID: String
+}
+
+struct HermesCompanionFileDownloadPayload: Codable {
+    let path: String
+}
+
+struct HermesCompanionFileDownloadResult: Codable {
+    let path: String
+    let fileName: String
+    let byteCount: Int
+    let contentType: String
+    let base64Data: String
 }
 
 struct HermesCompanionServiceStatusResult: Codable, Equatable {
@@ -1083,11 +1095,11 @@ enum HermesCompanionClientError: LocalizedError {
         case .missingPayload:
             "The companion authentication response did not include a payload."
         case .missingAuthenticationToken:
-            "Enter the 4096-character Host Companion token before verifying the connection."
+            "Enter the 256-character Host Companion API key before verifying the connection."
         case .invalidAuthenticationTokenLength:
-            "The Host Companion token must be exactly 4096 characters."
+            "The Host Companion API key must be exactly 256 characters."
         case .notEnrolled:
-            "Verify the Host Companion token before using runtime controls."
+            "Verify the Host Companion API key before using runtime controls."
         }
     }
 }
@@ -1133,7 +1145,7 @@ final class HermesCompanionEnrollmentSession {
             connectionStatus = "Authentication Failed"
             return
         }
-        guard token.count == 4096 else {
+        guard token.count == HermesCompanionSessionFactory.expectedAPIKeyLength else {
             lastErrorMessage = HermesCompanionClientError.invalidAuthenticationTokenLength.localizedDescription
             connectionStatus = "Authentication Failed"
             return
@@ -2881,6 +2893,8 @@ final class HermesCompanionRuntimeSession {
 }
 
 enum HermesCompanionSessionFactory {
+    static let expectedAPIKeyLength = 256
+
     static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
@@ -2951,7 +2965,7 @@ enum HermesCompanionSessionFactory {
         guard token.isEmpty == false else {
             throw HermesCompanionClientError.missingAuthenticationToken
         }
-        guard token.count == 4096 else {
+        guard token.count == HermesCompanionSessionFactory.expectedAPIKeyLength else {
             throw HermesCompanionClientError.invalidAuthenticationTokenLength
         }
         let endpoint = state.serverEndpoint.isEmpty ? settings.apiURL : state.serverEndpoint

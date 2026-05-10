@@ -22,7 +22,6 @@ enum HermesSettingsPersistence {
     private static let tokenAccount = "bearerToken"
     private static let companionService = "com.hermesios.companion"
     private static let companionTokenAccount = "authenticationToken"
-    private static let companionSSHPrivateKeyAccount = "sshPrivateKey"
 
     static func loadAPISettings() -> HermesAPISettings {
         var settings = decode(HermesAPISettings.self, from: apiSettingsKey) ?? HermesAPISettings()
@@ -108,17 +107,14 @@ enum HermesSettingsPersistence {
     static func loadCompanionSettings() -> HermesCompanionSettings {
         var settings = decode(HermesCompanionSettings.self, from: companionSettingsKey) ?? HermesCompanionSettings()
         settings.authenticationToken = loadKeychainString(service: companionService, account: companionTokenAccount)
-        settings.sshPrivateKey = loadKeychainString(service: companionService, account: companionSSHPrivateKeyAccount)
         return settings
     }
 
     static func saveCompanionSettings(_ settings: HermesCompanionSettings) {
         var persistedSettings = settings
         persistedSettings.authenticationToken = ""
-        persistedSettings.sshPrivateKey = ""
         encode(persistedSettings, to: companionSettingsKey)
         saveKeychainString(settings.authenticationToken, service: companionService, account: companionTokenAccount)
-        saveKeychainString(settings.sshPrivateKey, service: companionService, account: companionSSHPrivateKeyAccount)
     }
 
     static func loadCompanionIdentityState() -> HermesCompanionIdentityState {

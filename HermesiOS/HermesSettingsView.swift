@@ -39,39 +39,7 @@ struct HermesSettingsView: View {
                         .autocorrectionDisabled()
                         .hermesRuntimeInput()
 
-                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs. The SSH terminal utility also uses this host.")
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
-                }
-
-                Section("SSH Terminal") {
-                    TextField("SSH username", text: $companionSettings.sshUsername)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .hermesRuntimeInput()
-
-                    TextField("SSH port", text: $companionSettings.sshPort)
-                        .keyboardType(.numberPad)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .hermesRuntimeInput()
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("RSA or ED25519 private key")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.hermesSecondaryText)
-
-                        TextEditor(text: $companionSettings.sshPrivateKey)
-                            .font(.caption.monospaced())
-                            .frame(minHeight: 120)
-                            .scrollContentBackground(.hidden)
-                            .padding(8)
-                            .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                    }
-
-                    Text("Stored in Keychain. Used only by the Utilities terminal foldout; the key value is never shown in command output.")
+                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs.")
                         .font(.caption)
                         .foregroundStyle(.hermesSecondaryText)
                 }

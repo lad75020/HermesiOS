@@ -39,7 +39,7 @@ struct HermesSettingsView: View {
                         .autocorrectionDisabled()
                         .hermesRuntimeInput()
 
-                    Text("Used with the service TCP ports below to build the HTTP and WebSocket URLs.")
+                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs.")
                         .font(.caption)
                         .foregroundStyle(.hermesSecondaryText)
                 }

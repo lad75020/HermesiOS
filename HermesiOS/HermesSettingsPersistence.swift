@@ -106,10 +106,6 @@ enum HermesSettingsPersistence {
 
     static func loadCompanionSettings() -> HermesCompanionSettings {
         var settings = decode(HermesCompanionSettings.self, from: companionSettingsKey) ?? HermesCompanionSettings()
-        if var components = URLComponents(string: settings.apiURL), components.scheme?.lowercased().hasSuffix("s") == true {
-            components.scheme = String(components.scheme?.dropLast() ?? "ws")
-            settings.apiURL = components.url?.absoluteString ?? HermesCompanionSettings().apiURL
-        }
         settings.authenticationToken = loadKeychainString(service: companionService, account: companionTokenAccount)
         return settings
     }

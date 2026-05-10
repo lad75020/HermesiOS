@@ -6,7 +6,7 @@
 import Foundation
 
 let hermesMacHostStorageKey = "hermes.mac.host"
-let defaultHermesMacHost = "127.0.0.1"
+let defaultHermesMacHost = "mac-studio.tail4d2ab4.ts.net"
 
 let hermesDashboardPortStorageKey = "hermes.history.dashboard.port"
 let defaultHermesDashboardPort = "9120"
@@ -53,16 +53,16 @@ enum HermesHostEndpoints {
     }
 
     static func httpURLString(host: String, port: String, path: String = "") -> String {
-        urlString(scheme: "http", host: host, port: port, path: path)
+        urlString(scheme: "https", host: host, port: port, path: path)
     }
 
     static func webSocketURLString(host: String, port: String, path: String = "/ws") -> String {
-        urlString(scheme: "ws", host: host, port: port, path: path)
+        urlString(scheme: "wss", host: host, port: port, path: path)
     }
 
     private static func urlString(scheme: String, host: String, port: String, path: String) -> String {
         let normalizedHost = normalizedHost(host)
-        let normalizedPort = tcpPort(from: port, fallback: scheme == "ws" ? defaultHermesCompanionPort : defaultHermesAPIPort)
+        let normalizedPort = tcpPort(from: port, fallback: scheme.hasPrefix("ws") ? defaultHermesCompanionPort : defaultHermesAPIPort)
         let normalizedPath: String
         if path.isEmpty {
             normalizedPath = ""

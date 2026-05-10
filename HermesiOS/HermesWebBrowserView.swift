@@ -147,6 +147,12 @@ struct HermesWebBrowserView: View {
             .accessibilityLabel("Open Hermes Office")
 
             if deckStore.workspaces.count > 1 {
+                Text("|")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary.opacity(0.75))
+                    .padding(.horizontal, 2)
+                    .accessibilityHidden(true)
+
                 ForEach(deckStore.workspaces) { workspace in
                     Button {
                         deckStore.selectWorkspace(id: workspace.id)

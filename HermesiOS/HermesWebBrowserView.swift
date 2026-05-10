@@ -57,8 +57,7 @@ struct HermesWebBrowserView: View {
                         .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.plain)
-                .hermesLiquidGlass(cornerRadius: 12, tint: deckStore.canCreateWorkspace ? .igActionBlue.opacity(0.16) : .hermesSurfaceInput.opacity(0.45), interactive: deckStore.canCreateWorkspace)
-                .disabled(!deckStore.canCreateWorkspace)
+                .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
                 .accessibilityLabel("Open another web view")
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -324,10 +323,6 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         return workspaces[0]
     }
 
-    var canCreateWorkspace: Bool {
-        workspaces.count < 4
-    }
-
     init() {
         let legacyURLString = UserDefaults.standard.string(forKey: "hermes.web.url") ?? "https://"
         let restoredURLStrings = Self.restoredURLStrings(fallback: legacyURLString)
@@ -346,26 +341,16 @@ final class HermesWebBrowserDeckStore: ObservableObject {
         urlString: String = "https://",
         configuration: WKWebViewConfiguration? = nil
     ) -> HermesWebBrowserWorkspace {
-        if canCreateWorkspace {
-            let nextNumber = (1...4).first { number in
-                !workspaces.contains { $0.number == number }
-            } ?? (workspaces.count + 1)
-            let workspace = HermesWebBrowserWorkspace(
-                number: nextNumber,
-                urlString: urlString,
-                configuration: configuration
-            )
-            observe(workspace)
-            workspaces.append(workspace)
-            workspaces.sort { $0.number < $1.number }
-            selectedWorkspaceID = workspace.id
-            persistOpenPages()
-            return workspace
-        }
-
-        let workspace = activeWorkspace
-        workspace.urlString = urlString
-        persistURLStringIfNeeded(for: workspace)
+        let nextNumber = (workspaces.map(\.number).max() ?? 0) + 1
+        let workspace = HermesWebBrowserWorkspace(
+            number: nextNumber,
+            urlString: urlString,
+            configuration: configuration
+        )
+        observe(workspace)
+        workspaces.append(workspace)
+        workspaces.sort { $0.number < $1.number }
+        selectedWorkspaceID = workspace.id
         persistOpenPages()
         return workspace
     }
@@ -442,7 +427,7 @@ final class HermesWebBrowserDeckStore: ObservableObject {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { $0.isEmpty == false }
         let urls = cleaned.isEmpty ? [fallback] : cleaned
-        return Array(urls.prefix(4))
+        return urls
     }
 
     private static func pageString(from url: URL) -> String? {

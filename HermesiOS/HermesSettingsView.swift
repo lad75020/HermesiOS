@@ -39,290 +39,21 @@ struct HermesSettingsView: View {
                 .padding(.top)
 
             Form {
-                Section("Mac host") {
-                    TextField("Hostname or IP, e.g. .ts.net", text: $macHost)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .hermesRuntimeInput()
-
-                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs, and as the SSH host for the Terminal tab.")
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
-                }
-
-                Section("Tailscale Serve") {
-                    if companionEnrollment.identityState.isEnrolled == false {
-                        Text("Authenticate Host Companion before controlling Tailscale Serve from iOS.")
-                            .font(.caption)
-                            .foregroundStyle(.hermesSecondaryText)
-                    }
-
-                    HStack(spacing: 12) {
-                        Picker("TCP port", selection: $selectedTailscaleServePort) {
-                            ForEach(tailscaleServePorts, id: \.self) { port in
-                                Text(tailscaleServePortLabel(port)).tag(port)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .disabled(tailscaleServePorts.isEmpty || companionRuntime.isSettingTailscaleServe)
-                        .accessibilityLabel("Tailscale Serve TCP port")
-
-                        Toggle("Serve selected port", isOn: tailscaleServeToggleBinding)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .tint(.igOnlineGreen)
-                            .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isCheckingTailscaleServe || companionRuntime.isSettingTailscaleServe)
-                            .accessibilityLabel("Tailscale Serve for port \(selectedTailscaleServePort)")
-
-                        if companionRuntime.isCheckingTailscaleServe || companionRuntime.isSettingTailscaleServe {
-                            ProgressView()
-                        }
-                    }
-
-                    Text("Runs tailscale serve --bg --https=<TCP_PORT> http://localhost:<TCP_PORT> when enabled, and tailscale serve --https=<TCP_PORT> off when disabled. The Host Companion port is intentionally excluded.")
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
-
-                    if let status = companionRuntime.tailscaleServeStatus, status.port == selectedTailscaleServePort {
-                        settingsRow(label: "Status", value: status.isEnabled ? "On" : "Off")
-                        settingsRow(label: "Last Checked", value: status.checkedAt.formatted(date: .omitted, time: .shortened))
-                    }
-
-                    let trimmedOutput = companionRuntime.tailscaleServeOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmedOutput.isEmpty {
-                        Text(trimmedOutput)
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.hermesSecondaryText)
-                            .lineLimit(5)
-                    }
-
-                    if !companionRuntime.tailscaleServeError.isEmpty {
-                        Text(companionRuntime.tailscaleServeError)
-                            .font(.caption)
-                            .foregroundStyle(.igDestructive)
-                    }
-                }
-
-                Section("Terminal") {
-                    TextField("SSH username", text: $terminalSettings.username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .hermesRuntimeInput()
-
-                    TextField("SSH port", text: $terminalSettings.port)
-                        .keyboardType(.numberPad)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .hermesRuntimeInput()
-
-                    HStack(spacing: 10) {
-                        Label(
-                            terminalSettings.hasPrivateKey ? "Private key stored in Keychain" : "No private key stored",
-                            systemImage: terminalSettings.hasPrivateKey ? "key.fill" : "key"
-                        )
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(terminalSettings.hasPrivateKey ? .igOnlineGreen : .hermesSecondaryText)
-
-                        Spacer()
-
-                        Button {
-                            isImportingTerminalPrivateKey = true
-                        } label: {
-                            Label("Choose Private Key", systemImage: "doc.badge.plus")
-                        }
-                        .hermesGlassButton()
-
-                        if terminalSettings.hasPrivateKey {
-                            Button(role: .destructive) {
-                                HermesSettingsPersistence.deleteTerminalPrivateKey()
-                                terminalSettings.hasPrivateKey = false
-                                terminalPrivateKeyStatus = "Private key removed from Keychain."
-                            } label: {
-                                Label("Remove", systemImage: "trash")
-                            }
-                            .hermesGlassButton()
-                        }
-                    }
-
-                    Text("The selected key file is imported into Keychain and is not stored in Settings. Terminal connections require Face ID to retrieve it.")
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
-
-                    if !terminalPrivateKeyStatus.isEmpty {
-                        Text(terminalPrivateKeyStatus)
-                            .font(.caption)
-                            .foregroundStyle(terminalPrivateKeyStatus.hasPrefix("Failed") ? .igDestructive : .hermesSecondaryText)
-                    }
-                }
-
-                Section("Appearance") {
-                    Picker("App Theme", selection: $appTheme) {
-                        ForEach(HermesAppTheme.allCases) { theme in
-                            Text(theme.title).tag(theme)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                }
-
-                Section("Tabs") {
-                    Toggle("Hermes Agent Runtime", isOn: $isRuntimeTabEnabled)
-
-                    Text("Off by default. Enable only when you need the runtime management panels in the tab bar and iPad sidebar.")
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
-                }
-
-                Section("Dashboard") {
-                    TextField("TCP port, e.g. 9120", text: $dashboardPort)
-                        .keyboardType(.numberPad)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .hermesRuntimeInput()
-
-                    settingsRow(label: "Dashboard URL", value: dashboardURL)
-                }
-
-                Section("Mac Services") {
-                    if companionEnrollment.identityState.isEnrolled == false {
-                        Text("Authenticate Host Companion before controlling Mac services from iOS.")
-                            .font(.caption)
-                            .foregroundStyle(.hermesSecondaryText)
-                    }
-
-                    ForEach(macServices) { service in
-                        HermesSettingsMacServiceRow(
-                            service: service,
-                            status: companionRuntime.macServiceStatuses[service.id]?.status,
-                            output: companionRuntime.macServiceOutputs[service.id] ?? "",
-                            isEnabled: companionEnrollment.identityState.isEnrolled && !companionRuntime.isBusy,
-                            onStart: {
-                                companionRuntime.startMacService(
-                                    service.id,
-                                    settings: companionSettings,
-                                    identityState: companionEnrollment.identityState
-                                )
-                            },
-                            onStop: {
-                                companionRuntime.stopMacService(
-                                    service.id,
-                                    settings: companionSettings,
-                                    identityState: companionEnrollment.identityState
-                                )
-                            }
-                        )
-                    }
-
-                    Button {
-                        companionRuntime.refreshMacServices(
-                            macServices.map(\.id),
-                            settings: companionSettings,
-                            identityState: companionEnrollment.identityState
-                        )
-                    } label: {
-                        Label("Refresh Service Status", systemImage: "arrow.clockwise")
-                    }
-                    .hermesGlassButton()
-                    .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isBusy)
-                }
-
-                HermesOfficeSettingsSection()
-
-                Section("Gateway") {
-                TextField("TCP port", text: apiPortBinding)
-                    .keyboardType(.numberPad)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                SecureField("Bearer token", text: $apiSettings.apiKey)
-
-                Toggle("Allow self-signed HTTPS certificates", isOn: $apiSettings.allowSelfSignedCertificates)
-
-                settingsRow(label: "Base URL", value: apiSettings.baseURL)
-                settingsRow(label: "Responses URL", value: HermesAPISettings.responseURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
-                settingsRow(label: "Chat URL", value: HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Button {
-                        dashboardGatewayRestart.restart(
-                            dashboardBaseURL: dashboardURL,
-                            apiSettings: apiSettings
-                        )
-                    } label: {
-                        Label("Restart API Server", systemImage: "arrow.clockwise.circle")
-                    }
-                    .hermesGlassProminentButton()
-                    .disabled(dashboardGatewayRestart.isRestarting)
-
-                    Text("Uses the Hermes dashboard URL to POST /api/gateway/restart.")
-                        .font(.caption)
-                        .foregroundStyle(.hermesSecondaryText)
-
-                    if dashboardGatewayRestart.status != "Idle" {
-                        Text(dashboardGatewayRestart.status)
-                            .font(.caption)
-                            .foregroundStyle(.hermesSecondaryText)
-                    }
-
-                    if !dashboardGatewayRestart.lastErrorMessage.isEmpty {
-                        Text(dashboardGatewayRestart.lastErrorMessage)
-                            .font(.caption)
-                            .foregroundStyle(.igDestructive)
-                    }
-                }
-                .padding(.vertical, 4)
-                }
-
-                Section("Host Companion") {
-                TextField("TCP port", text: companionPortBinding)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.numberPad)
-
-                settingsRow(label: "WebSocket URL", value: companionSettings.apiURL)
-
-                HStack(alignment: .center, spacing: 10) {
-                    HermesSettingsStatusLED(
-                        isOn: companionAPIKeyVerified,
-                        label: companionAPIKeyVerified ? "API key verified" : "API key not verified"
-                    )
-
-                    SecureField("256-character API key", text: $companionSettings.authenticationToken)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-
-                    Button(companionAPIKeyVerified ? "Verify API Key Again" : "Verify API Key") {
-                        companionEnrollment.enroll(settings: companionSettings)
-                    }
-                    .hermesGlassProminentButton()
-                    .disabled(
-                        companionEnrollment.isEnrolling ||
-                        companionSettings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                        companionSettings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines).count != HermesCompanionSessionFactory.expectedAPIKeyLength
-                    )
-                }
-
-                Text("Paste the 256-character API key from the macOS Host Companion, then tap Verify API Key. Changing this field marks the companion as unverified until the key is verified again.")
-                    .font(.caption)
-                    .foregroundStyle(.hermesSecondaryText)
+                Section("Chat with Hermes") {
+                Toggle("Streaming enabled", isOn: $chatDraft.stream)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Hermes agent root folder")
+                    Text("Common system prompt (optional)")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.hermesSecondaryText)
 
-                    TextField("Hermes workspace path", text: $companionSettings.hermesWorkspacePath)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    TextField("System prompt", text: $chatDraft.systemPrompt, axis: .vertical)
+                        .lineLimit(4, reservesSpace: true)
+                }
                 }
 
-                if !companionEnrollment.lastErrorMessage.isEmpty {
-                    Text(companionEnrollment.lastErrorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.igDestructive)
-                }
+                Section("Ask Hermes") {
+                Toggle("Streaming enabled", isOn: $responsesDraft.stream)
                 }
 
                 Section("Hermes Installation") {
@@ -453,22 +184,289 @@ struct HermesSettingsView: View {
                     }
                 }
 
+                Section("Host Companion") {
+                TextField("TCP port", text: companionPortBinding)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.numberPad)
 
-                Section("Ask Hermes") {
-                Toggle("Streaming enabled", isOn: $responsesDraft.stream)
+                settingsRow(label: "WebSocket URL", value: companionSettings.apiURL)
+
+                HStack(alignment: .center, spacing: 10) {
+                    HermesSettingsStatusLED(
+                        isOn: companionAPIKeyVerified,
+                        label: companionAPIKeyVerified ? "API key verified" : "API key not verified"
+                    )
+
+                    SecureField("256-character API key", text: $companionSettings.authenticationToken)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    Button(companionAPIKeyVerified ? "Verify API Key Again" : "Verify API Key") {
+                        companionEnrollment.enroll(settings: companionSettings)
+                    }
+                    .hermesGlassProminentButton()
+                    .disabled(
+                        companionEnrollment.isEnrolling ||
+                        companionSettings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        companionSettings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines).count != HermesCompanionSessionFactory.expectedAPIKeyLength
+                    )
                 }
 
-                Section("Chat with Hermes") {
-                Toggle("Streaming enabled", isOn: $chatDraft.stream)
+                Text("Paste the 256-character API key from the macOS Host Companion, then tap Verify API Key. Changing this field marks the companion as unverified until the key is verified again.")
+                    .font(.caption)
+                    .foregroundStyle(.hermesSecondaryText)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Common system prompt (optional)")
+                    Text("Hermes agent root folder")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.hermesSecondaryText)
 
-                    TextField("System prompt", text: $chatDraft.systemPrompt, axis: .vertical)
-                        .lineLimit(4, reservesSpace: true)
+                    TextField("Hermes workspace path", text: $companionSettings.hermesWorkspacePath)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
+
+                if !companionEnrollment.lastErrorMessage.isEmpty {
+                    Text(companionEnrollment.lastErrorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.igDestructive)
+                }
+                }
+
+                Section("Gateway") {
+                TextField("TCP port", text: apiPortBinding)
+                    .keyboardType(.numberPad)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                SecureField("Bearer token", text: $apiSettings.apiKey)
+
+                Toggle("Allow self-signed HTTPS certificates", isOn: $apiSettings.allowSelfSignedCertificates)
+
+                settingsRow(label: "Base URL", value: apiSettings.baseURL)
+                settingsRow(label: "Responses URL", value: HermesAPISettings.responseURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
+                settingsRow(label: "Chat URL", value: HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        dashboardGatewayRestart.restart(
+                            dashboardBaseURL: dashboardURL,
+                            apiSettings: apiSettings
+                        )
+                    } label: {
+                        Label("Restart API Server", systemImage: "arrow.clockwise.circle")
+                    }
+                    .hermesGlassProminentButton()
+                    .disabled(dashboardGatewayRestart.isRestarting)
+
+                    Text("Uses the Hermes dashboard URL to POST /api/gateway/restart.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    if dashboardGatewayRestart.status != "Idle" {
+                        Text(dashboardGatewayRestart.status)
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+
+                    if !dashboardGatewayRestart.lastErrorMessage.isEmpty {
+                        Text(dashboardGatewayRestart.lastErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.igDestructive)
+                    }
+                }
+                .padding(.vertical, 4)
+                }
+
+                HermesOfficeSettingsSection()
+
+                Section("Mac Services") {
+                    if companionEnrollment.identityState.isEnrolled == false {
+                        Text("Authenticate Host Companion before controlling Mac services from iOS.")
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+
+                    ForEach(macServices) { service in
+                        HermesSettingsMacServiceRow(
+                            service: service,
+                            status: companionRuntime.macServiceStatuses[service.id]?.status,
+                            isEnabled: companionEnrollment.identityState.isEnrolled && !companionRuntime.isBusy,
+                            onStart: {
+                                companionRuntime.startMacService(
+                                    service.id,
+                                    settings: companionSettings,
+                                    identityState: companionEnrollment.identityState
+                                )
+                            },
+                            onStop: {
+                                companionRuntime.stopMacService(
+                                    service.id,
+                                    settings: companionSettings,
+                                    identityState: companionEnrollment.identityState
+                                )
+                            }
+                        )
+                    }
+
+                    Button {
+                        companionRuntime.refreshMacServices(
+                            macServices.map(\.id),
+                            settings: companionSettings,
+                            identityState: companionEnrollment.identityState
+                        )
+                    } label: {
+                        Label("Refresh Service Status", systemImage: "arrow.clockwise")
+                    }
+                    .hermesGlassButton()
+                    .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isBusy)
+                }
+
+                Section("Dashboard") {
+                    TextField("TCP port, e.g. 9120", text: $dashboardPort)
+                        .keyboardType(.numberPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+
+                    settingsRow(label: "Dashboard URL", value: dashboardURL)
+                }
+
+                Section("Tabs") {
+                    Toggle("Hermes Agent Runtime", isOn: $isRuntimeTabEnabled)
+
+                    Text("Off by default. Enable only when you need the runtime management panels in the tab bar and iPad sidebar.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+
+                Section("Appearance") {
+                    Picker("App Theme", selection: $appTheme) {
+                        ForEach(HermesAppTheme.allCases) { theme in
+                            Text(theme.title).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                }
+
+                Section("Terminal") {
+                    TextField("SSH username", text: $terminalSettings.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+
+                    TextField("SSH port", text: $terminalSettings.port)
+                        .keyboardType(.numberPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+
+                    HStack(spacing: 10) {
+                        Label(
+                            terminalSettings.hasPrivateKey ? "Private key stored in Keychain" : "No private key stored",
+                            systemImage: terminalSettings.hasPrivateKey ? "key.fill" : "key"
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(terminalSettings.hasPrivateKey ? .igOnlineGreen : .hermesSecondaryText)
+
+                        Spacer()
+
+                        Button {
+                            isImportingTerminalPrivateKey = true
+                        } label: {
+                            Label("Choose Private Key", systemImage: "doc.badge.plus")
+                        }
+                        .hermesGlassButton()
+
+                        if terminalSettings.hasPrivateKey {
+                            Button(role: .destructive) {
+                                HermesSettingsPersistence.deleteTerminalPrivateKey()
+                                terminalSettings.hasPrivateKey = false
+                                terminalPrivateKeyStatus = "Private key removed from Keychain."
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                            .hermesGlassButton()
+                        }
+                    }
+
+                    Text("The selected key file is imported into Keychain and is not stored in Settings. Terminal connections require Face ID to retrieve it.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    if !terminalPrivateKeyStatus.isEmpty {
+                        Text(terminalPrivateKeyStatus)
+                            .font(.caption)
+                            .foregroundStyle(terminalPrivateKeyStatus.hasPrefix("Failed") ? .igDestructive : .hermesSecondaryText)
+                    }
+                }
+
+                Section("Mac host") {
+                    TextField("Hostname or IP, e.g. .ts.net", text: $macHost)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .hermesRuntimeInput()
+
+                    Text("Used with the service TCP ports below to build the HTTPS and WSS URLs, and as the SSH host for the Terminal tab.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+
+                Section("Tailscale Serve") {
+                    if companionEnrollment.identityState.isEnrolled == false {
+                        Text("Authenticate Host Companion before controlling Tailscale Serve from iOS.")
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+
+                    HStack(spacing: 12) {
+                        Picker("TCP port", selection: $selectedTailscaleServePort) {
+                            ForEach(tailscaleServePorts, id: \.self) { port in
+                                Text(tailscaleServePortLabel(port)).tag(port)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .disabled(tailscaleServePorts.isEmpty || companionRuntime.isSettingTailscaleServe)
+                        .accessibilityLabel("Tailscale Serve TCP port")
+
+                        Toggle("Serve selected port", isOn: tailscaleServeToggleBinding)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .tint(.igOnlineGreen)
+                            .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isCheckingTailscaleServe || companionRuntime.isSettingTailscaleServe)
+                            .accessibilityLabel("Tailscale Serve for port \(selectedTailscaleServePort)")
+
+                        if companionRuntime.isCheckingTailscaleServe || companionRuntime.isSettingTailscaleServe {
+                            ProgressView()
+                        }
+                    }
+
+                    Text("Runs tailscale serve --bg --https=<TCP_PORT> http://localhost:<TCP_PORT> when enabled, and tailscale serve --https=<TCP_PORT> off when disabled. The Host Companion port is intentionally excluded.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    if let status = companionRuntime.tailscaleServeStatus, status.port == selectedTailscaleServePort {
+                        settingsRow(label: "Status", value: status.isEnabled ? "On" : "Off")
+                        settingsRow(label: "Last Checked", value: status.checkedAt.formatted(date: .omitted, time: .shortened))
+                    }
+
+                    let trimmedOutput = companionRuntime.tailscaleServeOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedOutput.isEmpty {
+                        Text(trimmedOutput)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.hermesSecondaryText)
+                            .lineLimit(5)
+                    }
+
+                    if !companionRuntime.tailscaleServeError.isEmpty {
+                        Text(companionRuntime.tailscaleServeError)
+                            .font(.caption)
+                            .foregroundStyle(.igDestructive)
+                    }
                 }
 
             }
@@ -736,7 +734,6 @@ private struct HermesSettingsMacService: Identifiable {
 private struct HermesSettingsMacServiceRow: View {
     let service: HermesSettingsMacService
     let status: HermesCompanionManagedServiceStatus?
-    let output: String
     let isEnabled: Bool
     let onStart: () -> Void
     let onStop: () -> Void
@@ -782,13 +779,6 @@ private struct HermesSettingsMacServiceRow: View {
                 .disabled(!isEnabled || status == .stopped)
             }
 
-            let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedOutput.isEmpty {
-                Text(trimmedOutput)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.hermesSecondaryText)
-                    .lineLimit(3)
-            }
         }
         .padding(.vertical, 6)
     }

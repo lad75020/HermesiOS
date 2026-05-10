@@ -239,9 +239,11 @@ struct HermesWebBrowserView: View {
 
     private func loadShortcutURL(_ urlString: String) {
         guard let url = normalizedURL(from: urlString) else { return }
+        activeWorkspace.urlString = url.absoluteString
+        deckStore.persistURLStringIfNeeded(for: activeWorkspace)
         deckStore.recordHistoryRoot(for: url)
-        let workspace = deckStore.createWorkspace(urlString: url.absoluteString)
-        workspace.store.load(url)
+        isURLFieldFocused = false
+        activeWorkspace.store.load(url)
     }
 
     private func loadIfNeeded(_ workspace: HermesWebBrowserWorkspace) {

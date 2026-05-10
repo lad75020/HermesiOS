@@ -235,6 +235,22 @@ struct HermesCompanionServiceStopResult: Codable {
     let output: String
 }
 
+struct HermesCompanionTailscaleServeStatusPayload: Codable {
+    let port: String
+}
+
+struct HermesCompanionSetTailscaleServePayload: Codable {
+    let port: String
+    let enabled: Bool
+}
+
+struct HermesCompanionTailscaleServeStatusResult: Codable, Equatable {
+    let port: String
+    let isEnabled: Bool
+    let output: String
+    let checkedAt: Date
+}
+
 struct HermesCompanionInstallationStatusPayload: Codable {
     let workspacePath: String
 }
@@ -1280,6 +1296,11 @@ final class HermesCompanionRuntimeSession {
     var linkedServiceOutput = ""
     var macServiceStatuses: [String: HermesCompanionServiceStatusResult] = [:]
     var macServiceOutputs: [String: String] = [:]
+    var tailscaleServeStatus: HermesCompanionTailscaleServeStatusResult?
+    var tailscaleServeOutput = ""
+    var tailscaleServeError = ""
+    var isCheckingTailscaleServe = false
+    var isSettingTailscaleServe = false
     var hermesInstallationStatus: HermesCompanionInstallationStatusResult?
     var hermesInstallationStatusMessage = "Not checked"
     var hermesInstallationStatusError = ""
@@ -1622,6 +1643,54 @@ final class HermesCompanionRuntimeSession {
         macServiceStatuses[serviceID] = result
         if macServiceOutputs[serviceID, default: ""].isEmpty {
             macServiceOutputs[serviceID] = result.output
+        }
+    }
+
+    func refreshTailscaleServeStatus(port: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        Task {
+            guard identityState.isEnrolled else { return }
+            isCheckingTailscaleServe = true
+            tailscaleServeError = ""
+            do {
+                let result: HermesCompanionTailscaleServeStatusResult = try await HermesCompanionSessionFactory.request(
+                    settings: settings,
+                    state: identityState,
+                    type: "tailscale_serve_status",
+                    payload: HermesCompanionTailscaleServeStatusPayload(port: port)
+                )
+                tailscaleServeStatus = result
+                tailscaleServeOutput = result.output
+                connectionStatus = result.isEnabled ? "Tailscale Serve On" : "Tailscale Serve Off"
+            } catch {
+                tailscaleServeError = error.localizedDescription
+                connectionStatus = "Tailscale Serve Unavailable"
+            }
+            isCheckingTailscaleServe = false
+        }
+    }
+
+    func setTailscaleServe(_ enabled: Bool, port: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        Task {
+            guard identityState.isEnrolled else { return }
+            isSettingTailscaleServe = true
+            tailscaleServeError = ""
+            connectionStatus = enabled ? "Enabling Tailscale Serve" : "Disabling Tailscale Serve"
+            do {
+                let result: HermesCompanionTailscaleServeStatusResult = try await HermesCompanionSessionFactory.request(
+                    settings: settings,
+                    state: identityState,
+                    type: "set_tailscale_serve",
+                    payload: HermesCompanionSetTailscaleServePayload(port: port, enabled: enabled)
+                )
+                tailscaleServeStatus = result
+                tailscaleServeOutput = result.output
+                connectionStatus = result.isEnabled ? "Tailscale Serve On" : "Tailscale Serve Off"
+            } catch {
+                tailscaleServeError = error.localizedDescription
+                connectionStatus = "Tailscale Serve Failed"
+                refreshTailscaleServeStatus(port: port, settings: settings, identityState: identityState)
+            }
+            isSettingTailscaleServe = false
         }
     }
 

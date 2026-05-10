@@ -19,6 +19,7 @@ struct HermesSettingsView: View {
     @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
     @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
+    @AppStorage(hermesTailscaleServePortStorageKey) private var selectedTailscaleServePort = defaultHermesAPIPort
     @AppStorage(hermesRuntimeTabEnabledStorageKey) private var isRuntimeTabEnabled = false
     @AppStorage("hermes.history.dashboardURL") private var legacyDashboardURL = ""
     @AppStorage("hermes.office.url") private var legacyOfficeURL = ""
@@ -48,6 +49,60 @@ struct HermesSettingsView: View {
                     Text("Used with the service TCP ports below to build the HTTPS and WSS URLs, and as the SSH host for the Terminal tab.")
                         .font(.caption)
                         .foregroundStyle(.hermesSecondaryText)
+                }
+
+                Section("Tailscale Serve") {
+                    if companionEnrollment.identityState.isEnrolled == false {
+                        Text("Authenticate Host Companion before controlling Tailscale Serve from iOS.")
+                            .font(.caption)
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+
+                    HStack(spacing: 12) {
+                        Picker("TCP port", selection: $selectedTailscaleServePort) {
+                            ForEach(tailscaleServePorts, id: \.self) { port in
+                                Text(tailscaleServePortLabel(port)).tag(port)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .disabled(tailscaleServePorts.isEmpty || companionRuntime.isSettingTailscaleServe)
+                        .accessibilityLabel("Tailscale Serve TCP port")
+
+                        Toggle("Serve selected port", isOn: tailscaleServeToggleBinding)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .tint(.igOnlineGreen)
+                            .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isCheckingTailscaleServe || companionRuntime.isSettingTailscaleServe)
+                            .accessibilityLabel("Tailscale Serve for port \(selectedTailscaleServePort)")
+
+                        if companionRuntime.isCheckingTailscaleServe || companionRuntime.isSettingTailscaleServe {
+                            ProgressView()
+                        }
+                    }
+
+                    Text("Runs tailscale serve --bg --https=<TCP_PORT> http://localhost:<TCP_PORT> when enabled, and tailscale serve --https=<TCP_PORT> off when disabled. The Host Companion port is intentionally excluded.")
+                        .font(.caption)
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    if let status = companionRuntime.tailscaleServeStatus, status.port == selectedTailscaleServePort {
+                        settingsRow(label: "Status", value: status.isEnabled ? "On" : "Off")
+                        settingsRow(label: "Last Checked", value: status.checkedAt.formatted(date: .omitted, time: .shortened))
+                    }
+
+                    let trimmedOutput = companionRuntime.tailscaleServeOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmedOutput.isEmpty {
+                        Text(trimmedOutput)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.hermesSecondaryText)
+                            .lineLimit(5)
+                    }
+
+                    if !companionRuntime.tailscaleServeError.isEmpty {
+                        Text(companionRuntime.tailscaleServeError)
+                            .font(.caption)
+                            .foregroundStyle(.igDestructive)
+                    }
                 }
 
                 Section("Terminal") {
@@ -429,6 +484,15 @@ struct HermesSettingsView: View {
                 identityState: companionEnrollment.identityState
             )
         }
+        .task(id: tailscaleServeRefreshKey) {
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            normalizeSelectedTailscaleServePort()
+            companionRuntime.refreshTailscaleServeStatus(
+                port: selectedTailscaleServePort,
+                settings: companionSettings,
+                identityState: companionEnrollment.identityState
+            )
+        }
         .task(id: hermesInstallationRefreshKey) {
             guard companionEnrollment.identityState.isEnrolled else { return }
             await companionRuntime.refreshHermesInstallationStatusLoop(
@@ -439,6 +503,7 @@ struct HermesSettingsView: View {
         .onAppear {
             migrateLegacyURLPortsIfNeeded()
             applyMacHostToServiceURLs()
+            normalizeSelectedTailscaleServePort()
         }
         .onChange(of: macHost) { _, _ in
             applyMacHostToServiceURLs()
@@ -482,6 +547,71 @@ struct HermesSettingsView: View {
 
     private var companionAPIKeyVerified: Bool {
         companionEnrollment.identityState.matches(settings: companionSettings)
+    }
+
+    private var tailscaleServePorts: [String] {
+        let companionPort = HermesHostEndpoints.tcpPort(from: companionSettings.apiURL, fallback: defaultHermesCompanionPort)
+        return [
+            HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort),
+            HermesHostEndpoints.tcpPort(from: dashboardPort, fallback: defaultHermesDashboardPort),
+            HermesHostEndpoints.tcpPort(from: officePort, fallback: defaultHermesOfficePort)
+        ]
+        .filter { $0 != companionPort }
+        .reduce(into: [String]()) { ports, port in
+            if ports.contains(port) == false {
+                ports.append(port)
+            }
+        }
+    }
+
+    private var tailscaleServeToggleBinding: Binding<Bool> {
+        Binding(
+            get: {
+                companionRuntime.tailscaleServeStatus?.port == selectedTailscaleServePort &&
+                companionRuntime.tailscaleServeStatus?.isEnabled == true
+            },
+            set: { isEnabled in
+                companionRuntime.setTailscaleServe(
+                    isEnabled,
+                    port: selectedTailscaleServePort,
+                    settings: companionSettings,
+                    identityState: companionEnrollment.identityState
+                )
+            }
+        )
+    }
+
+    private var tailscaleServeRefreshKey: String {
+        [
+            companionEnrollment.identityState.isEnrolled ? "enrolled" : "not-enrolled",
+            companionEnrollment.identityState.serverEndpoint,
+            selectedTailscaleServePort,
+            apiPortBinding.wrappedValue,
+            dashboardPort,
+            officePort,
+            companionPortBinding.wrappedValue
+        ].joined(separator: "|")
+    }
+
+    private func tailscaleServePortLabel(_ port: String) -> String {
+        switch port {
+        case HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort):
+            "API Server (\(port))"
+        case HermesHostEndpoints.tcpPort(from: dashboardPort, fallback: defaultHermesDashboardPort):
+            "Dashboard (\(port))"
+        case HermesHostEndpoints.tcpPort(from: officePort, fallback: defaultHermesOfficePort):
+            "Office (\(port))"
+        default:
+            "TCP \(port)"
+        }
+    }
+
+    private func normalizeSelectedTailscaleServePort() {
+        let ports = tailscaleServePorts
+        guard ports.isEmpty == false else { return }
+        if ports.contains(selectedTailscaleServePort) == false {
+            selectedTailscaleServePort = ports[0]
+        }
     }
 
     private func applyMacHostToServiceURLs() {

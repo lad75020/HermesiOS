@@ -209,6 +209,22 @@ struct ServiceStopResult: Codable {
     let output: String
 }
 
+struct TailscaleServeStatusPayload: Codable {
+    let port: String
+}
+
+struct TailscaleServeSetPayload: Codable {
+    let port: String
+    let enabled: Bool
+}
+
+struct TailscaleServeStatusResult: Codable {
+    let port: String
+    let isEnabled: Bool
+    let output: String
+    let checkedAt: Date
+}
+
 struct HermesInstallationStatusPayload: Codable {
     let workspacePath: String
 }

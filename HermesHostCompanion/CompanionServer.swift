@@ -196,6 +196,7 @@ final class CompanionClientSession {
     private let gitRegistry = CompanionGitRegistry()
     private let knowledgeEraserRegistry = CompanionKnowledgeEraserRegistry()
     private let fileDownloadRegistry = CompanionFileDownloadRegistry()
+    private let tailscaleServeRegistry = CompanionTailscaleServeRegistry()
     private let authenticationToken: String
 
     init(connection: NWConnection, authenticationToken: String) {
@@ -302,6 +303,8 @@ final class CompanionClientSession {
                         "service_start",
                         "service_stop",
                         "service_restart",
+                        "tailscale_serve_status",
+                        "set_tailscale_serve",
                         "hermes_installation_status",
                         "hermes_installation_update",
                         "hermes_installation_review_conflicts",
@@ -513,6 +516,26 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "service_restart_failed", message: error.localizedDescription)
+            }
+        case "tailscale_serve_status":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The tailscale_serve_status request requires a payload.")
+                }
+                let statusPayload = try payload.decode(TailscaleServeStatusPayload.self)
+                return .success(id: request.id, payload: try tailscaleServeRegistry.status(port: statusPayload.port))
+            } catch {
+                return .error(id: request.id, code: "tailscale_serve_status_failed", message: error.localizedDescription)
+            }
+        case "set_tailscale_serve":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The set_tailscale_serve request requires a payload.")
+                }
+                let setPayload = try payload.decode(TailscaleServeSetPayload.self)
+                return .success(id: request.id, payload: try tailscaleServeRegistry.set(port: setPayload.port, enabled: setPayload.enabled))
+            } catch {
+                return .error(id: request.id, code: "set_tailscale_serve_failed", message: error.localizedDescription)
             }
         case "hermes_installation_status":
             do {

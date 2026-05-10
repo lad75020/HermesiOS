@@ -50,6 +50,7 @@ struct ContentView: View {
     @State private var isHistorySearchFailureUnread = false
     @State private var askHermesBusyToastID: UUID?
     @State private var busyStreamingCloseToastID: UUID?
+    @State private var isTerminalAuthenticationInProgress = false
 
     init() {
         HermesAppearance.configureGlobalAppearance()
@@ -154,7 +155,7 @@ struct ContentView: View {
             )
         }
         .onChange(of: scenePhase) { _, newValue in
-            if newValue != .active, isAnyHermesStreamActive {
+            if newValue != .active, isAnyHermesStreamActive, !isTerminalAuthenticationInProgress {
                 showBusyStreamingCloseToast()
             }
             guard newValue == .active else { return }
@@ -385,7 +386,11 @@ struct ContentView: View {
                 .tag(WorkspaceSection.web)
 
                 NavigationStack {
-                    HermesTerminalView(host: macHost, terminalSettings: $terminalSettings)
+                    HermesTerminalView(
+                        host: macHost,
+                        terminalSettings: $terminalSettings,
+                        isAuthenticating: $isTerminalAuthenticationInProgress
+                    )
                 }
                 .tabItem {
                     Label("Terminal", systemImage: "terminal")
@@ -513,7 +518,11 @@ struct ContentView: View {
         case .web:
             HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString, officeURLString: officeURLString)
         case .terminal:
-            HermesTerminalView(host: macHost, terminalSettings: $terminalSettings)
+            HermesTerminalView(
+                host: macHost,
+                terminalSettings: $terminalSettings,
+                isAuthenticating: $isTerminalAuthenticationInProgress
+            )
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,

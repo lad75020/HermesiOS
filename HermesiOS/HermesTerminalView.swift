@@ -47,6 +47,7 @@ private enum HermesTerminalError: LocalizedError {
 struct HermesTerminalView: View {
     let host: String
     @Binding var terminalSettings: HermesTerminalSettings
+    @Binding var isAuthenticating: Bool
     @State private var session = HermesTerminalSession()
     @State private var pasteRequestID = UUID()
 
@@ -139,9 +140,11 @@ struct HermesTerminalView: View {
     }
 
     private func connect() {
+        isAuthenticating = true
         Task { @MainActor in
             session.status = "Unlocking key…"
             session.lastErrorMessage = ""
+            defer { isAuthenticating = false }
             do {
                 let privateKey = try HermesSettingsPersistence.loadTerminalPrivateKeyWithBiometrics(
                     reason: "Authenticate to connect the Terminal tab to your Mac over SSH."

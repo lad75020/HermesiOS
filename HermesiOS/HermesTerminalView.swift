@@ -56,49 +56,57 @@ struct HermesTerminalView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HermesTabHeader("Terminal", systemImage: "terminal")
-                .padding(.horizontal)
-                .padding(.top)
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundStyle(.igActionBlue)
+                    .frame(width: 56, height: 56)
+                    .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 10) {
-                    Label(session.status, systemImage: session.isConnected ? "checkmark.circle.fill" : "terminal")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(session.isConnected ? .igOnlineGreen : .hermesSecondaryText)
+                Text("Terminal")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
 
-                    Spacer()
-
-                    Button {
-                        connect()
-                    } label: {
-                        Label(session.isConnected ? "Reconnect" : "Connect", systemImage: "bolt.horizontal.circle")
+                Toggle("Terminal connection", isOn: Binding(
+                    get: { session.isConnectionRequested },
+                    set: { isEnabled in
+                        if isEnabled {
+                            connect()
+                        } else {
+                            session.disconnect()
+                        }
                     }
-                    .hermesGlassProminentButton()
-                    .disabled(!canConnect || session.isConnecting)
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(.igOnlineGreen)
+                .disabled((!canConnect && !session.isConnectionRequested) || session.isConnecting)
+                .accessibilityLabel("Terminal connection")
 
-                    Button(role: .destructive) {
-                        session.disconnect()
-                    } label: {
-                        Label("Disconnect", systemImage: "xmark.circle")
-                    }
-                    .hermesGlassButton()
-                    .disabled(!session.isConnected && !session.isConnecting)
-                }
-
-                Text("Connects to \(trimmedUsername.isEmpty ? "username" : trimmedUsername)@\(trimmedHost.isEmpty ? "your-host.ts.net" : trimmedHost):\(port) using the private key stored in Keychain. Face ID is required each time the key is retrieved.")
-                    .font(.caption)
-                    .foregroundStyle(.hermesSecondaryText)
-
-                if !session.lastErrorMessage.isEmpty {
-                    Text(session.lastErrorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.igDestructive)
-                }
+                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal)
-            .padding(.vertical, 12)
+            .padding(.top)
 
-            HermesSwiftTermContainer(connectionInfo: session.connectionInfo, terminalID: session.terminalID)
+            if !session.lastErrorMessage.isEmpty {
+                Text(session.lastErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.igDestructive)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+            }
+
+            HermesSwiftTermContainer(
+                connectionInfo: session.connectionInfo,
+                terminalID: session.terminalID,
+                onConnected: session.markConnected,
+                onFailed: session.markFailed
+            )
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(
@@ -128,6 +136,7 @@ struct HermesTerminalView: View {
                 )
                 session.connect(info)
             } catch {
+                session.isConnectionRequested = false
                 session.status = "Key locked"
                 session.lastErrorMessage = error.localizedDescription
             }
@@ -143,8 +152,10 @@ private final class HermesTerminalSession {
     var lastErrorMessage = ""
     var isConnecting = false
     var isConnected = false
+    var isConnectionRequested = false
 
     func connect(_ info: HermesTerminalConnectionInfo) {
+        isConnectionRequested = true
         isConnecting = true
         isConnected = false
         status = "Connecting…"
@@ -162,12 +173,14 @@ private final class HermesTerminalSession {
     func markDisconnected(_ message: String = "Disconnected") {
         isConnecting = false
         isConnected = false
+        isConnectionRequested = false
         status = message
     }
 
     func markFailed(_ message: String) {
         isConnecting = false
         isConnected = false
+        isConnectionRequested = false
         status = "Failed"
         lastErrorMessage = message
     }
@@ -182,9 +195,13 @@ private final class HermesTerminalSession {
 private struct HermesSwiftTermContainer: UIViewRepresentable {
     let connectionInfo: HermesTerminalConnectionInfo?
     let terminalID: UUID
+    let onConnected: () -> Void
+    let onFailed: (String) -> Void
 
     func makeUIView(context: Context) -> HermesSshTerminalView {
         let view = HermesSshTerminalView(frame: .zero)
+        view.onConnected = onConnected
+        view.onFailed = onFailed
         view.isOpaque = true
         view.backgroundColor = .black
         view.nativeBackgroundColor = .black
@@ -193,6 +210,8 @@ private struct HermesSwiftTermContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: HermesSshTerminalView, context: Context) {
+        uiView.onConnected = onConnected
+        uiView.onFailed = onFailed
         if let connectionInfo {
             uiView.configure(connectionInfo: connectionInfo, terminalID: terminalID)
             DispatchQueue.main.async {
@@ -481,6 +500,9 @@ private final class HermesSSHConnection {
 }
 
 private final class HermesSshTerminalView: TerminalView, TerminalViewDelegate {
+    var onConnected: (() -> Void)?
+    var onFailed: ((String) -> Void)?
+
     private var sshConnection: HermesSSHConnection?
     private var configuredInfo: HermesTerminalConnectionInfo?
     private var configuredTerminalID: UUID?
@@ -527,10 +549,12 @@ private final class HermesSshTerminalView: TerminalView, TerminalViewDelegate {
     }
 
     func markConnected() {
+        onConnected?()
         feed(text: "[SSH] Connected.\n")
     }
 
     func markFailed(_ message: String) {
+        onFailed?(message)
         feed(text: "[SSH] \(message)\n")
     }
 

@@ -155,6 +155,17 @@ struct WorkspaceSidebar: View {
         }
     }
 
+    private func iconForegroundColor(
+        isSelected: Bool,
+        hasUnreadFailure: Bool,
+        hasUnreadCompletion: Bool,
+        isActivityBlinkActive: Bool
+    ) -> Color {
+        hasUnreadFailure || hasUnreadCompletion || isActivityBlinkActive || isSelected
+            ? Color.white
+            : Color.hermesSecondaryText
+    }
+
     var body: some View {
         HermesGlassEffectContainer(spacing: 12) {
             VStack(spacing: 0) {
@@ -185,9 +196,10 @@ struct WorkspaceSidebar: View {
                         Image(systemName: section.systemImage)
                             .font(.title3.weight(.semibold))
                             .frame(maxWidth: .infinity, minHeight: 36)
-                            .foregroundStyle(hasUnreadFailure || hasUnreadCompletion || isActivityBlinkActive ? Color.white : (selection == section ? Color.igActionBlue : Color.hermesSecondaryText))
+                            .foregroundStyle(iconForegroundColor(isSelected: selection == section, hasUnreadFailure: hasUnreadFailure, hasUnreadCompletion: hasUnreadCompletion, isActivityBlinkActive: isActivityBlinkActive))
                             .background(
                                 WorkspaceSidebarIconBackground(
+                                    isSelected: selection == section,
                                     isActivityBlinkActive: isActivityBlinkActive,
                                     hasUnreadFailure: hasUnreadFailure,
                                     hasUnreadCompletion: hasUnreadCompletion
@@ -215,6 +227,7 @@ struct WorkspaceSidebar: View {
 }
 
 private struct WorkspaceSidebarIconBackground: View {
+    let isSelected: Bool
     let isActivityBlinkActive: Bool
     let hasUnreadFailure: Bool
     let hasUnreadCompletion: Bool
@@ -229,7 +242,19 @@ private struct WorkspaceSidebarIconBackground: View {
             }
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(hasUnreadFailure ? Color.igDestructive.opacity(0.9) : (hasUnreadCompletion ? Color.igOnlineGreen.opacity(0.85) : Color.clear))
+                .fill(iconFill)
+        }
+    }
+
+    private var iconFill: Color {
+        if hasUnreadFailure {
+            Color.igDestructive.opacity(0.9)
+        } else if hasUnreadCompletion {
+            Color.igOnlineGreen.opacity(0.85)
+        } else if isSelected {
+            Color.igActionBlue.opacity(0.92)
+        } else {
+            Color.clear
         }
     }
 }

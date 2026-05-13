@@ -743,12 +743,14 @@ final class HermesResponsesSession {
             throw HermesResponsesError.invalidURL
         }
 
+        let reasoningPayload = draft.reasoningEffort == .off ? nil : HermesReasoningPayload(effort: draft.reasoningEffort)
         let payload = HermesResponsesRequestBody(
             model: "hermes-agent",
             input: HermesResponsesInput(prompt: draft.userPrompt, attachment: attachment),
             stream: stream,
             store: true,
-            previousResponseID: previousResponseID.isEmpty ? nil : previousResponseID
+            previousResponseID: previousResponseID.isEmpty ? nil : previousResponseID,
+            reasoning: reasoningPayload
         )
 
         var request = URLRequest(url: url)
@@ -924,12 +926,35 @@ struct HermesAPISettings: Codable, Equatable {
     }
 }
 
+enum HermesReasoningEffort: String, Codable, CaseIterable, Identifiable {
+    case off
+    case low
+    case medium
+    case high
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .off: return "Off"
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        }
+    }
+}
+
+struct HermesReasoningPayload: Encodable, Equatable {
+    let effort: HermesReasoningEffort
+}
+
 struct HermesAPIProfile: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
     let isDefault: Bool
     let model: String?
     let provider: String?
+    let supportedParameters: [String]
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -937,6 +962,65 @@ struct HermesAPIProfile: Decodable, Identifiable, Equatable {
         case isDefault = "is_default"
         case model
         case provider
+        case supportedParameters = "supported_parameters"
+    }
+
+    init(id: String, name: String, isDefault: Bool, model: String?, provider: String?, supportedParameters: [String] = []) {
+        self.id = id
+        self.name = name
+        self.isDefault = isDefault
+        self.model = model
+        self.provider = provider
+        self.supportedParameters = supportedParameters
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? id
+        isDefault = (try container.decodeIfPresent(Bool.self, forKey: .isDefault)) ?? (id == "default")
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        provider = try container.decodeIfPresent(String.self, forKey: .provider)
+        supportedParameters = Self.decodeSupportedParameters(from: container)
+    }
+
+    var supportsReasoningInput: Bool {
+        HermesReasoningSupport.supportsReasoning(model: model, provider: provider, supportedParameters: supportedParameters)
+    }
+
+    private static func decodeSupportedParameters(from container: KeyedDecodingContainer<CodingKeys>) -> [String] {
+        if let values = try? container.decodeIfPresent([String].self, forKey: .supportedParameters) {
+            return values
+        }
+        if let flags = try? container.decodeIfPresent([String: Bool].self, forKey: .supportedParameters) {
+            return flags.filter(\.value).map(\.key)
+        }
+        if let values = try? container.decodeIfPresent([String: String].self, forKey: .supportedParameters) {
+            return Array(values.keys)
+        }
+        return []
+    }
+}
+
+enum HermesReasoningSupport {
+    static func supportsReasoning(model: String?, provider: String?, supportedParameters: [String]) -> Bool {
+        let parameters = supportedParameters.map { $0.lowercased() }
+        if parameters.contains(where: { $0 == "reasoning" || $0 == "reasoning_effort" || $0 == "include_reasoning" }) {
+            return true
+        }
+
+        let joined = [provider, model]
+            .compactMap { $0?.lowercased() }
+            .joined(separator: "/")
+        guard !joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+
+        let needles = [
+            "gpt-5", "o1", "o3", "o4", "claude-3-7", "claude-4", "opus-4", "sonnet-4",
+            "gemini-2.5", "gemini-3", "grok-3", "grok-4", "deepseek-r1", "deepseek-v3.1",
+            "deepseek-v4", "qwen3", "qwq", "kimi", "glm-4.5", "glm-5", "minimax-m2",
+            "nemotron", "trinity", "thinking", "reasoning"
+        ]
+        return needles.contains { joined.contains($0) }
     }
 }
 
@@ -975,11 +1059,13 @@ struct HermesRequestDraft: Codable, Equatable {
     var profile = "default"
     var userPrompt = "Summarize the current project layout and recommend the next integration step."
     var stream = true
+    var reasoningEffort: HermesReasoningEffort = .medium
 
     enum CodingKeys: String, CodingKey {
         case profile
         case userPrompt
         case stream
+        case reasoningEffort
         case legacyModel = "model"
     }
 
@@ -991,6 +1077,7 @@ struct HermesRequestDraft: Codable, Equatable {
         _ = try container.decodeIfPresent(String.self, forKey: .legacyModel)
         userPrompt = try container.decodeIfPresent(String.self, forKey: .userPrompt) ?? userPrompt
         stream = try container.decodeIfPresent(Bool.self, forKey: .stream) ?? stream
+        reasoningEffort = try container.decodeIfPresent(HermesReasoningEffort.self, forKey: .reasoningEffort) ?? reasoningEffort
     }
 
     func encode(to encoder: Encoder) throws {
@@ -998,6 +1085,7 @@ struct HermesRequestDraft: Codable, Equatable {
         try container.encode(profile, forKey: .profile)
         try container.encode(userPrompt, forKey: .userPrompt)
         try container.encode(stream, forKey: .stream)
+        try container.encode(reasoningEffort, forKey: .reasoningEffort)
     }
 
     func locked(toProfile profile: String) -> HermesRequestDraft {
@@ -1081,6 +1169,7 @@ private struct HermesResponsesRequestBody: Encodable {
     let stream: Bool
     let store: Bool
     let previousResponseID: String?
+    let reasoning: HermesReasoningPayload?
 
     enum CodingKeys: String, CodingKey {
         case model
@@ -1088,6 +1177,7 @@ private struct HermesResponsesRequestBody: Encodable {
         case stream
         case store
         case previousResponseID = "previous_response_id"
+        case reasoning
     }
 }
 

@@ -240,19 +240,19 @@ struct HermesGlassEffectContainer<Content: View>: View {
 // MARK: - Typography
 
 extension Font {
-    static let igScreenTitle    = Font.system(size: 16, weight: .semibold, design: .default)
-    static let igUsernameLarge  = Font.system(size: 20, weight: .bold,     design: .default)
-    static let igUsername       = Font.system(size: 14, weight: .semibold, design: .default)
+    static let igScreenTitle    = Font.hermesWebsiteSectionTitle(size: 16)
+    static let igUsernameLarge  = Font.hermesWebsiteTitle(size: 18)
+    static let igUsername       = Font.hermesWebsiteLabel(size: 16)
     static let igBio            = Font.system(size: 14, weight: .regular,  design: .default)
     static let igCaption        = Font.system(size: 14, weight: .regular,  design: .default)
     static let igComment        = Font.system(size: 14, weight: .regular,  design: .default)
     static let igSecondaryMeta  = Font.system(size: 12, weight: .regular,  design: .default)
-    static let igButtonPrimary  = Font.system(size: 14, weight: .semibold, design: .default)
-    static let igButtonSmall    = Font.system(size: 12, weight: .semibold, design: .default)
-    static let igCounterLarge   = Font.system(size: 16, weight: .bold,     design: .default).monospacedDigit()
+    static let igButtonPrimary  = Font.hermesWebsiteLabel(size: 16)
+    static let igButtonSmall    = Font.hermesWebsiteLabel(size: 13)
+    static let igCounterLarge   = Font.hermesWebsiteMono(size: 16, weight: .bold).monospacedDigit()
     static let igDMBubble       = Font.system(size: 16, weight: .regular,  design: .default)
-    static let igBadge          = Font.system(size: 11, weight: .bold,     design: .default).monospacedDigit()
-    static let igTimestamp      = Font.system(size: 11, weight: .regular,  design: .default)
+    static let igBadge          = Font.hermesWebsiteLabel(size: 12).monospacedDigit()
+    static let igTimestamp      = Font.hermesWebsiteMono(size: 11)
 
     /// Logotype — falls back to a tightly tracked italic serif when Billabong is unavailable.
     static let igLogotype       = Font.custom("Billabong", size: 30).weight(.regular)

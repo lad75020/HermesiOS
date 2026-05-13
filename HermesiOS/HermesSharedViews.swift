@@ -77,7 +77,7 @@ struct HermesTabHeader: View {
                 .accessibilityHidden(true)
 
             Text(title)
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.hermesWebsiteTitle(size: 30))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
@@ -111,8 +111,8 @@ struct HermesSectionCard<Content: View>: View {
             if let title, !title.isEmpty {
                 HStack {
                     Text(title.uppercased())
-                        .font(.igSecondaryMeta.weight(.semibold))
-                        .tracking(0.8)
+                        .font(.hermesWebsiteSectionTitle(size: 11))
+                        .tracking(1.2)
                         .foregroundStyle(.hermesSecondaryText)
                     Spacer()
                 }
@@ -163,17 +163,17 @@ struct HermesStatusPill: View {
                 .frame(width: 4, height: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title.uppercased())
-                    .font(.igBadge)
-                    .tracking(0.6)
+                    .font(.hermesWebsiteLabel(size: 12))
+                    .tracking(0.8)
                     .foregroundStyle(.hermesSecondaryText)
                 if let marqueeCharacterLimit = item.marqueeCharacterLimit,
                    item.value.count > marqueeCharacterLimit {
                     HermesMarqueeText(text: item.value, visibleCharacterLimit: marqueeCharacterLimit)
-                        .font(.igUsername)
+                        .font(.hermesWebsiteMono(size: 13, weight: .semibold))
                         .foregroundStyle(.primary)
                 } else {
                     Text(item.value)
-                        .font(.igUsername)
+                        .font(.hermesWebsiteMono(size: 13, weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                 }

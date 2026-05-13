@@ -451,6 +451,13 @@ struct HermesResponsesConsoleView: View {
                             }
                         }
 
+                        if selectedProfileSupportsReasoning {
+                            HermesReasoningSelector(
+                                reasoningEffort: $requestDraft.reasoningEffort,
+                                isDisabled: responseSession.isSending
+                            )
+                        }
+
                         HermesStatusRow(
                             items: [
                                 .init(title: "Session", value: responseSession.displaySessionTitle, accent: .igGradPurple, marqueeCharacterLimit: 40),
@@ -712,6 +719,9 @@ struct HermesResponsesConsoleView: View {
                         speechSession.stop()
                         var submittedDraft = requestDraft
                         submittedDraft.userPrompt = promptText
+                        if !selectedProfileSupportsReasoning {
+                            submittedDraft.reasoningEffort = .off
+                        }
                         let submittedAttachment = selectedAttachment
                         promptHistory.record(submittedDraft.userPrompt, source: .askHermes)
                         responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment, messageHistory: promptHistory)
@@ -780,6 +790,17 @@ struct HermesResponsesConsoleView: View {
         case .failure(let error):
             responseSession.lastErrorMessage = error.localizedDescription
         }
+    }
+
+    private var selectedProfileSupportsReasoning: Bool {
+        apiProfileForCurrentSelection?.supportsReasoningInput ?? false
+    }
+
+    private var apiProfileForCurrentSelection: HermesAPIProfile? {
+        let locked = responseSession.activeProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = requestDraft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = locked.isEmpty ? (selected.isEmpty ? "default" : selected) : locked
+        return apiProfiles.first { $0.id == id }
     }
 
     private func refreshAPIProfiles() async {
@@ -863,8 +884,8 @@ private struct HermesProfileSelector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("PROFILE")
-                .font(.igBadge)
-                .tracking(0.6)
+                .font(.hermesWebsiteLabel(size: 12))
+                .tracking(0.8)
                 .foregroundStyle(.hermesSecondaryText)
 
             Menu {
@@ -875,7 +896,7 @@ private struct HermesProfileSelector: View {
                 }
             } label: {
                 Text(currentProfileLabel)
-                    .font(.caption2.weight(.semibold))
+                    .font(.hermesWebsiteMono(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -894,6 +915,46 @@ private struct HermesProfileSelector: View {
     private func label(for profile: HermesAPIProfile) -> String {
         let id = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
         return id.isEmpty ? "default" : id
+    }
+}
+
+private struct HermesReasoningSelector: View {
+    @Binding var reasoningEffort: HermesReasoningEffort
+    let isDisabled: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("REASONING")
+                .font(.hermesWebsiteLabel(size: 12))
+                .tracking(0.8)
+                .foregroundStyle(.hermesSecondaryText)
+
+            Menu {
+                ForEach(HermesReasoningEffort.allCases) { effort in
+                    Button(effort.label) {
+                        reasoningEffort = effort
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(reasoningEffort.label)
+                        .font(.hermesWebsiteMono(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .tint(.primary)
+            .disabled(isDisabled)
+            .opacity(isDisabled ? 0.55 : 1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(width: 134, alignment: .leading)
+        .hermesLiquidGlass(cornerRadius: 18, tint: Color.igGradPurple.opacity(0.08), interactive: true)
+        .accessibilityLabel("Choose model reasoning effort")
     }
 }
 
@@ -1540,6 +1601,13 @@ struct HermesChatConsoleView: View {
                             }
                         }
 
+                        if selectedProfileSupportsReasoning {
+                            HermesReasoningSelector(
+                                reasoningEffort: $chatDraft.reasoningEffort,
+                                isDisabled: chatSession.isSending
+                            )
+                        }
+
                         HermesStatusRow(
                             items: [
                                 .init(title: "Session", value: chatSession.displaySessionTitle, accent: .igActionBlue, marqueeCharacterLimit: 40),
@@ -1727,6 +1795,9 @@ struct HermesChatConsoleView: View {
                         speechSession.stop()
                         var submittedDraft = chatDraft
                         submittedDraft.userPrompt = promptText
+                        if !selectedProfileSupportsReasoning {
+                            submittedDraft.reasoningEffort = .off
+                        }
                         let submittedAttachment = selectedAttachment
                         promptHistory.record(submittedDraft.userPrompt, source: .chatWithHermes)
                         chatSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment, messageHistory: promptHistory)
@@ -1784,6 +1855,17 @@ struct HermesChatConsoleView: View {
         case .failure(let error):
             chatSession.lastErrorMessage = error.localizedDescription
         }
+    }
+
+    private var selectedProfileSupportsReasoning: Bool {
+        apiProfileForCurrentSelection?.supportsReasoningInput ?? false
+    }
+
+    private var apiProfileForCurrentSelection: HermesAPIProfile? {
+        let locked = chatSession.activeProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = chatDraft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = locked.isEmpty ? (selected.isEmpty ? "default" : selected) : locked
+        return apiProfiles.first { $0.id == id }
     }
 
     private func isChatPlaceholder(_ message: HermesChatMessage) -> Bool {

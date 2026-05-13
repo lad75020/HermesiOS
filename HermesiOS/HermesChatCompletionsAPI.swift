@@ -333,11 +333,13 @@ final class HermesChatSession {
             ? historyMessages + [userMessage]
             : [HermesChatRequestMessage(role: "system", content: .text(draft.systemPrompt))] + historyMessages + [userMessage]
 
+        let reasoningPayload = draft.reasoningEffort == .off ? nil : HermesReasoningPayload(effort: draft.reasoningEffort)
         let payload = HermesChatCompletionsRequestBody(
             model: "hermes-agent",
             messages: requestMessages,
             stream: stream,
-            user: activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : activeChatSessionID
+            user: activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : activeChatSessionID,
+            reasoning: reasoningPayload
         )
 
         var request = URLRequest(url: url)
@@ -722,12 +724,14 @@ struct HermesChatDraft: Codable, Equatable {
     var systemPrompt = ""
     var userPrompt = "Summarize the current project layout."
     var stream = true
+    var reasoningEffort: HermesReasoningEffort = .medium
 
     enum CodingKeys: String, CodingKey {
         case profile
         case systemPrompt
         case userPrompt
         case stream
+        case reasoningEffort
         case legacyModel = "model"
     }
 
@@ -741,6 +745,7 @@ struct HermesChatDraft: Codable, Equatable {
         systemPrompt = decodedSystemPrompt == "You are a helpful coding assistant." ? "" : decodedSystemPrompt
         userPrompt = try container.decodeIfPresent(String.self, forKey: .userPrompt) ?? userPrompt
         stream = try container.decodeIfPresent(Bool.self, forKey: .stream) ?? stream
+        reasoningEffort = try container.decodeIfPresent(HermesReasoningEffort.self, forKey: .reasoningEffort) ?? reasoningEffort
     }
 
     func encode(to encoder: Encoder) throws {
@@ -749,6 +754,7 @@ struct HermesChatDraft: Codable, Equatable {
         try container.encode(systemPrompt, forKey: .systemPrompt)
         try container.encode(userPrompt, forKey: .userPrompt)
         try container.encode(stream, forKey: .stream)
+        try container.encode(reasoningEffort, forKey: .reasoningEffort)
     }
 
     func locked(toProfile profile: String) -> HermesChatDraft {
@@ -770,12 +776,14 @@ private struct HermesChatCompletionsRequestBody: Encodable {
     let messages: [HermesChatRequestMessage]
     let stream: Bool
     let user: String?
+    let reasoning: HermesReasoningPayload?
 
     enum CodingKeys: String, CodingKey {
         case model
         case messages
         case stream
         case user
+        case reasoning
     }
 
     func encode(to encoder: Encoder) throws {
@@ -784,6 +792,7 @@ private struct HermesChatCompletionsRequestBody: Encodable {
         try container.encode(messages, forKey: .messages)
         try container.encode(stream, forKey: .stream)
         try container.encodeIfPresent(user, forKey: .user)
+        try container.encodeIfPresent(reasoning, forKey: .reasoning)
     }
 }
 

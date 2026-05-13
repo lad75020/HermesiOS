@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct HermesiOSApp: App {
+    init() {
+        HermesWebsiteTypography.registerBundledFonts()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

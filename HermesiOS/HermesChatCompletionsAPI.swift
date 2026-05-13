@@ -925,9 +925,7 @@ private struct HermesChatContentPart: Decodable {
 
     var imageMarkdown: String? {
         let base64 = b64JSON ?? imageBase64
-        let mimeCandidate = mimeType ?? originalMimeType
-        let resolvedMimeType = mimeCandidate?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? mimeCandidate! : "image/png"
-        let source = imageURL?.url ?? url ?? base64.map { "data:\(resolvedMimeType);base64,\($0)" }
+        let source = imageURL?.url ?? url ?? base64.flatMap { HermesImageJSONFormatter.dataImageSource(from: $0, fallbackMIME: mimeType ?? originalMimeType) }
         guard let source, !source.isEmpty else { return nil }
         return "\n\n![Hermes image](\(source))"
     }

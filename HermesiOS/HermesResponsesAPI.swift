@@ -20,11 +20,10 @@ enum HermesImageJSONFormatter {
 
         let mimeType = firstJSONStringValue(for: "mime_type", in: trimmed)
             ?? firstJSONStringValue(for: "original_mime_type", in: trimmed)
-        let resolvedMimeType = mimeType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? mimeType! : "image/png"
         let base64 = firstJSONStringValue(for: "image_base64", in: trimmed)
             ?? firstJSONStringValue(for: "b64_json", in: trimmed)
-        guard let base64, !base64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return markdown(source: "data:\(resolvedMimeType);base64,\(cleanBase64(base64))")
+        guard let base64, let source = dataImageSource(from: base64, fallbackMIME: mimeType) else { return nil }
+        return markdown(source: source)
     }
 
     nonisolated private static func jsonObject(from text: String) -> Any? {
@@ -38,14 +37,20 @@ enum HermesImageJSONFormatter {
             jsonText = text
         }
         guard let data = jsonText.data(using: .utf8) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data)
+        return try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }
 
     nonisolated private static func imageMarkdown(from object: Any) -> String? {
         if let array = object as? [Any] {
             return array.compactMap(imageMarkdown(from:)).first
         }
-        guard let dictionary = object as? [String: Any] else { return nil }
+        guard let dictionary = object as? [String: Any] else {
+            if let string = object as? String {
+                if string.contains("![") { return string }
+                return renderableImageMarkdown(from: string)
+            }
+            return nil
+        }
 
         if let imageURL = dictionary["image_url"] as? [String: Any], let url = imageURL["url"] as? String, !url.isEmpty {
             return markdown(source: url)
@@ -60,8 +65,8 @@ enum HermesImageJSONFormatter {
         if let base64, !base64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let mimeType = (dictionary["mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 ?? (dictionary["original_mime_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let resolvedMimeType = mimeType?.isEmpty == false ? mimeType! : "image/png"
-            return markdown(source: "data:\(resolvedMimeType);base64,\(cleanBase64(base64))")
+            guard let source = dataImageSource(from: base64, fallbackMIME: mimeType) else { return nil }
+            return markdown(source: source)
         }
 
         return dictionary.values.compactMap(imageMarkdown(from:)).first
@@ -97,8 +102,36 @@ enum HermesImageJSONFormatter {
             .replacingOccurrences(of: #"\\"#, with: #"\"#)
     }
 
-    nonisolated private static func cleanBase64(_ value: String) -> String {
-        value.filter { !$0.isWhitespace }
+    nonisolated static func dataImageSource(from value: String, fallbackMIME: String?) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let separator = trimmed.range(of: ";base64,", options: [.caseInsensitive]) {
+            let prefix = String(trimmed[..<separator.lowerBound]).lowercased()
+            guard prefix.hasPrefix("data:"), let mime = normalizedImageMIME(String(prefix.dropFirst("data:".count))) else { return nil }
+            guard let encoded = normalizedBase64Payload(String(trimmed[separator.upperBound...])) else { return nil }
+            return "data:\(mime);base64,\(encoded)"
+        }
+        guard let encoded = normalizedBase64Payload(value) else { return nil }
+        let mime = normalizedImageMIME(fallbackMIME) ?? "image/png"
+        return "data:\(mime);base64,\(encoded)"
+    }
+
+    nonisolated static func normalizedImageMIME(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let lower = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allowed = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/heic"]
+        return allowed.contains(lower) ? (lower == "image/jpg" ? "image/jpeg" : lower) : nil
+    }
+
+    nonisolated private static func normalizedBase64Payload(_ value: String) -> String? {
+        var encoded = value.filter { !$0.isWhitespace }
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        guard !encoded.isEmpty, encoded.count <= 32_000_000 else { return nil }
+        let remainder = encoded.count % 4
+        if remainder == 1 { return nil }
+        if remainder > 0 { encoded += String(repeating: "=", count: 4 - remainder) }
+        guard encoded.range(of: #"^[A-Za-z0-9+/]*={0,2}$"#, options: .regularExpression) != nil else { return nil }
+        return encoded
     }
 }
 
@@ -1091,7 +1124,7 @@ private struct HermesResponseOutputItem: Decodable {
 }
 
 private struct HermesResponseContent: Decodable {
-    let type: String
+    let type: String?
     let text: String?
     let imageURL: HermesImageURLPayload?
     let url: String?
@@ -1101,21 +1134,19 @@ private struct HermesResponseContent: Decodable {
     let originalMimeType: String?
 
     var displayValue: String? {
-        if type == "output_text" || type == "text" || type == "message" {
-            guard let text else { return nil }
-            return HermesImageJSONFormatter.renderableImageMarkdown(from: text) ?? text
-        }
         if let imageMarkdown {
             return imageMarkdown
+        }
+        if type == nil || type == "output_text" || type == "text" || type == "message" {
+            guard let text else { return nil }
+            return HermesImageJSONFormatter.renderableImageMarkdown(from: text) ?? text
         }
         return nil
     }
 
     var imageMarkdown: String? {
         let base64 = b64JSON ?? imageBase64
-        let mimeCandidate = mimeType ?? originalMimeType
-        let resolvedMimeType = mimeCandidate?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? mimeCandidate! : "image/png"
-        let source = imageURL?.url ?? url ?? base64.map { "data:\(resolvedMimeType);base64,\($0)" }
+        let source = imageURL?.url ?? url ?? base64.flatMap { HermesImageJSONFormatter.dataImageSource(from: $0, fallbackMIME: mimeType ?? originalMimeType) }
         guard let source, !source.isEmpty else { return nil }
         return "\n\n![Hermes image](\(source))"
     }

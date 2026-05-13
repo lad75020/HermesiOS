@@ -1,0 +1,776 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "API Key": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé API"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clave de API"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-Schlüssel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 密钥"
+          }
+        }
+      }
+    },
+    "API Key Authentication": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Key Authentication"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentification par clé API"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autenticación con clave de API"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-Schlüssel-Authentifizierung"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 密钥认证"
+          }
+        }
+      }
+    },
+    "API port": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API port"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port de l’API"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puerto de API"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-Port"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 端口"
+          }
+        }
+      }
+    },
+    "Advertised host or IP": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Advertised host or IP"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hôte ou IP annoncé"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host o IP anunciado"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bekannter Host oder IP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公布的主机名或 IP"
+          }
+        }
+      }
+    },
+    "Apply Network Target": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply Network Target"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appliquer la cible réseau"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplicar destino de red"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netzwerkziel übernehmen"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用网络目标"
+          }
+        }
+      }
+    },
+    "Apply the network target before copying the endpoint to iOS.": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply the network target before copying the endpoint to iOS."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appliquez la cible réseau avant de copier le point de terminaison vers iOS."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aplica el destino de red antes de copiar el endpoint a iOS."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Übernimm das Netzwerkziel, bevor du den Endpunkt nach iOS kopierst."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先应用网络目标，再将端点复制到 iOS。"
+          }
+        }
+      }
+    },
+    "Applying host or port changes will restart the running companion server automatically.": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applying host or port changes will restart the running companion server automatically."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’application des modifications d’hôte ou de port redémarrera automatiquement le serveur compagnon en cours d’exécution."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al aplicar cambios de host o puerto, el servidor companion en ejecución se reiniciará automáticamente."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Änderungen an Host oder Port starten den laufenden Companion-Server automatisch neu."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用主机或端口更改会自动重启正在运行的伴侣服务器。"
+          }
+        }
+      }
+    },
+    "Authentication": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentication"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentification"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autenticación"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentifizierung"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "认证"
+          }
+        }
+      }
+    },
+    "Companion": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Companion"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compagnon"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Companion"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Companion"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伴侣"
+          }
+        }
+      }
+    },
+    "Copy API key": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy API key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la clé API"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar clave de API"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-Schlüssel kopieren"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制 API 密钥"
+          }
+        }
+      }
+    },
+    "Hermes Host Companion": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hermes Host Companion"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compagnon hôte Hermes"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hermes Host Companion"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hermes Host Companion"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hermes 主机伴侣"
+          }
+        }
+      }
+    },
+    "Minimal V1 companion daemon shell for plain HTTP WebSocket access protected by one 256-character API key.": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimal V1 companion daemon shell for plain HTTP WebSocket access protected by one 256-character API key."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interface minimale du démon compagnon V1 pour un accès WebSocket HTTP non chiffré protégé par une clé API de 256 caractères."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shell mínima del daemon companion V1 para acceso WebSocket HTTP sin cifrar, protegido por una clave de API de 256 caracteres."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimale V1-Companion-Daemon-Shell für einfachen HTTP-WebSocket-Zugriff, geschützt durch einen 256-stelligen API-Schlüssel."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最小化的 V1 伴侣守护进程外壳，用于通过一个 256 字符 API 密钥保护的明文 HTTP WebSocket 访问。"
+          }
+        }
+      }
+    },
+    "Network Target": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network Target"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cible réseau"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Destino de red"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netzwerkziel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络目标"
+          }
+        }
+      }
+    },
+    "Regenerate 256-character API Key": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regenerate 256-character API Key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Régénérer la clé API de 256 caractères"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regenerar clave de API de 256 caracteres"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "256-stelligen API-Schlüssel neu erzeugen"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新生成 256 字符 API 密钥"
+          }
+        }
+      }
+    },
+    "Regenerating invalidates every iOS device until the new API key is copied into settings.": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regenerating invalidates every iOS device until the new API key is copied into settings."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La régénération invalide tous les appareils iOS jusqu’à ce que la nouvelle clé API soit copiée dans les réglages."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regenerarla invalida todos los dispositivos iOS hasta que la nueva clave de API se copie en Ajustes."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durch das Neuerzeugen werden alle iOS-Geräte ungültig, bis der neue API-Schlüssel in die Einstellungen kopiert wurde."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新生成后，所有 iOS 设备都会失效，直到将新的 API 密钥复制到设置中。"
+          }
+        }
+      }
+    },
+    "Restart Server": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart Server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redémarrer le serveur"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reiniciar servidor"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server neu starten"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启服务器"
+          }
+        }
+      }
+    },
+    "Server Status": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server Status"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "État du serveur"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estado del servidor"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serverstatus"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器状态"
+          }
+        }
+      }
+    },
+    "Start Server": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarrer le serveur"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar servidor"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server starten"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启动服务器"
+          }
+        }
+      }
+    },
+    "Stop Server": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter le serveur"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detener servidor"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server stoppen"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止服务器"
+          }
+        }
+      }
+    },
+    "The companion uses a single 256-character API key over plain HTTP WebSocket. Copy this key into HermesiOS settings. No TLS, certificates, QR codes, enrollment ports, pairing IDs, or CA material are used.": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The companion uses a single 256-character API key over plain HTTP WebSocket. Copy this key into HermesiOS settings. No TLS, certificates, QR codes, enrollment ports, pairing IDs, or CA material are used."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le compagnon utilise une unique clé API de 256 caractères via WebSocket HTTP non chiffré. Copiez cette clé dans les réglages d’HermesiOS. Aucun TLS, certificat, code QR, port d’inscription, identifiant de jumelage ni matériel d’AC n’est utilisé."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El companion usa una única clave de API de 256 caracteres sobre WebSocket HTTP sin cifrar. Copia esta clave en los ajustes de HermesiOS. No se usan TLS, certificados, códigos QR, puertos de inscripción, IDs de emparejamiento ni material de CA."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Companion verwendet einen einzelnen 256-stelligen API-Schlüssel über einfachen HTTP-WebSocket. Kopiere diesen Schlüssel in die HermesiOS-Einstellungen. TLS, Zertifikate, QR-Codes, Registrierungsports, Kopplungs-IDs oder CA-Material werden nicht verwendet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伴侣通过明文 HTTP WebSocket 使用单个 256 字符 API 密钥。请将此密钥复制到 HermesiOS 设置中。不使用 TLS、证书、二维码、注册端口、配对 ID 或 CA 材料。"
+          }
+        }
+      }
+    },
+    "The listener binds to local loopback; this advertised value controls the endpoint shown to iOS clients and may be served through Tailscale.": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The listener binds to local loopback; this advertised value controls the endpoint shown to iOS clients and may be served through Tailscale."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le service d’écoute se lie à la boucle locale ; cette valeur annoncée contrôle le point de terminaison affiché aux clients iOS et peut être servi via Tailscale."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El listener se enlaza al loopback local; este valor anunciado controla el endpoint mostrado a los clientes iOS y puede servirse mediante Tailscale."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Listener bindet sich an den lokalen Loopback; dieser angezeigte Wert steuert den Endpunkt, der iOS-Clients angezeigt wird, und kann über Tailscale bereitgestellt werden."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监听器绑定到本地回环地址；此公布值控制显示给 iOS 客户端的端点，并可通过 Tailscale 提供服务。"
+          }
+        }
+      }
+    },
+    "Use your Tailscale hostname or stable IP here so the API endpoint targets the right machine from elsewhere on the same Tailnet.": {
+      "extractionState": "extracted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use your Tailscale hostname or stable IP here so the API endpoint targets the right machine from elsewhere on the same Tailnet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisez ici votre nom d’hôte Tailscale ou une IP stable afin que le point de terminaison de l’API cible la bonne machine depuis le même Tailnet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa aquí tu nombre de host de Tailscale o una IP estable para que el endpoint de API apunte a la máquina correcta desde otro lugar de la misma Tailnet."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verwende hier deinen Tailscale-Hostnamen oder eine stabile IP, damit der API-Endpunkt von anderer Stelle im selben Tailnet auf den richtigen Rechner zeigt."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此使用你的 Tailscale 主机名或固定 IP，以便同一 Tailnet 中其他位置的 API 端点指向正确的机器。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -1,0 +1,5 @@
+"CFBundleDisplayName" = "iOS 上的 Hermes";
+"CFBundleName" = "HermesiOS";
+"NSFaceIDUsageDescription" = "HermesiOS 使用 Face ID 解锁用于终端连接的已存储 SSH 私钥。";
+"NSMicrophoneUsageDescription" = "HermesiOS 使用麦克风通过 Apple 语音识别来听写提示。";
+"NSSpeechRecognitionUsageDescription" = "HermesiOS 使用 Apple 语音识别实时转录听写的提示。";

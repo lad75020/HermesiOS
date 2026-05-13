@@ -1,0 +1,5 @@
+"CFBundleDisplayName" = "Hermes on iOS";
+"CFBundleName" = "HermesiOS";
+"NSFaceIDUsageDescription" = "HermesiOS uses Face ID to unlock your stored SSH private key for Terminal connections.";
+"NSMicrophoneUsageDescription" = "HermesiOS uses the microphone to dictate prompts with Apple speech recognition.";
+"NSSpeechRecognitionUsageDescription" = "HermesiOS uses Apple speech recognition to transcribe dictated prompts live.";

@@ -679,17 +679,6 @@ struct HermesResponsesConsoleView: View {
             }
 
             HStack(alignment: .bottom, spacing: 12) {
-                Button {
-                    isImportingAttachment = true
-                } label: {
-                    Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                        .font(.headline)
-                        .frame(width: 42, height: 42)
-                }
-                .hermesGlassButton()
-                .disabled(responseSession.isSending)
-                .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
-
                 TextEditor(text: $promptText)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 72, maxHeight: 130)
@@ -705,6 +694,17 @@ struct HermesResponsesConsoleView: View {
                     }
 
                 VStack(spacing: 8) {
+                    Button {
+                        isImportingAttachment = true
+                    } label: {
+                        Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                            .font(.headline)
+                            .frame(width: 42, height: 42)
+                    }
+                    .hermesGlassButton()
+                    .disabled(responseSession.isSending)
+                    .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
+
                     HermesMicrophoneButton(
                         speechSession: speechSession,
                         isDisabled: responseSession.isSending
@@ -895,11 +895,19 @@ private struct HermesProfileSelector: View {
                     }
                 }
             } label: {
-                Text(currentProfileLabel)
-                    .font(.hermesWebsiteMono(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    Text(currentProfileLabel)
+                        .font(.hermesWebsiteMono(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .tint(.primary)
             .disabled(isDisabled)
@@ -1755,17 +1763,6 @@ struct HermesChatConsoleView: View {
             }
 
             HStack(alignment: .bottom, spacing: 12) {
-                Button {
-                    isImportingAttachment = true
-                } label: {
-                    Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                        .font(.headline)
-                        .frame(width: 42, height: 42)
-                }
-                .hermesGlassButton()
-                .disabled(chatSession.isSending)
-                .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
-
                 TextEditor(text: $promptText)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 72, maxHeight: 130)
@@ -1781,6 +1778,17 @@ struct HermesChatConsoleView: View {
                     }
 
                 VStack(spacing: 8) {
+                    Button {
+                        isImportingAttachment = true
+                    } label: {
+                        Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                            .font(.headline)
+                            .frame(width: 42, height: 42)
+                    }
+                    .hermesGlassButton()
+                    .disabled(chatSession.isSending)
+                    .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
+
                     HermesMicrophoneButton(
                         speechSession: speechSession,
                         isDisabled: chatSession.isSending

@@ -4,6 +4,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct HermesHeroCard: View {
     let title: String
@@ -77,7 +80,7 @@ struct HermesTabHeader: View {
                 .accessibilityHidden(true)
 
             Text(title)
-                .font(.hermesWebsiteTitle(size: 30))
+                .font(.hermesWebsiteTitle(size: titleFontSize))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
@@ -89,6 +92,14 @@ struct HermesTabHeader: View {
         .padding(.top, 4)
         .padding(.bottom, 2)
         .accessibilityElement(children: .combine)
+    }
+
+    private var titleFontSize: CGFloat {
+#if canImport(UIKit)
+        UIDevice.current.userInterfaceIdiom == .phone ? 15 : 30
+#else
+        30
+#endif
     }
 }
 

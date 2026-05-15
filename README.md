@@ -17,7 +17,7 @@ Host file edits, service controls, git operations, and secret-aware configuratio
 - Prompt attachments for images, documents, text, and source files.
 - Dashboard-backed history search and session resume actions.
 - Agent Runtime panels for memory, providers, models, profiles, gateway/messaging, tools, MCP servers, skills, schedules, observability, allowlisted targets, and knowledge erasure.
-- Settings for Hermes API, Host Companion, macOS service controls, Hermes installation status/update, theme, and Office URL.
+- Settings for the Hermes API bearer token, Host Companion endpoint/API key, macOS service controls, Hermes installation status/update, and theme; API/Dashboard/Office ports are defined in HermesHostCompanion and fetched by HermesiOS.
 - Office tab with a persisted Claw3D WebView On/Off switch.
 - iPad sidebar status/completion indicators and app-wide API/Mac/Dashboard health LEDs.
 
@@ -43,7 +43,7 @@ On the Mac host:
 
 ### 2. Required local services and ports
 
-The current app expects these services to exist on the Mac host:
+The current app expects these services to exist on the Mac host. The Mac hostname and Host Companion WebSocket port/API key are configured in HermesiOS Settings; the API gateway, Dashboard, and Office TCP ports are configured in HermesHostCompanion and fetched by HermesiOS after Host Companion verification.
 
 | Purpose | Local endpoint | Tailscale endpoint used by iOS | Required for |
 | --- | --- | --- | --- |
@@ -55,7 +55,7 @@ The current app expects these services to exist on the Mac host:
 | Claw3D Hermes adapter | `ws://127.0.0.1:18790` | proxied through Office at `:9116/api/gateway/ws` | Claw3D/OpenClaw bridge |
 | OpenClaw gateway | `ws://127.0.0.1:18789` | optional root Tailscale Serve endpoint | OpenClaw gateway compatibility |
 
-Open or serve these TCP ports through Tailscale for full iOS functionality:
+Open or serve these TCP ports through Tailscale for full iOS functionality. Keep `8642`, `9119`/proxy `9120`, and `9116` in sync with the Hermes Service Ports section in HermesHostCompanion; do not enter those ports or derived service URLs in HermesiOS Settings anymore.
 
 - `8642`: Hermes OpenAI-compatible API server.
 - `9119`: public dashboard URL, forwarded to the local host-rewriting proxy on `127.0.0.1:9120`.
@@ -64,7 +64,7 @@ Open or serve these TCP ports through Tailscale for full iOS functionality:
 - Optional: `9120` if you want direct access to the dashboard proxy for debugging.
 - Optional: root HTTPS/443 or the OpenClaw gateway endpoint if you use OpenClaw directly from other devices.
 
-Legacy note: older Host Companion builds used `9112` for API and `9212` for enrollment. Current Host Companion authentication is a single 256-character token over plain WebSocket behind Tailscale Serve; no TLS certificates, QR enrollment, pairing IDs, or enrollment port should be needed.
+Legacy note: older Host Companion builds used `9112` for API and `9212` for enrollment. Current Host Companion authentication is a single 256-character API key over plain WebSocket behind Tailscale Serve; no TLS certificates, QR enrollment, pairing IDs, or enrollment port should be needed.
 
 ### 3. Hermes Agent API server and gateway
 
@@ -74,7 +74,7 @@ HermesiOS talks to Hermes through the gateway's API Server platform.
    `hermes setup`
 2. Enable/configure the API Server platform:
    `hermes gateway setup`
-3. Set an API key in `~/.hermes/.env` if the API server binds beyond loopback. The iOS app must use the same value in Settings → Hermes API → Bearer token.
+3. Set an API key in `~/.hermes/.env` if the API server binds beyond loopback. The iOS app must use the same value in Settings → Gateway → Bearer token.
 4. Install and start the macOS LaunchAgent:
    `hermes gateway install`
    `hermes gateway start`
@@ -92,12 +92,9 @@ LaunchAgent:
 - Logs: `~/.hermes/logs/gateway.log` and `~/.hermes/logs/gateway.error.log`
 - Program: `~/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run --replace`
 
-In HermesiOS Settings:
+In HermesHostCompanion, set the API gateway service port to the API Server port, usually `8642`. HermesiOS fetches this port from Host Companion and derives the API base URL as `https://<Mac host>:<API port>/v1`; the base URL is no longer typed in HermesiOS Settings.
 
-- API base URL on simulator: `http://127.0.0.1:8642/v1` or `http://localhost:8642/v1`.
-- API base URL on device: `https://mac-studio.tail4d2ab4.ts.net:8642/v1`.
-- Bearer token: the value of `API_SERVER_KEY`, if configured.
-- The URL may be entered with or without `/v1`; the app normalizes bare origins for API requests, but using `/v1` is clearer.
+In HermesiOS Settings, only configure the Gateway bearer token: the value of `API_SERVER_KEY`, if configured.
 
 ### 4. Tailscale Serve
 
@@ -146,7 +143,7 @@ Required pieces:
    `~/.hermes/hermes-agent/venv/bin/python3 ~/.hermes/scripts/hermes_dashboard_host_proxy.py`
 3. Prefer the LaunchAgent below for persistence instead of leaving those commands in a terminal.
 4. Forward Tailscale `:9119` to `http://127.0.0.1:9120`.
-5. Set the History dashboard URL in HermesiOS to `https://mac-studio.tail4d2ab4.ts.net:9119`.
+5. Set the Dashboard service port in HermesHostCompanion to the public dashboard port, usually `9119`. HermesiOS derives the dashboard URL as `https://<Mac host>:<Dashboard port>`; the dashboard URL is no longer typed in HermesiOS Settings.
 
 LaunchAgent for the proxy:
 
@@ -172,14 +169,20 @@ HermesHostCompanion is required for Agent Runtime panels, macOS service controls
 
 1. In Xcode, build the `HermesHostCompanion` scheme.
 2. Launch the built macOS app.
-3. In the Host Companion window, set:
+3. In the Host Companion window, set the Network Target:
    - Advertised host: `mac-studio.tail4d2ab4.ts.net` for physical devices, or `127.0.0.1` for simulator-only use.
    - API port: `9312` for Laurent's current Tailscale setup, unless you intentionally use the code default `9112` locally.
 4. Click Apply Network Target.
-5. Start or restart the server.
-6. Copy the displayed API URL into HermesiOS Settings → Host Companion.
-7. Copy the displayed 256-character token into HermesiOS Settings → Host Companion → Authentication token.
-8. Do not paste the token into logs, README files, screenshots, or commits.
+5. In Hermes Service Ports, set the TCP ports for the services HermesiOS should use:
+   - API gateway: usually `8642`.
+   - Hermes Dashboard: usually `9119` when Tailscale forwards it to the local dashboard proxy on `9120`.
+   - Hermes Office: usually `9116`.
+6. Click Save Service Ports. These values are now the source of truth for HermesiOS service URLs.
+7. Start or restart the server.
+8. Copy the displayed API URL into HermesiOS Settings → Host Companion.
+9. Copy the displayed 256-character API key into HermesiOS Settings → Host Companion.
+10. Tap Verify API Key in HermesiOS. After verification, HermesiOS fetches the API gateway, Dashboard, and Office ports from Host Companion and rebuilds its service URLs automatically.
+11. Do not paste the API key into logs, README files, screenshots, or commits.
 
 Expected URLs:
 
@@ -193,7 +196,7 @@ lsof -nP -iTCP:9312 -sTCP:LISTEN
 /Applications/Tailscale.app/Contents/MacOS/Tailscale serve status | grep 9312
 ```
 
-Host Companion currently uses token authentication only. If an old README, setting, or QR code mentions `wss://...:9113/enroll`, `9212/enroll`, pinned certificates, fingerprints, CAs, or enrollment IDs, treat it as stale and replace it with the WebSocket URL plus token flow.
+Host Companion currently uses API-key authentication only. If an old README, setting, or QR code mentions `wss://...:9113/enroll`, `9212/enroll`, pinned certificates, fingerprints, CAs, or enrollment IDs, treat it as stale and replace it with the WebSocket URL plus API key flow.
 
 ### 7. macOS services managed from HermesiOS Settings
 
@@ -236,9 +239,7 @@ Required pieces:
    `cd ~/.hermes/hermes-office && npm run hermes-adapter`
 3. Prefer the LaunchAgent below for the adapter so it survives logout/reboot.
 4. Tailscale Serve forwarding `https://mac-studio.tail4d2ab4.ts.net:9116` to `http://127.0.0.1:9116` for physical devices.
-5. HermesiOS Settings → Office URL set to:
-   - Simulator: `http://localhost:9116`
-   - Physical device: `https://mac-studio.tail4d2ab4.ts.net:9116`
+5. HermesHostCompanion → Hermes Service Ports → Hermes Office set to `9116`. HermesiOS derives the Office URL as `https://<Mac host>:9116` for physical devices or the matching local host URL for simulator use; the Office URL is no longer typed in HermesiOS Settings.
 6. Office tab Claw3D WebView switch turned on when you want the WebView loaded.
 
 LaunchAgent for the adapter:
@@ -272,14 +273,15 @@ Do not point Claw3D gateway fields at `http://127.0.0.1:8642/v1`; that is the Op
 1. Open `HermesiOS.xcodeproj`.
 2. Select the `HermesiOS` scheme.
 3. Build for an iOS Simulator or a signed physical device.
-4. In Settings, configure:
-   - Hermes API URL and bearer token.
-   - Dashboard URL.
-   - Host Companion WebSocket URL and token.
+4. In HermesHostCompanion, configure and save the Hermes Service Ports for API gateway, Dashboard, and Office before verifying the iOS app.
+5. In HermesiOS Settings, configure only the client-side values:
+   - Mac host, e.g. the Tailscale hostname for a physical device.
+   - Host Companion TCP port, WebSocket API URL, and 256-character API key.
+   - Gateway bearer token, if `API_SERVER_KEY` is configured.
    - Hermes workspace path, usually `/Volumes/WDBlack4TB/Code/HermesiOS/.hermes` for this project setup or `~/.hermes` for the default Hermes workspace.
-   - Office URL.
-5. Confirm the top status band shows reachable API, Mac Companion, and Dashboard states.
-6. Test each major tab:
+6. Tap Verify API Key under Host Companion. Successful verification fetches the API gateway, Dashboard, and Office ports from the Mac companion. Do not type API base URLs, Dashboard URLs, Office URLs, or their service ports in HermesiOS Settings; those are derived from the Mac host plus Host Companion-provided ports.
+7. Confirm the top status band shows reachable API, Mac Companion, and Dashboard states.
+8. Test each major tab:
    - Ask Hermes: load profiles, send a short prompt.
    - Chat: send a short prompt and confirm debug/tool events stay out of the assistant bubble.
    - History: search a known term and open a session.
@@ -311,12 +313,12 @@ Before considering the iOS app fully functional, verify every item:
 - Dashboard host-rewriting proxy listens on `9120`.
 - Tailscale `:9119` forwards to `127.0.0.1:9120`.
 - HermesHostCompanion is built, running, listening on the configured port, and reachable through Tailscale `:9312` for physical devices.
-- The 256-character Host Companion token is copied into HermesiOS and never committed.
+- The 256-character Host Companion API key is copied into HermesiOS and never committed.
 - LaunchAgents exist and are loaded for `ai.hermes.gateway`, `fr.dubertrand.hermes-dashboard-host-proxy`, `fr.dubertrand.hermes-office-adapter`, and `ai.openclaw.gateway` if OpenClaw is used.
 - Office web app listens on `9116` and Tailscale serves `:9116`.
 - Claw3D adapter listens on `18790`.
 - OpenClaw gateway listens on `18789` if that workflow is needed.
-- HermesiOS Settings contain the Tailscale URLs when running on a physical device, not `127.0.0.1` URLs.
+- HermesHostCompanion has the correct API gateway, Dashboard, and Office service ports saved; HermesiOS Settings no longer stores those service URLs or ports.
 - The app status band reports API, Mac Companion, and Dashboard as reachable.
 
 ## Project layout
@@ -326,10 +328,10 @@ Before considering the iOS app fully functional, verify every item:
 - `HermesiOS/HermesChatCompletionsAPI.swift`: Chat Completions requests and streaming status-pill handling.
 - `HermesiOS/HermesDashboardHistorySearch.swift`: dashboard-backed search client.
 - `HermesiOS/HermesAgentConfigView.swift`: Agent Runtime panels.
-- `HermesiOS/HermesSettingsView.swift`: Settings, service controls, and Hermes installation controls.
-- `HermesiOS/HermesOfficeView.swift`: Office WebView, URL setting, reload, and WebView switch.
+- `HermesiOS/HermesSettingsView.swift`: Settings, service controls, Hermes installation controls, and Host Companion verification.
+- `HermesiOS/HermesOfficeView.swift`: Office status, reload, and WebView switch; its URL is derived from Host Companion-provided service ports.
 - `HermesiOS/HermesCompanionClient.swift`: iOS Host Companion client.
-- `HermesHostCompanion/`: macOS helper app, WebSocket server, protocol, and host-side registries.
+- `HermesHostCompanion/`: macOS helper app, WebSocket server, protocol, service-port source of truth, and host-side registries.
 
 ## Development rules
 

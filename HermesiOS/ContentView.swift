@@ -130,6 +130,11 @@ struct ContentView: View {
                 isShowingSplash = false
             }
         }
+        .task(id: companionServicePortsLoadKey) {
+            guard !isShowingSplash else { return }
+            guard companionEnrollment.identityState.isEnrolled else { return }
+            await refreshServicePortsFromCompanion()
+        }
         .task(id: runtimeInitialLoadKey) {
             guard !isShowingSplash else { return }
             guard isRuntimeTabEnabled else { return }
@@ -268,6 +273,16 @@ struct ContentView: View {
         HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
     }
 
+    private var companionServicePortsLoadKey: String {
+        [
+            "splash=\(isShowingSplash)",
+            companionEnrollment.identityState.isEnrolled ? "enrolled" : "not-enrolled",
+            companionEnrollment.identityState.serverEndpoint,
+            companionEnrollment.identityState.authenticationTokenFingerprint,
+            companionSettings.apiURL
+        ].joined(separator: "|")
+    }
+
     private var runtimeInitialLoadKey: String {
         [
             "splash=\(isShowingSplash)",
@@ -294,6 +309,23 @@ struct ContentView: View {
             companionEnrollment.identityState.deviceID,
             companionEnrollment.identityState.serverEndpoint
         ].joined(separator: "|")
+    }
+
+    private func refreshServicePortsFromCompanion() async {
+        do {
+            let ports = try await companionRuntime.refreshServicePorts(
+                settings: companionSettings,
+                identityState: companionEnrollment.identityState
+            )
+            let apiPort = HermesHostEndpoints.tcpPort(from: ports.apiGatewayPort, fallback: HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort))
+            let fetchedDashboardPort = HermesHostEndpoints.tcpPort(from: ports.dashboardPort, fallback: dashboardPort)
+            let fetchedOfficePort = HermesHostEndpoints.tcpPort(from: ports.officePort, fallback: officePort)
+            apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: macHost, port: apiPort, path: "/v1")
+            dashboardPort = fetchedDashboardPort
+            officePort = fetchedOfficePort
+        } catch {
+            companionRuntime.servicePortsError = error.localizedDescription
+        }
     }
 
     private var iPadLayout: some View {

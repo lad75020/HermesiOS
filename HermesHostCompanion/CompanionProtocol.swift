@@ -209,6 +209,12 @@ struct ServiceStopResult: Codable {
     let output: String
 }
 
+struct CompanionServicePortsResult: Codable, Equatable {
+    let apiGatewayPort: String
+    let dashboardPort: String
+    let officePort: String
+}
+
 struct TailscaleServeStatusPayload: Codable {
     let port: String
 }

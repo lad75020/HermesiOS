@@ -235,6 +235,12 @@ struct HermesCompanionServiceStopResult: Codable {
     let output: String
 }
 
+struct HermesCompanionServicePortsResult: Codable, Equatable {
+    var apiGatewayPort = defaultHermesAPIPort
+    var dashboardPort = defaultHermesDashboardPort
+    var officePort = defaultHermesOfficePort
+}
+
 struct HermesCompanionTailscaleServeStatusPayload: Codable {
     let port: String
 }
@@ -1296,6 +1302,9 @@ final class HermesCompanionRuntimeSession {
     var linkedServiceOutput = ""
     var macServiceStatuses: [String: HermesCompanionServiceStatusResult] = [:]
     var macServiceOutputs: [String: String] = [:]
+    var servicePorts = HermesCompanionServicePortsResult()
+    var servicePortsUpdatedAt: Date?
+    var servicePortsError = ""
     var tailscaleServeStatus: HermesCompanionTailscaleServeStatusResult?
     var tailscaleServeOutput = ""
     var tailscaleServeError = ""
@@ -1644,6 +1653,19 @@ final class HermesCompanionRuntimeSession {
         if macServiceOutputs[serviceID, default: ""].isEmpty {
             macServiceOutputs[serviceID] = result.output
         }
+    }
+
+    func refreshServicePorts(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws -> HermesCompanionServicePortsResult {
+        let result: HermesCompanionServicePortsResult = try await HermesCompanionSessionFactory.request(
+            settings: settings,
+            state: identityState,
+            type: "service_ports",
+            payload: HermesCompanionEmptyPayload()
+        )
+        servicePorts = result
+        servicePortsUpdatedAt = Date()
+        servicePortsError = ""
+        return result
     }
 
     func refreshTailscaleServeStatus(port: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {

@@ -303,6 +303,7 @@ final class CompanionClientSession {
                         "service_start",
                         "service_stop",
                         "service_restart",
+                        "service_ports",
                         "tailscale_serve_status",
                         "set_tailscale_serve",
                         "hermes_installation_status",
@@ -517,6 +518,8 @@ final class CompanionClientSession {
             } catch {
                 return .error(id: request.id, code: "service_restart_failed", message: error.localizedDescription)
             }
+        case "service_ports":
+            return .success(id: request.id, payload: CompanionServicePortsStore.load())
         case "tailscale_serve_status":
             do {
                 guard let payload = request.payload else {

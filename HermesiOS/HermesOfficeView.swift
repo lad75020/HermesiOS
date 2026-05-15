@@ -22,16 +22,11 @@ struct HermesOfficeSettingsSection: View {
                     label: officeReturnsHTTP200 ? "Office URL returns HTTP 200" : "Office URL does not return HTTP 200"
                 )
 
-                TextField("TCP port, e.g. 9116", text: $officePort)
-                    .keyboardType(.numberPad)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .hermesRuntimeInput()
+                Text("Office port is managed by HermesHostCompanion")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
             }
 
-            Text("Office URL: \(officeURLString)")
-                .font(.caption)
-                .foregroundStyle(.hermesSecondaryText)
         }
         .task(id: officeURLString) {
             await runOfficeStatusLoop()

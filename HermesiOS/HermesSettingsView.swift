@@ -257,18 +257,13 @@ struct HermesSettingsView: View {
                 }
 
                 Section("Gateway") {
-                TextField("TCP port", text: apiPortBinding)
-                    .keyboardType(.numberPad)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
                 SecureField("Bearer token", text: $apiSettings.apiKey)
 
                 Toggle("Allow self-signed HTTPS certificates", isOn: $apiSettings.allowSelfSignedCertificates)
 
-                settingsRow(label: "Base URL", value: apiSettings.baseURL)
-                settingsRow(label: "Responses URL", value: HermesAPISettings.responseURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
-                settingsRow(label: "Chat URL", value: HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL)?.absoluteString ?? "Invalid URL")
+                Text("The API gateway TCP port is configured in HermesHostCompanion and fetched automatically by HermesiOS after Host Companion verification.")
+                    .font(.caption)
+                    .foregroundStyle(.hermesSecondaryText)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
@@ -343,16 +338,6 @@ struct HermesSettingsView: View {
                     }
                     .hermesGlassButton()
                     .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isBusy)
-                }
-
-                Section("Dashboard") {
-                    TextField("TCP port, e.g. 9120", text: $dashboardPort)
-                        .keyboardType(.numberPad)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .hermesRuntimeInput()
-
-                    settingsRow(label: "Dashboard URL", value: dashboardURL)
                 }
 
                 Section("Tabs") {
@@ -521,15 +506,6 @@ struct HermesSettingsView: View {
         )
     }
 
-    private var apiPortBinding: Binding<String> {
-        Binding(
-            get: { HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort) },
-            set: { newPort in
-                apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: macHost, port: newPort, path: "/v1")
-            }
-        )
-    }
-
     private var companionPortBinding: Binding<String> {
         Binding(
             get: { HermesHostEndpoints.tcpPort(from: companionSettings.apiURL, fallback: defaultHermesCompanionPort) },
@@ -547,12 +523,16 @@ struct HermesSettingsView: View {
         companionEnrollment.identityState.matches(settings: companionSettings)
     }
 
+    private var hostDefinedServicePorts: HermesCompanionServicePortsResult {
+        companionRuntime.servicePorts
+    }
+
     private var tailscaleServePorts: [String] {
         let companionPort = HermesHostEndpoints.tcpPort(from: companionSettings.apiURL, fallback: defaultHermesCompanionPort)
         return [
-            HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort),
-            HermesHostEndpoints.tcpPort(from: dashboardPort, fallback: defaultHermesDashboardPort),
-            HermesHostEndpoints.tcpPort(from: officePort, fallback: defaultHermesOfficePort)
+            HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.apiGatewayPort, fallback: HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort)),
+            HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.dashboardPort, fallback: dashboardPort),
+            HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.officePort, fallback: officePort)
         ]
         .filter { $0 != companionPort }
         .reduce(into: [String]()) { ports, port in
@@ -584,20 +564,20 @@ struct HermesSettingsView: View {
             companionEnrollment.identityState.isEnrolled ? "enrolled" : "not-enrolled",
             companionEnrollment.identityState.serverEndpoint,
             selectedTailscaleServePort,
-            apiPortBinding.wrappedValue,
-            dashboardPort,
-            officePort,
+            hostDefinedServicePorts.apiGatewayPort,
+            hostDefinedServicePorts.dashboardPort,
+            hostDefinedServicePorts.officePort,
             companionPortBinding.wrappedValue
         ].joined(separator: "|")
     }
 
     private func tailscaleServePortLabel(_ port: String) -> String {
         switch port {
-        case HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort):
+        case HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.apiGatewayPort, fallback: HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort)):
             "API Server (\(port))"
-        case HermesHostEndpoints.tcpPort(from: dashboardPort, fallback: defaultHermesDashboardPort):
+        case HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.dashboardPort, fallback: dashboardPort):
             "Dashboard (\(port))"
-        case HermesHostEndpoints.tcpPort(from: officePort, fallback: defaultHermesOfficePort):
+        case HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.officePort, fallback: officePort):
             "Office (\(port))"
         default:
             "TCP \(port)"
@@ -613,10 +593,11 @@ struct HermesSettingsView: View {
     }
 
     private func applyMacHostToServiceURLs() {
-        apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: macHost, port: apiPortBinding.wrappedValue, path: "/v1")
+        let apiPort = HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.apiGatewayPort, fallback: HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort))
+        apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: macHost, port: apiPort, path: "/v1")
         companionSettings.apiURL = HermesHostEndpoints.webSocketURLString(host: macHost, port: companionPortBinding.wrappedValue)
-        dashboardPort = HermesHostEndpoints.tcpPort(from: dashboardPort, fallback: defaultHermesDashboardPort)
-        officePort = HermesHostEndpoints.tcpPort(from: officePort, fallback: defaultHermesOfficePort)
+        dashboardPort = HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.dashboardPort, fallback: dashboardPort)
+        officePort = HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.officePort, fallback: officePort)
     }
 
     private func migrateLegacyURLPortsIfNeeded() {

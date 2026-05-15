@@ -79,6 +79,48 @@ private struct HermesHostCompanionRootView: View {
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {
+                        Text("These service ports are the source of truth for HermesiOS. The iOS app fetches them from this companion after API-key verification and derives API, Dashboard, and Office URLs from its configured Mac host.")
+                            .foregroundStyle(.secondary)
+
+                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
+                            GridRow {
+                                Text("API gateway")
+                                    .fontWeight(.semibold)
+                                TextField("8642", text: $controller.apiGatewayPort)
+                                    .frame(width: 120)
+                            }
+                            GridRow {
+                                Text("Hermes Dashboard")
+                                    .fontWeight(.semibold)
+                                TextField("9120", text: $controller.dashboardPort)
+                                    .frame(width: 120)
+                            }
+                            GridRow {
+                                Text("Hermes Office")
+                                    .fontWeight(.semibold)
+                                TextField("9116", text: $controller.officePort)
+                                    .frame(width: 120)
+                            }
+                        }
+
+                        HStack {
+                            Button("Save Service Ports") {
+                                controller.applyServicePorts()
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Text("Saving is immediate; restart HermesiOS or tap Verify API Key again to refresh cached ports on iOS.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } label: {
+                    Label("Hermes Service Ports", systemImage: "number.square")
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
                         Text("Authentication")
                             .font(.headline)
                         Text("The companion uses a single 256-character API key over plain HTTP WebSocket. Copy this key into HermesiOS settings. No TLS, certificates, QR codes, enrollment ports, pairing IDs, or CA material are used.")
@@ -165,10 +207,17 @@ final class CompanionServerController {
     private(set) var authenticationToken: String
     var advertisedHost: String
     var apiPort: String
+    var apiGatewayPort: String
+    var dashboardPort: String
+    var officePort: String
 
     init() {
         advertisedHost = server.currentConfiguration.host
         apiPort = String(server.currentConfiguration.port.rawValue)
+        let servicePorts = CompanionServicePortsStore.load()
+        apiGatewayPort = servicePorts.apiGatewayPort
+        dashboardPort = servicePorts.dashboardPort
+        officePort = servicePorts.officePort
         authenticationToken = CompanionAuthenticationTokenStore.shared.token
 
         // Start even if SwiftUI restores the app without immediately mounting the
@@ -212,6 +261,18 @@ final class CompanionServerController {
         authenticationToken = CompanionAuthenticationTokenStore.shared.regenerateToken()
     }
 
+    func applyServicePorts() {
+        let ports = CompanionServicePortsStore.sanitize(
+            apiGatewayPort: apiGatewayPort,
+            dashboardPort: dashboardPort,
+            officePort: officePort
+        )
+        apiGatewayPort = ports.apiGatewayPort
+        dashboardPort = ports.dashboardPort
+        officePort = ports.officePort
+        CompanionServicePortsStore.save(ports)
+    }
+
     func applyNetworkConfiguration() {
         let trimmedHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = trimmedHost.isEmpty ? CompanionServerConfiguration.default.host : trimmedHost
@@ -231,5 +292,53 @@ final class CompanionServerController {
             stopServer()
             startServer()
         }
+    }
+}
+
+
+enum CompanionServicePortsStore {
+    private static let apiGatewayPortKey = "hermes.servicePorts.apiGateway"
+    private static let dashboardPortKey = "hermes.servicePorts.dashboard"
+    private static let officePortKey = "hermes.servicePorts.office"
+
+    static let defaultPorts = CompanionServicePortsResult(
+        apiGatewayPort: "8642",
+        dashboardPort: "9120",
+        officePort: "9116"
+    )
+
+    static func load() -> CompanionServicePortsResult {
+        let defaults = UserDefaults.standard
+        return sanitize(
+            apiGatewayPort: defaults.string(forKey: apiGatewayPortKey) ?? defaultPorts.apiGatewayPort,
+            dashboardPort: defaults.string(forKey: dashboardPortKey) ?? defaultPorts.dashboardPort,
+            officePort: defaults.string(forKey: officePortKey) ?? defaultPorts.officePort
+        )
+    }
+
+    static func save(_ ports: CompanionServicePortsResult) {
+        let sanitized = sanitize(
+            apiGatewayPort: ports.apiGatewayPort,
+            dashboardPort: ports.dashboardPort,
+            officePort: ports.officePort
+        )
+        let defaults = UserDefaults.standard
+        defaults.set(sanitized.apiGatewayPort, forKey: apiGatewayPortKey)
+        defaults.set(sanitized.dashboardPort, forKey: dashboardPortKey)
+        defaults.set(sanitized.officePort, forKey: officePortKey)
+    }
+
+    static func sanitize(apiGatewayPort: String, dashboardPort: String, officePort: String) -> CompanionServicePortsResult {
+        CompanionServicePortsResult(
+            apiGatewayPort: sanitizedPort(apiGatewayPort, fallback: defaultPorts.apiGatewayPort),
+            dashboardPort: sanitizedPort(dashboardPort, fallback: defaultPorts.dashboardPort),
+            officePort: sanitizedPort(officePort, fallback: defaultPorts.officePort)
+        )
+    }
+
+    private static func sanitizedPort(_ value: String, fallback: String) -> String {
+        let digits = value.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+        guard let port = UInt16(digits), port > 0 else { return fallback }
+        return String(port)
     }
 }

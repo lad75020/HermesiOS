@@ -41,14 +41,15 @@ private struct HermesHostCompanionRootView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Hermes Host Companion")
-                        .font(.largeTitle.bold())
-                    Text("Minimal V1 companion daemon shell for plain HTTP WebSocket access protected by one 256-character API key.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Hermes Host Companion")
+                            .font(.largeTitle.bold())
+                        Text("Minimal V1 companion daemon shell for plain HTTP WebSocket access protected by one 256-character API key.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {
@@ -189,11 +190,11 @@ private struct HermesHostCompanionRootView: View {
                     .buttonStyle(.bordered)
                     .disabled(controller.server.state == .stopped)
                 }
-
-                Spacer()
             }
             .padding(24)
-            .navigationTitle("Companion")
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .navigationTitle("Companion")
         }
         .task {
             controller.startServerIfNeeded()

@@ -14,11 +14,25 @@ struct HermesHostCompanionApp: App {
     @State private var serverController = CompanionServerController()
 
     var body: some Scene {
-        WindowGroup {
-            HermesHostCompanionRootView(controller: serverController)
+        MenuBarExtra {
+            SettingsLink {
+                Text("Settings")
+            }
+
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
+            }
+        } label: {
+            Image("MenuBarIcon")
+                .renderingMode(.template)
+                .accessibilityLabel("Hermes Host Companion")
         }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 760, height: 560)
+        .menuBarExtraStyle(.menu)
+
+        Settings {
+            HermesHostCompanionRootView(controller: serverController)
+                .frame(width: 760, height: 560)
+        }
     }
 }
 

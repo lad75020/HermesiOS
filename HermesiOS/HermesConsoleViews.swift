@@ -513,6 +513,10 @@ struct HermesResponsesConsoleView: View {
         ) { result in
             handleAttachmentImport(result)
         }
+        .onChange(of: responseSession.isSending) { _, isSending in
+            guard isPhoneLayout, isSending else { return }
+            collapseComposerActionsIfNeeded()
+        }
     }
 
     private var responseWorkspaceSwitcher: some View {
@@ -640,7 +644,7 @@ struct HermesResponsesConsoleView: View {
                 HStack(spacing: 10) {
                     Spacer()
 
-                    if canResumeLastResponseSession {
+                    if canResumeLastResponseSession && !shouldHideResponseSessionControls {
                         Button {
                             responseSession.resumeLastKnownResponseSession()
                         } label: {
@@ -650,7 +654,7 @@ struct HermesResponsesConsoleView: View {
                         .disabled(responseSession.isSending)
                     }
 
-                    if responseSession.hasActiveConversation {
+                    if responseSession.hasActiveConversation && !shouldHideResponseSessionControls {
                         Button {
                             responseSession.terminateAndStartNewSession()
                         } label: {
@@ -737,7 +741,7 @@ struct HermesResponsesConsoleView: View {
 
     private var compactResponseComposerActions: some View {
         VStack(spacing: 8) {
-            if isComposerActionsExpanded {
+            if isComposerActionsExpanded && !responseSession.isSending {
                 responseAttachButton
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 responseMicrophoneButton
@@ -802,6 +806,7 @@ struct HermesResponsesConsoleView: View {
     }
 
     private func submitResponsePrompt() {
+        dismissKeyboardIfNeeded()
         speechSession.stop()
         var submittedDraft = requestDraft
         submittedDraft.userPrompt = promptText
@@ -821,6 +826,17 @@ struct HermesResponsesConsoleView: View {
         withAnimation(.easeOut(duration: 0.16)) {
             isComposerActionsExpanded = false
         }
+    }
+
+    private func dismissKeyboardIfNeeded() {
+        guard isPhoneLayout else { return }
+#if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+#endif
+    }
+
+    private var shouldHideResponseSessionControls: Bool {
+        isPhoneLayout && responseSession.isSending
     }
 
     private static let transcriptBottomID = "responses-transcript-bottom"
@@ -1769,6 +1785,10 @@ struct HermesChatConsoleView: View {
         ) { result in
             handleAttachmentImport(result)
         }
+        .onChange(of: chatSession.isSending) { _, isSending in
+            guard isPhoneLayout, isSending else { return }
+            collapseComposerActionsIfNeeded()
+        }
     }
 
     private var chatTranscript: some View {
@@ -1919,7 +1939,7 @@ struct HermesChatConsoleView: View {
 
     private var compactChatComposerActions: some View {
         VStack(spacing: 8) {
-            if isComposerActionsExpanded {
+            if isComposerActionsExpanded && !chatSession.isSending {
                 chatAttachButton
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 chatMicrophoneButton
@@ -1984,6 +2004,7 @@ struct HermesChatConsoleView: View {
     }
 
     private func submitChatPrompt() {
+        dismissKeyboardIfNeeded()
         speechSession.stop()
         var submittedDraft = chatDraft
         submittedDraft.userPrompt = promptText
@@ -2003,6 +2024,13 @@ struct HermesChatConsoleView: View {
         withAnimation(.easeOut(duration: 0.16)) {
             isComposerActionsExpanded = false
         }
+    }
+
+    private func dismissKeyboardIfNeeded() {
+        guard isPhoneLayout else { return }
+#if canImport(UIKit)
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+#endif
     }
 
     private static let transcriptBottomID = "chat-transcript-bottom"

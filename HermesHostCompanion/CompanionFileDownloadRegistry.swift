@@ -12,6 +12,43 @@ struct CompanionFileDownloadRegistry {
     private let maxChunkBytes = 384 * 1024
     private let logger = Logger(subsystem: "fr.dubertrand.HermesHostCompanion", category: "FileDownload")
 
+
+    func listDirectory(path rawPath: String, requester: String) throws -> FileBrowserResult {
+        let trimmedPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedPath = trimmedPath.isEmpty ? "/Users" : trimmedPath
+        guard requestedPath.hasPrefix("/") else { throw FileBrowserError.notAbsolutePath }
+
+        let url = URL(fileURLWithPath: requestedPath, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
+        try authorizeBrowserDirectory(url: url)
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+        guard values.isDirectory == true else { throw FileBrowserError.notDirectory }
+
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .localizedNameKey, .isHiddenKey]
+        let children = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: Array(keys), options: [.skipsPackageDescendants])
+        let entries = children.compactMap { child -> FileBrowserEntry? in
+            guard !isSensitivePath(child.path) else { return nil }
+            guard isDescendant(child.path, of: "/Users") else { return nil }
+            guard let childValues = try? child.resourceValues(forKeys: keys) else { return nil }
+            guard childValues.isDirectory == true || childValues.isRegularFile == true else { return nil }
+            let name = childValues.localizedName?.isEmpty == false ? childValues.localizedName! : child.lastPathComponent
+            guard name.isEmpty == false else { return nil }
+            return FileBrowserEntry(
+                name: name,
+                path: child.path,
+                isDirectory: childValues.isDirectory == true,
+                byteCount: childValues.isDirectory == true ? nil : childValues.fileSize
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+
+        let parentPath: String? = url.path == "/Users" ? nil : max(url.deletingLastPathComponent().path, "/Users")
+        logger.info("Allowed file browser listing requester=\(requester, privacy: .public) path=\(url.path, privacy: .private) entries=\(entries.count, privacy: .public)")
+        return FileBrowserResult(path: url.path, parentPath: parentPath, entries: entries)
+    }
+
     func downloadFile(path rawPath: String, workspacePath: String?, requester: String) throws -> FileDownloadResult {
         let metadata = try fileMetadata(for: rawPath, workspacePath: workspacePath, requester: requester, operation: "download_file")
         let data = try Data(contentsOf: metadata.url, options: [.mappedIfSafe])
@@ -89,6 +126,12 @@ struct CompanionFileDownloadRegistry {
         )
     }
 
+    private func authorizeBrowserDirectory(url: URL) throws {
+        let path = url.path
+        guard isDescendant(path, of: "/Users") else { throw FileBrowserError.pathOutsideUsers }
+        guard !isSensitivePath(path) else { throw FileDownloadError.sensitivePath }
+    }
+
     private func authorize(url: URL, workspacePath: String?) throws {
         let path = url.path
         guard !isSensitivePath(path) else { throw FileDownloadError.sensitivePath }
@@ -106,6 +149,7 @@ struct CompanionFileDownloadRegistry {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         candidates.append(home + "/.hermes")
         candidates.append(home + "/Library/Application Support/HermesGateway")
+        candidates.append("/Users")
         candidates.append("/Volumes/WDBlack4TB/.hermes")
         candidates.append("/Volumes/WDBlack4TB/Code/HermesiOS/.hermes")
 
@@ -172,6 +216,24 @@ enum FileDownloadError: LocalizedError {
             return "File downloads are restricted to approved Hermes roots: \(roots.joined(separator: ", "))."
         case .sensitivePath:
             return "This path is blocked because it may contain credentials or other sensitive local data."
+        }
+    }
+}
+
+
+enum FileBrowserError: LocalizedError {
+    case notAbsolutePath
+    case notDirectory
+    case pathOutsideUsers
+
+    var errorDescription: String? {
+        switch self {
+        case .notAbsolutePath:
+            return "The macOS folder path must be absolute and start with /."
+        case .notDirectory:
+            return "The selected macOS path is not a folder."
+        case .pathOutsideUsers:
+            return "The file browser is restricted to /Users on the Mac."
         }
     }
 }

@@ -41,8 +41,14 @@ struct HermesUtilitiesView: View {
     @State private var promptHistoryStatusMessage = "Capturing prompts sent from Ask Hermes and Chat with Hermes."
     @State private var isFileDownloaderFolderImporterPresented = false
     @State private var selectedDownloadFolderURL: URL?
-    @State private var macFilePath = "/Users/me"
-    @State private var fileDownloaderStatus = "Pick an iOS Files folder, enter a full macOS file path, then download."
+    @State private var macFilePath = ""
+    @State private var isMacFileBrowserPresented = false
+    @State private var macFileBrowserPath = "/Users"
+    @State private var macFileBrowserEntries: [HermesCompanionFileBrowserEntry] = []
+    @State private var macFileBrowserParentPath: String?
+    @State private var isLoadingMacFileBrowser = false
+    @State private var macFileBrowserError = ""
+    @State private var fileDownloaderStatus = "Pick an iOS Files folder, browse the Mac, then download."
     @State private var isDownloadingFile = false
 
     var body: some View {
@@ -169,6 +175,9 @@ struct HermesUtilitiesView: View {
         ) { result in
             handleFileDownloaderFolderImport(result)
         }
+        .sheet(isPresented: $isMacFileBrowserPresented) {
+            macFileBrowserSheet
+        }
         .onAppear {
             clipboardHistory.captureCurrentPasteboardIfNeeded()
         }
@@ -261,13 +270,33 @@ struct HermesUtilitiesView: View {
                 }
             }
 
-            TextField("/Users/me", text: $macFilePath)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.body.monospaced())
+            Button {
+                presentMacFileBrowser()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "macwindow")
+                        .foregroundStyle(.igActionBlue)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(macFilePath.isEmpty ? "Browse Mac files" : URL(fileURLWithPath: macFilePath).lastPathComponent)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(macFilePath.isEmpty ? "Starts at /Users on the remote Mac" : macFilePath)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.hermesSecondaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.hermesSecondaryText)
+                }
                 .padding(12)
                 .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .textSelection(.enabled)
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(!companionEnrollment.identityState.isEnrolled || companionRuntime.isBusy || isDownloadingFile)
 
             HStack(spacing: 10) {
                 Button {
@@ -292,12 +321,149 @@ struct HermesUtilitiesView: View {
         .padding(.top, 12)
     }
 
+    private var macFileBrowserSheet: some View {
+        NavigationStack {
+            List {
+                if isLoadingMacFileBrowser {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Loading \(macFileBrowserPath)…")
+                            .foregroundStyle(.hermesSecondaryText)
+                    }
+                }
+
+                if macFileBrowserError.isEmpty == false {
+                    Text(macFileBrowserError)
+                        .font(.igSecondaryMeta)
+                        .foregroundStyle(.igGradOrange)
+                        .textSelection(.enabled)
+                }
+
+                if let macFileBrowserParentPath {
+                    Button {
+                        loadMacFileBrowser(path: macFileBrowserParentPath)
+                    } label: {
+                        Label("Parent folder", systemImage: "arrow.up.folder")
+                    }
+                }
+
+                ForEach(macFileBrowserEntries) { entry in
+                    Button {
+                        if entry.isDirectory {
+                            loadMacFileBrowser(path: entry.path)
+                        } else {
+                            macFilePath = entry.path
+                            fileDownloaderStatus = "Selected Mac file: \(entry.name)."
+                            isMacFileBrowserPresented = false
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: entry.isDirectory ? "folder" : "doc")
+                                .foregroundStyle(entry.isDirectory ? .igActionBlue : .hermesSecondaryText)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(entry.name)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text(entry.isDirectory ? entry.path : fileBrowserDetail(for: entry))
+                                    .font(.caption)
+                                    .foregroundStyle(.hermesSecondaryText)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            Spacer(minLength: 0)
+                            if entry.isDirectory {
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.hermesSecondaryText)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Mac files")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { isMacFileBrowserPresented = false }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { loadMacFileBrowser(path: macFileBrowserPath) } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(isLoadingMacFileBrowser)
+                }
+            }
+            .safeAreaInset(edge: .top) {
+                Text(macFileBrowserPath)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.bar)
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .task {
+            if macFileBrowserEntries.isEmpty {
+                loadMacFileBrowser(path: macFileBrowserPath)
+            }
+        }
+    }
+
     private var canDownloadFile: Bool {
         companionEnrollment.identityState.isEnrolled
             && selectedDownloadFolderURL != nil
             && macFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             && !isDownloadingFile
             && !companionRuntime.isBusy
+    }
+
+    private func presentMacFileBrowser() {
+        macFileBrowserPath = macFilePath.isEmpty ? "/Users" : (URL(fileURLWithPath: macFilePath).deletingLastPathComponent().path)
+        if !macFileBrowserPath.hasPrefix("/Users") { macFileBrowserPath = "/Users" }
+        macFileBrowserError = ""
+        isMacFileBrowserPresented = true
+        loadMacFileBrowser(path: macFileBrowserPath)
+    }
+
+    private func loadMacFileBrowser(path: String) {
+        guard companionEnrollment.identityState.isEnrolled else {
+            macFileBrowserError = "Enroll this device with the Host Companion first."
+            return
+        }
+        let requestedPath = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "/Users" : path
+        Task { @MainActor in
+            isLoadingMacFileBrowser = true
+            macFileBrowserError = ""
+            defer { isLoadingMacFileBrowser = false }
+            do {
+                let result: HermesCompanionFileBrowserResult = try await HermesCompanionSessionFactory.request(
+                    settings: companionSettings,
+                    state: companionEnrollment.identityState,
+                    type: "browse_files",
+                    payload: HermesCompanionFileBrowserPayload(path: requestedPath)
+                )
+                macFileBrowserPath = result.path
+                macFileBrowserParentPath = result.parentPath
+                macFileBrowserEntries = result.entries
+                if result.entries.isEmpty {
+                    macFileBrowserError = "No visible files in this folder."
+                }
+            } catch {
+                macFileBrowserError = error.localizedDescription
+            }
+        }
+    }
+
+    private func fileBrowserDetail(for entry: HermesCompanionFileBrowserEntry) -> String {
+        if let byteCount = entry.byteCount {
+            return "\(Self.byteCountFormatter.string(fromByteCount: Int64(byteCount))) • \(entry.path)"
+        }
+        return entry.path
     }
 
     private func handleFileDownloaderFolderImport(_ result: Result<[URL], Error>) {

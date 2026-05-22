@@ -174,6 +174,25 @@ struct HermesCompanionFileDownloadPayload: Codable {
     }
 }
 
+struct HermesCompanionFileBrowserPayload: Codable {
+    let path: String
+}
+
+struct HermesCompanionFileBrowserEntry: Codable, Identifiable, Equatable {
+    var id: String { path }
+
+    let name: String
+    let path: String
+    let isDirectory: Bool
+    let byteCount: Int?
+}
+
+struct HermesCompanionFileBrowserResult: Codable, Equatable {
+    let path: String
+    let parentPath: String?
+    let entries: [HermesCompanionFileBrowserEntry]
+}
+
 struct HermesCompanionFileDownloadResult: Codable {
     let path: String
     let fileName: String

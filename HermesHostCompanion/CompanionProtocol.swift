@@ -143,6 +143,23 @@ struct FileDownloadPayload: Codable {
     let workspacePath: String?
 }
 
+struct FileBrowserPayload: Codable {
+    let path: String
+}
+
+struct FileBrowserEntry: Codable {
+    let name: String
+    let path: String
+    let isDirectory: Bool
+    let byteCount: Int?
+}
+
+struct FileBrowserResult: Codable {
+    let path: String
+    let parentPath: String?
+    let entries: [FileBrowserEntry]
+}
+
 struct FileDownloadResult: Codable {
     let path: String
     let fileName: String

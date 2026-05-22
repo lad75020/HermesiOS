@@ -297,6 +297,7 @@ final class CompanionClientSession {
                         "list_backups",
                         "restore_backup",
                         "download_file",
+                        "browse_files",
                         "download_file_info",
                         "download_file_chunk",
                         "service_status",
@@ -436,6 +437,17 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "restore_backup_failed", message: error.localizedDescription)
+            }
+        case "browse_files":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The browse_files request requires a payload.")
+                }
+                let browserPayload = try payload.decode(FileBrowserPayload.self)
+                let result = try fileDownloadRegistry.listDirectory(path: browserPayload.path, requester: id.uuidString)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "browse_files_failed", message: error.localizedDescription)
             }
         case "download_file":
             do {

@@ -382,6 +382,7 @@ struct ContentView: View {
                     HermesChatConsoleView(
                         apiSettings: $apiSettings,
                         chatDraft: $chatDraft,
+                        dashboardURLString: dashboardURLString,
                         companionSettings: companionSettings,
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime,
@@ -492,6 +493,7 @@ struct ContentView: View {
                     responsesDraft = newValue
                 }
             ),
+            dashboardURLString: dashboardURLString,
             companionSettings: companionSettings,
             companionEnrollment: companionEnrollment,
             companionRuntime: companionRuntime,
@@ -532,6 +534,7 @@ struct ContentView: View {
             HermesChatConsoleView(
                 apiSettings: $apiSettings,
                 chatDraft: $chatDraft,
+                dashboardURLString: dashboardURLString,
                 companionSettings: companionSettings,
                 companionEnrollment: companionEnrollment,
                 companionRuntime: companionRuntime,

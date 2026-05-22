@@ -35,8 +35,10 @@ enum HermesServiceReachability: String {
 final class HermesStatusMonitor {
     var apiServerStatus: HermesServiceReachability = .down
     var companionStatus: HermesServiceReachability = .down
+    var dashboardStatus: HermesServiceReachability = .down
     var isAPIProbeActive = false
     var isCompanionProbeActive = false
+    var isDashboardProbeActive = false
 
     private let normalRefreshInterval: Duration = .seconds(60)
     private let apiRecoveryRefreshInterval: Duration = .seconds(2)
@@ -44,12 +46,14 @@ final class HermesStatusMonitor {
     func runStatusLoop(
         apiSettings: HermesAPISettings,
         companionSettings: HermesCompanionSettings,
+        dashboardURLString: String,
         identityState: HermesCompanionIdentityState
     ) async {
         while !Task.isCancelled {
             await refresh(
                 apiSettings: apiSettings,
                 companionSettings: companionSettings,
+                dashboardURLString: dashboardURLString,
                 identityState: identityState
             )
 
@@ -68,13 +72,16 @@ final class HermesStatusMonitor {
     func refresh(
         apiSettings: HermesAPISettings,
         companionSettings: HermesCompanionSettings,
+        dashboardURLString: String,
         identityState: HermesCompanionIdentityState
     ) async {
         async let apiIsUp = checkAPIServer(settings: apiSettings)
         async let companionIsUp = checkCompanion(settings: companionSettings, identityState: identityState)
+        async let dashboardIsUp = checkDashboard(baseURLString: dashboardURLString)
 
         apiServerStatus = await apiIsUp ? .up : .down
         companionStatus = await companionIsUp ? .up : .down
+        dashboardStatus = await dashboardIsUp ? .up : .down
     }
 
     private func checkAPIServer(settings: HermesAPISettings) async -> Bool {
@@ -111,6 +118,25 @@ final class HermesStatusMonitor {
                 payload: Optional<String>.none
             )
             return result.serverName.isEmpty == false
+        } catch {
+            return false
+        }
+    }
+
+    private func checkDashboard(baseURLString: String) async -> Bool {
+        let trimmed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return false }
+        isDashboardProbeActive = true
+        defer { isDashboardProbeActive = false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 3
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            return (200..<500).contains(httpResponse.statusCode)
         } catch {
             return false
         }

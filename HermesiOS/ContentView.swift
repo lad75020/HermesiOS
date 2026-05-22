@@ -103,6 +103,13 @@ struct ContentView: View {
                     .zIndex(2)
             }
         }
+        .overlay {
+            if shouldShowPhoneConnectionIssueOverlay {
+                phoneConnectionIssueOverlay
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .zIndex(2)
+            }
+        }
         .preferredColorScheme(appTheme.colorScheme)
         .tint(.igActionBlue)
         .onChange(of: apiSettings) { _, newValue in
@@ -156,6 +163,7 @@ struct ContentView: View {
             await statusMonitor.runStatusLoop(
                 apiSettings: apiSettings,
                 companionSettings: companionSettings,
+                dashboardURLString: dashboardURLString,
                 identityState: companionEnrollment.identityState
             )
         }
@@ -168,6 +176,7 @@ struct ContentView: View {
                 await statusMonitor.refresh(
                     apiSettings: apiSettings,
                     companionSettings: companionSettings,
+                    dashboardURLString: dashboardURLString,
                     identityState: companionEnrollment.identityState
                 )
             }
@@ -255,6 +264,31 @@ struct ContentView: View {
         isAnyResponseWorkspaceActivelyStreaming || chatSession.isStreaming
     }
 
+    private var shouldShowPhoneConnectionIssueOverlay: Bool {
+        !isShowingSplash
+            && horizontalSizeClass == .compact
+            && (statusMonitor.apiServerStatus == .down
+                || statusMonitor.companionStatus == .down
+                || statusMonitor.dashboardStatus == .down)
+    }
+
+    private var phoneConnectionIssueOverlay: some View {
+        Text("Connection issue : Check settings")
+            .font(.title2.weight(.heavy))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(Color.igDestructive.opacity(0.94))
+                    .shadow(color: Color.igDestructive.opacity(0.42), radius: 24, y: 12)
+            )
+            .padding(.horizontal, 28)
+            .allowsHitTesting(false)
+            .accessibilityLabel("Connection issue. Check settings")
+    }
+
     private var visibleWorkspaceSections: [WorkspaceSection] {
         WorkspaceSection.allCases.filter { section in
             section != .runtime || isRuntimeTabEnabled
@@ -307,7 +341,8 @@ struct ContentView: View {
             companionSettings.apiURL,
             companionSettings.authenticationToken.isEmpty ? "no-companion-token" : "companion-token-set",
             companionEnrollment.identityState.deviceID,
-            companionEnrollment.identityState.serverEndpoint
+            companionEnrollment.identityState.serverEndpoint,
+            dashboardURLString
         ].joined(separator: "|")
     }
 
@@ -362,19 +397,12 @@ struct ContentView: View {
 
     private var iPhoneLayout: some View {
         VStack(spacing: 0) {
-            HermesStatusBand(
-                statusMonitor: statusMonitor,
-                apiChannelActive: apiChannelActive,
-                companionChannelActive: companionChannelActive,
-                dashboardChannelActive: dashboardChannelActive
-            )
-
             TabView(selection: $selectedPhoneSection) {
                 NavigationStack {
-                    responsesConsoleView()
+                    responsesConsoleView(isPhoneLayout: true)
                 }
                 .tabItem {
-                    Label("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
+                    Image(systemName: "dot.radiowaves.left.and.right")
                 }
                 .tag(WorkspaceSection.responses)
 
@@ -387,11 +415,12 @@ struct ContentView: View {
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime,
                         chatSession: chatSession,
-                        promptHistory: promptHistory
+                        promptHistory: promptHistory,
+                        isPhoneLayout: true
                     )
                 }
                 .tabItem {
-                    Label("Chat with Hermes", systemImage: "text.bubble")
+                    Image(systemName: "text.bubble")
                 }
                 .tag(WorkspaceSection.chat)
 
@@ -406,7 +435,7 @@ struct ContentView: View {
                     )
                 }
                 .tabItem {
-                    Label("History", systemImage: "clock.arrow.circlepath")
+                    Image(systemName: "clock.arrow.circlepath")
                 }
                 .tag(WorkspaceSection.history)
 
@@ -414,7 +443,7 @@ struct ContentView: View {
                     HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString, officeURLString: officeURLString)
                 }
                 .tabItem {
-                    Label("Web", systemImage: "globe")
+                    Image(systemName: "globe")
                 }
                 .tag(WorkspaceSection.web)
 
@@ -426,7 +455,7 @@ struct ContentView: View {
                     )
                 }
                 .tabItem {
-                    Label("Terminal", systemImage: "terminal")
+                    Image(systemName: "terminal")
                 }
                 .tag(WorkspaceSection.terminal)
 
@@ -442,7 +471,7 @@ struct ContentView: View {
                     )
                 }
                 .tabItem {
-                    Label("Utilities", systemImage: "wrench.and.screwdriver")
+                    Image(systemName: "wrench.and.screwdriver")
                 }
                 .tag(WorkspaceSection.utilities)
 
@@ -459,7 +488,7 @@ struct ContentView: View {
                     )
                 }
                 .tabItem {
-                    Label("Settings", systemImage: "slider.horizontal.3")
+                    Image(systemName: "slider.horizontal.3")
                 }
                 .tag(WorkspaceSection.settings)
 
@@ -473,7 +502,7 @@ struct ContentView: View {
                         )
                     }
                     .tabItem {
-                        Label("Runtime", systemImage: "server.rack")
+                        Image(systemName: "server.rack")
                     }
                     .tag(WorkspaceSection.runtime)
                 }
@@ -482,7 +511,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func responsesConsoleView() -> some View {
+    private func responsesConsoleView(isPhoneLayout: Bool = false) -> some View {
         let workspace = activeResponseWorkspace
         HermesResponsesConsoleView(
             apiSettings: $apiSettings,
@@ -504,7 +533,8 @@ struct ContentView: View {
             workspaceCount: responseWorkspaces.count,
             canCreateWorkspace: responseWorkspaces.count < 4,
             onCreateWorkspace: createResponseWorkspace,
-            onSelectWorkspace: selectResponseWorkspace(number:)
+            onSelectWorkspace: selectResponseWorkspace(number:),
+            isPhoneLayout: isPhoneLayout
         )
     }
 

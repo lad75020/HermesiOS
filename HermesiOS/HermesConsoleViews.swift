@@ -422,9 +422,11 @@ struct HermesResponsesConsoleView: View {
     let canCreateWorkspace: Bool
     let onCreateWorkspace: () -> Void
     let onSelectWorkspace: (Int) -> Void
+    var isPhoneLayout = false
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
+    @State private var isComposerActionsExpanded = false
     @State private var speechSession = HermesSpeechTranscriptionSession()
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var promptText = ""
@@ -432,13 +434,18 @@ struct HermesResponsesConsoleView: View {
     var body: some View {
         VStack(spacing: 0) {
             HermesGlassEffectContainer(spacing: 16) {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .center, spacing: 12) {
-                        HermesTabHeader("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
+                VStack(alignment: .leading, spacing: isPhoneLayout ? 10 : 16) {
+                    if !isPhoneLayout {
+                        HStack(alignment: .center, spacing: 12) {
+                            HermesTabHeader("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
 
-                        Spacer(minLength: 8)
+                            Spacer(minLength: 8)
 
+                            responseWorkspaceSwitcher
+                        }
+                    } else {
                         responseWorkspaceSwitcher
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
 
                     HStack(alignment: .top, spacing: 12) {
@@ -460,12 +467,14 @@ struct HermesResponsesConsoleView: View {
                             )
                         }
 
-                        HermesStatusRow(
-                            items: [
-                                .init(title: "Session", value: responseSession.displaySessionTitle, accent: .igGradPurple, marqueeCharacterLimit: 40),
-                                .init(title: "Status", value: responseSession.connectionStatus, accent: .igGradOrange)
-                            ]
-                        )
+                        if !isPhoneLayout {
+                            HermesStatusRow(
+                                items: [
+                                    .init(title: "Session", value: responseSession.displaySessionTitle, accent: .igGradPurple, marqueeCharacterLimit: 40),
+                                    .init(title: "Status", value: responseSession.connectionStatus, accent: .igGradOrange)
+                                ]
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -694,7 +703,7 @@ struct HermesResponsesConsoleView: View {
 
                     TextEditor(text: $promptText)
                         .scrollContentBackground(.hidden)
-                        .frame(minHeight: 72, maxHeight: 130)
+                        .frame(minHeight: isPhoneLayout ? 52 : 72, maxHeight: isPhoneLayout ? 52 : 130)
                         .igFieldBackground()
                         .overlay(alignment: .topLeading) {
                             if promptText.isEmpty {
@@ -707,54 +716,111 @@ struct HermesResponsesConsoleView: View {
                         }
                 }
 
-                VStack(spacing: 8) {
-                    Button {
-                        isImportingAttachment = true
-                    } label: {
-                        Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                            .font(.headline)
-                            .frame(width: 42, height: 42)
-                    }
-                    .hermesGlassButton()
-                    .disabled(responseSession.isSending)
-                    .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
-
-                    HermesMicrophoneButton(
-                        speechSession: speechSession,
-                        isDisabled: responseSession.isSending
-                    ) {
-                        speechSession.toggle(seedText: promptText) { text in
-                            promptText = text
-                            requestDraft.userPrompt = text
-                        }
-                    }
-
-                    Button {
-                        speechSession.stop()
-                        var submittedDraft = requestDraft
-                        submittedDraft.userPrompt = promptText
-                        if !selectedProfileSupportsReasoning {
-                            submittedDraft.reasoningEffort = .off
-                        }
-                        let submittedAttachment = selectedAttachment
-                        promptHistory.record(submittedDraft.userPrompt, source: .askHermes)
-                        responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment, messageHistory: promptHistory)
-                        promptText = ""
-                        requestDraft.userPrompt = ""
-                        selectedAttachment = nil
-                    } label: {
-                        Image(systemName: "paperplane.fill")
-                            .font(.headline)
-                            .frame(width: 42, height: 42)
-                    }
-                    .hermesGlassProminentButton()
-                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
-                    .accessibilityLabel("Send prompt")
+                if isPhoneLayout {
+                    compactResponseComposerActions
+                } else {
+                    responseComposerActions
                 }
             }
         }
         .padding(14)
         .background(.ultraThinMaterial)
+    }
+
+    private var responseComposerActions: some View {
+        VStack(spacing: 8) {
+            responseAttachButton
+            responseMicrophoneButton
+            responseSendButton
+        }
+    }
+
+    private var compactResponseComposerActions: some View {
+        VStack(spacing: 8) {
+            if isComposerActionsExpanded {
+                responseAttachButton
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                responseMicrophoneButton
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                responseSendButton
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                        isComposerActionsExpanded = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.headline)
+                        .frame(width: 42, height: 42)
+                }
+                .hermesGlassButton()
+                .accessibilityLabel("Show prompt actions")
+            }
+        }
+    }
+
+    private var responseAttachButton: some View {
+        Button {
+            isImportingAttachment = true
+            collapseComposerActionsIfNeeded()
+        } label: {
+            Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                .font(.headline)
+                .frame(width: 42, height: 42)
+        }
+        .hermesGlassButton()
+        .disabled(responseSession.isSending)
+        .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
+    }
+
+    private var responseMicrophoneButton: some View {
+        HermesMicrophoneButton(
+            speechSession: speechSession,
+            isDisabled: responseSession.isSending
+        ) {
+            speechSession.toggle(seedText: promptText) { text in
+                promptText = text
+                requestDraft.userPrompt = text
+            }
+            collapseComposerActionsIfNeeded()
+        }
+    }
+
+    private var responseSendButton: some View {
+        Button {
+            submitResponsePrompt()
+            collapseComposerActionsIfNeeded()
+        } label: {
+            Image(systemName: "paperplane.fill")
+                .font(.headline)
+                .frame(width: 42, height: 42)
+        }
+        .hermesGlassProminentButton()
+        .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
+        .accessibilityLabel("Send prompt")
+    }
+
+    private func submitResponsePrompt() {
+        speechSession.stop()
+        var submittedDraft = requestDraft
+        submittedDraft.userPrompt = promptText
+        if !selectedProfileSupportsReasoning {
+            submittedDraft.reasoningEffort = .off
+        }
+        let submittedAttachment = selectedAttachment
+        promptHistory.record(submittedDraft.userPrompt, source: .askHermes)
+        responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment, messageHistory: promptHistory)
+        promptText = ""
+        requestDraft.userPrompt = ""
+        selectedAttachment = nil
+    }
+
+    private func collapseComposerActionsIfNeeded() {
+        guard isPhoneLayout else { return }
+        withAnimation(.easeOut(duration: 0.16)) {
+            isComposerActionsExpanded = false
+        }
     }
 
     private static let transcriptBottomID = "responses-transcript-bottom"
@@ -1621,9 +1687,11 @@ struct HermesChatConsoleView: View {
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @Bindable var chatSession: HermesChatSession
     @Bindable var promptHistory: HermesPromptHistoryStore
+    var isPhoneLayout = false
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
+    @State private var isComposerActionsExpanded = false
     @State private var speechSession = HermesSpeechTranscriptionSession()
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var promptText = ""
@@ -1631,8 +1699,10 @@ struct HermesChatConsoleView: View {
     var body: some View {
         VStack(spacing: 0) {
             HermesGlassEffectContainer(spacing: 16) {
-                VStack(alignment: .leading, spacing: 16) {
-                    HermesTabHeader("Chat with Hermes", systemImage: "text.bubble")
+                VStack(alignment: .leading, spacing: isPhoneLayout ? 10 : 16) {
+                    if !isPhoneLayout {
+                        HermesTabHeader("Chat with Hermes", systemImage: "text.bubble")
+                    }
 
                     HStack(alignment: .top, spacing: 12) {
                         HermesProfileSelector(
@@ -1653,12 +1723,14 @@ struct HermesChatConsoleView: View {
                             )
                         }
 
-                        HermesStatusRow(
-                            items: [
-                                .init(title: "Session", value: chatSession.displaySessionTitle, accent: .igActionBlue, marqueeCharacterLimit: 40),
-                                .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange),
-                            ]
-                        )
+                        if !isPhoneLayout {
+                            HermesStatusRow(
+                                items: [
+                                    .init(title: "Session", value: chatSession.displaySessionTitle, accent: .igActionBlue, marqueeCharacterLimit: 40),
+                                    .init(title: "Status", value: chatSession.connectionStatus, accent: .igGradOrange),
+                                ]
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -1813,7 +1885,7 @@ struct HermesChatConsoleView: View {
 
                     TextEditor(text: $promptText)
                         .scrollContentBackground(.hidden)
-                        .frame(minHeight: 72, maxHeight: 130)
+                        .frame(minHeight: isPhoneLayout ? 52 : 72, maxHeight: isPhoneLayout ? 52 : 130)
                         .igFieldBackground()
                         .overlay(alignment: .topLeading) {
                             if promptText.isEmpty {
@@ -1826,54 +1898,111 @@ struct HermesChatConsoleView: View {
                         }
                 }
 
-                VStack(spacing: 8) {
-                    Button {
-                        isImportingAttachment = true
-                    } label: {
-                        Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                            .font(.headline)
-                            .frame(width: 42, height: 42)
-                    }
-                    .hermesGlassButton()
-                    .disabled(chatSession.isSending)
-                    .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
-
-                    HermesMicrophoneButton(
-                        speechSession: speechSession,
-                        isDisabled: chatSession.isSending
-                    ) {
-                        speechSession.toggle(seedText: promptText) { text in
-                            promptText = text
-                            chatDraft.userPrompt = text
-                        }
-                    }
-
-                    Button {
-                        speechSession.stop()
-                        var submittedDraft = chatDraft
-                        submittedDraft.userPrompt = promptText
-                        if !selectedProfileSupportsReasoning {
-                            submittedDraft.reasoningEffort = .off
-                        }
-                        let submittedAttachment = selectedAttachment
-                        promptHistory.record(submittedDraft.userPrompt, source: .chatWithHermes)
-                        chatSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment, messageHistory: promptHistory)
-                        promptText = ""
-                        chatDraft.userPrompt = ""
-                        selectedAttachment = nil
-                    } label: {
-                        Image(systemName: "paperplane.fill")
-                            .font(.headline)
-                            .frame(width: 42, height: 42)
-                    }
-                    .hermesGlassProminentButton()
-                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
-                    .accessibilityLabel("Send chat message")
+                if isPhoneLayout {
+                    compactChatComposerActions
+                } else {
+                    chatComposerActions
                 }
             }
         }
         .padding(14)
         .background(.ultraThinMaterial)
+    }
+
+    private var chatComposerActions: some View {
+        VStack(spacing: 8) {
+            chatAttachButton
+            chatMicrophoneButton
+            chatSendButton
+        }
+    }
+
+    private var compactChatComposerActions: some View {
+        VStack(spacing: 8) {
+            if isComposerActionsExpanded {
+                chatAttachButton
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                chatMicrophoneButton
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                chatSendButton
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                        isComposerActionsExpanded = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.headline)
+                        .frame(width: 42, height: 42)
+                }
+                .hermesGlassButton()
+                .accessibilityLabel("Show prompt actions")
+            }
+        }
+    }
+
+    private var chatAttachButton: some View {
+        Button {
+            isImportingAttachment = true
+            collapseComposerActionsIfNeeded()
+        } label: {
+            Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                .font(.headline)
+                .frame(width: 42, height: 42)
+        }
+        .hermesGlassButton()
+        .disabled(chatSession.isSending)
+        .accessibilityLabel(selectedAttachment == nil ? "Attach file" : "Change attached file")
+    }
+
+    private var chatMicrophoneButton: some View {
+        HermesMicrophoneButton(
+            speechSession: speechSession,
+            isDisabled: chatSession.isSending
+        ) {
+            speechSession.toggle(seedText: promptText) { text in
+                promptText = text
+                chatDraft.userPrompt = text
+            }
+            collapseComposerActionsIfNeeded()
+        }
+    }
+
+    private var chatSendButton: some View {
+        Button {
+            submitChatPrompt()
+            collapseComposerActionsIfNeeded()
+        } label: {
+            Image(systemName: "paperplane.fill")
+                .font(.headline)
+                .frame(width: 42, height: 42)
+        }
+        .hermesGlassProminentButton()
+        .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
+        .accessibilityLabel("Send chat message")
+    }
+
+    private func submitChatPrompt() {
+        speechSession.stop()
+        var submittedDraft = chatDraft
+        submittedDraft.userPrompt = promptText
+        if !selectedProfileSupportsReasoning {
+            submittedDraft.reasoningEffort = .off
+        }
+        let submittedAttachment = selectedAttachment
+        promptHistory.record(submittedDraft.userPrompt, source: .chatWithHermes)
+        chatSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: submittedAttachment, messageHistory: promptHistory)
+        promptText = ""
+        chatDraft.userPrompt = ""
+        selectedAttachment = nil
+    }
+
+    private func collapseComposerActionsIfNeeded() {
+        guard isPhoneLayout else { return }
+        withAnimation(.easeOut(duration: 0.16)) {
+            isComposerActionsExpanded = false
+        }
     }
 
     private static let transcriptBottomID = "chat-transcript-bottom"

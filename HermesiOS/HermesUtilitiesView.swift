@@ -333,7 +333,7 @@ struct HermesUtilitiesView: View {
                     settings: companionSettings,
                     state: companionEnrollment.identityState,
                     type: "download_file_info",
-                    payload: HermesCompanionFileDownloadPayload(path: path)
+                    payload: HermesCompanionFileDownloadPayload(path: path, workspacePath: companionSettings.hermesWorkspacePath)
                 )
                 var data = Data()
                 data.reserveCapacity(info.byteCount)
@@ -345,7 +345,7 @@ struct HermesUtilitiesView: View {
                         settings: companionSettings,
                         state: companionEnrollment.identityState,
                         type: "download_file_chunk",
-                        payload: HermesCompanionFileDownloadChunkPayload(path: path, offset: offset, length: chunkSize)
+                        payload: HermesCompanionFileDownloadChunkPayload(path: path, offset: offset, length: chunkSize, workspacePath: companionSettings.hermesWorkspacePath)
                     )
                     guard let chunkData = Data(base64Encoded: chunk.base64Data) else {
                         throw HermesFileDownloaderError.invalidPayload

@@ -140,6 +140,7 @@ struct ServiceStatusPayload: Codable {
 
 struct FileDownloadPayload: Codable {
     let path: String
+    let workspacePath: String?
 }
 
 struct FileDownloadResult: Codable {
@@ -162,6 +163,7 @@ struct FileDownloadChunkPayload: Codable {
     let path: String
     let offset: Int
     let length: Int
+    let workspacePath: String?
 }
 
 struct FileDownloadChunkResult: Codable {

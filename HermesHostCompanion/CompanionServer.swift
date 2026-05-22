@@ -443,7 +443,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The download_file request requires a payload.")
                 }
                 let downloadPayload = try payload.decode(FileDownloadPayload.self)
-                let result = try fileDownloadRegistry.downloadFile(path: downloadPayload.path)
+                let result = try fileDownloadRegistry.downloadFile(path: downloadPayload.path, workspacePath: downloadPayload.workspacePath, requester: id.uuidString)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "download_file_failed", message: error.localizedDescription)
@@ -454,7 +454,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The download_file_info request requires a payload.")
                 }
                 let downloadPayload = try payload.decode(FileDownloadPayload.self)
-                let result = try fileDownloadRegistry.downloadFileInfo(path: downloadPayload.path)
+                let result = try fileDownloadRegistry.downloadFileInfo(path: downloadPayload.path, workspacePath: downloadPayload.workspacePath, requester: id.uuidString)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "download_file_info_failed", message: error.localizedDescription)
@@ -468,7 +468,9 @@ final class CompanionClientSession {
                 let result = try fileDownloadRegistry.downloadFileChunk(
                     path: chunkPayload.path,
                     offset: chunkPayload.offset,
-                    length: chunkPayload.length
+                    length: chunkPayload.length,
+                    workspacePath: chunkPayload.workspacePath,
+                    requester: id.uuidString
                 )
                 return .success(id: request.id, payload: result)
             } catch {

@@ -166,6 +166,12 @@ struct HermesCompanionServiceStatusPayload: Codable {
 
 struct HermesCompanionFileDownloadPayload: Codable {
     let path: String
+    let workspacePath: String?
+
+    init(path: String, workspacePath: String? = nil) {
+        self.path = path
+        self.workspacePath = workspacePath
+    }
 }
 
 struct HermesCompanionFileDownloadResult: Codable {
@@ -188,6 +194,14 @@ struct HermesCompanionFileDownloadChunkPayload: Codable {
     let path: String
     let offset: Int
     let length: Int
+    let workspacePath: String?
+
+    init(path: String, offset: Int, length: Int, workspacePath: String? = nil) {
+        self.path = path
+        self.offset = offset
+        self.length = length
+        self.workspacePath = workspacePath
+    }
 }
 
 struct HermesCompanionFileDownloadChunkResult: Codable {
@@ -1174,6 +1188,7 @@ enum HermesCompanionClientError: LocalizedError {
     case missingAuthenticationToken
     case invalidAuthenticationTokenLength
     case notEnrolled
+    case insecureEndpoint(String)
 
     var errorDescription: String? {
         switch self {
@@ -1191,6 +1206,8 @@ enum HermesCompanionClientError: LocalizedError {
             "The Host Companion API key must be exactly 256 characters."
         case .notEnrolled:
             "Verify the Host Companion API key before using runtime controls."
+        case .insecureEndpoint(let message):
+            message
         }
     }
 }
@@ -3142,6 +3159,9 @@ enum HermesCompanionSessionFactory {
         let endpoint = state.serverEndpoint.isEmpty ? settings.apiURL : state.serverEndpoint
         guard let url = URL(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw HermesCompanionClientError.invalidURL
+        }
+        if let warning = HermesEndpointSecurity.plaintextTransportWarning(for: url.absoluteString, endpointName: "Host Companion") {
+            throw HermesCompanionClientError.insecureEndpoint(warning)
         }
         return try await request(url: url, authenticationToken: token, type: type, payload: payload)
     }

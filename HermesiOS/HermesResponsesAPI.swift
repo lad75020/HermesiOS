@@ -5,8 +5,10 @@
 //  Created by Codex on 04/05/2026.
 //
 
+import CryptoKit
 import Foundation
 import Observation
+import Security
 import UniformTypeIdentifiers
 
 enum HermesImageJSONFormatter {
@@ -287,6 +289,7 @@ enum HermesAttachmentError: LocalizedError {
 
 final class HermesNetworkSessionDelegate: NSObject, URLSessionDelegate {
     private let allowSelfSignedCertificates: Bool
+    private let certificatePinStore = HermesCertificatePinStore()
 
     init(allowSelfSignedCertificates: Bool) {
         self.allowSelfSignedCertificates = allowSelfSignedCertificates
@@ -297,16 +300,57 @@ final class HermesNetworkSessionDelegate: NSObject, URLSessionDelegate {
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        guard
-            allowSelfSignedCertificates,
-            challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-            let trust = challenge.protectionSpace.serverTrust
-        else {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust else {
             completionHandler(.performDefaultHandling, nil)
             return
         }
 
+        // Keep valid public-CA HTTPS on the platform trust path. The self-signed
+        // escape hatch below is deliberately host-scoped and certificate-pinned.
+        var trustError: CFError?
+        if SecTrustEvaluateWithError(trust, &trustError) {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+
+        let host = challenge.protectionSpace.host
+        guard allowSelfSignedCertificates,
+              HermesEndpointSecurity.isSelfSignedTrustAllowed(forHost: host),
+              let fingerprint = Self.leafCertificateFingerprint(for: trust),
+              certificatePinStore.trusts(fingerprint: fingerprint, forHost: host) else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
         completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+
+    private static func leafCertificateFingerprint(for trust: SecTrust) -> String? {
+        guard let certificates = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let leaf = certificates.first else { return nil }
+        let certificateData = SecCertificateCopyData(leaf) as Data
+        let digest = SHA256.hash(data: certificateData)
+        return digest.map { String(format: "%02X", $0) }.joined(separator: ":")
+    }
+}
+
+final class HermesCertificatePinStore {
+    private let defaults = UserDefaults.standard
+    private let keyPrefix = "hermes.security.selfSignedFingerprint."
+
+    func trusts(fingerprint: String, forHost host: String) -> Bool {
+        let key = keyPrefix + normalizedHost(host)
+        let existing = defaults.string(forKey: key) ?? ""
+        if existing.isEmpty {
+            defaults.set(fingerprint, forKey: key)
+            return true
+        }
+        return existing == fingerprint
+    }
+
+    private func normalizedHost(_ host: String) -> String {
+        host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
     }
 }
 
@@ -901,8 +945,8 @@ struct HermesAPISettings: Codable, Equatable {
         let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if trimmed.hasSuffix("/\(suffix)") {
-            return URL(string: trimmed)
+        if trimmed.hasSuffix("/\(suffix)"), let url = URL(string: trimmed) {
+            return HermesEndpointSecurity.isPlaintextTransportAllowed(for: url) ? url : nil
         }
 
         guard var components = URLComponents(string: trimmed) else { return nil }
@@ -915,14 +959,13 @@ struct HermesAPISettings: Codable, Equatable {
         // origin as the Hermes API root and add `/v1` before the endpoint suffix.
         if normalizedPath.isEmpty {
             components.path = "/v1/\(suffix)"
-            return components.url
+            guard let url = components.url else { return nil }
+            return HermesEndpointSecurity.isPlaintextTransportAllowed(for: url) ? url : nil
         }
 
-        if trimmed.hasSuffix("/") {
-            return URL(string: trimmed + suffix)
-        }
-
-        return URL(string: trimmed + "/" + suffix)
+        let candidate = trimmed.hasSuffix("/") ? trimmed + suffix : trimmed + "/" + suffix
+        guard let url = URL(string: candidate) else { return nil }
+        return HermesEndpointSecurity.isPlaintextTransportAllowed(for: url) ? url : nil
     }
 }
 

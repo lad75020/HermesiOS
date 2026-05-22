@@ -214,6 +214,12 @@ struct HermesSettingsView: View {
 
                 settingsRow(label: "WebSocket URL", value: companionSettings.apiURL)
 
+                if let warning = HermesEndpointSecurity.plaintextTransportWarning(for: companionSettings.apiURL, endpointName: "Host Companion") {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.igDestructive)
+                }
+
                 HStack(alignment: .center, spacing: 10) {
                     HermesSettingsStatusLED(
                         isOn: companionAPIKeyVerified,
@@ -260,6 +266,18 @@ struct HermesSettingsView: View {
                 SecureField("Bearer token", text: $apiSettings.apiKey)
 
                 Toggle("Allow self-signed HTTPS certificates", isOn: $apiSettings.allowSelfSignedCertificates)
+
+                if let warning = HermesEndpointSecurity.plaintextTransportWarning(for: apiSettings.baseURL, endpointName: "Hermes API") {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.igDestructive)
+                }
+
+                if apiSettings.allowSelfSignedCertificates {
+                    Text("Self-signed certificates are only accepted for localhost or .ts.net hosts, and the first certificate fingerprint is pinned. A changed fingerprint is rejected until the saved connection is reset.")
+                        .font(.caption)
+                        .foregroundStyle(.igGradOrange)
+                }
 
                 Text("The API gateway TCP port is configured in HermesHostCompanion and fetched automatically by HermesiOS after Host Companion verification.")
                     .font(.caption)

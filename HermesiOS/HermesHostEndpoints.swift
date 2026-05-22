@@ -77,3 +77,30 @@ enum HermesHostEndpoints {
         return "\(scheme)://\(normalizedHost):\(normalizedPort)\(normalizedPath)"
     }
 }
+
+enum HermesEndpointSecurity {
+    static func isPlaintextTransportAllowed(for url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), ["http", "ws"].contains(scheme) else { return true }
+        guard let host = url.host?.lowercased() else { return false }
+        return isLoopbackHost(host)
+    }
+
+    static func plaintextTransportWarning(for urlString: String, endpointName: String) -> String? {
+        guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "ws"].contains(scheme),
+              !isPlaintextTransportAllowed(for: url) else { return nil }
+        return "Plaintext \(scheme.uppercased()) is blocked for \(endpointName) unless the host is localhost or 127.0.0.1. Use HTTPS/WSS for remote or Tailscale endpoints."
+    }
+
+    static func isSelfSignedTrustAllowed(forHost host: String) -> Bool {
+        let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        return isLoopbackHost(normalized) || normalized.hasSuffix(".ts.net")
+    }
+
+    private static func isLoopbackHost(_ host: String) -> Bool {
+        let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        return normalized == "localhost" || normalized == "::1" || normalized == "0:0:0:0:0:0:0:1" || normalized.hasPrefix("127.")
+    }
+}
+

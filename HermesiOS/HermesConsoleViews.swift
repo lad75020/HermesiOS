@@ -613,7 +613,8 @@ struct HermesResponsesConsoleView: View {
                         ForEach(responseSession.entries) { message in
                             HermesResponseBubble(
                                 message: message,
-                                isResponding: isResponsePlaceholder(message)
+                                isResponding: isResponsePlaceholder(message),
+                                responseElapsedSeconds: responseElapsedSeconds(for: message)
                             )
                                 .id(message.id)
                         }
@@ -894,6 +895,11 @@ struct HermesResponsesConsoleView: View {
             && responseSession.entries.last?.id == message.id
     }
 
+    private func responseElapsedSeconds(for message: HermesResponseMessage) -> Int? {
+        guard message.role != "user", message.id == responseSession.activeResponseMessageID else { return nil }
+        return responseSession.activeResponseElapsedSeconds
+    }
+
     private func handleAttachmentImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -1086,15 +1092,24 @@ private struct HermesReasoningSelector: View {
 struct HermesResponseBubble: View {
     let message: HermesResponseMessage
     var isResponding = false
+    var responseElapsedSeconds: Int?
 
     var body: some View {
         HStack(alignment: .bottom) {
             if isUser { Spacer(minLength: 44) }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
-                Text(isUser ? "You" : "Hermes")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.hermesSecondaryText)
+                HStack(spacing: 8) {
+                    Text(isUser ? "You" : "Hermes")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+                    if let responseElapsedSeconds, !isUser {
+                        Text(Self.formattedElapsedTime(responseElapsedSeconds))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.igGradOrange)
+                            .accessibilityLabel("Response streaming time \(Self.formattedElapsedAccessibilityTime(responseElapsedSeconds))")
+                    }
+                }
 
                 HermesCopyableBubbleContent(
                     text: displayContent,
@@ -1116,21 +1131,55 @@ struct HermesResponseBubble: View {
     private var displayContent: String {
         return message.content
     }
+
+    private static func formattedElapsedTime(_ seconds: Int) -> String {
+        let clampedSeconds = max(0, seconds)
+        let hours = clampedSeconds / 3_600
+        let minutes = (clampedSeconds % 3_600) / 60
+        let remainingSeconds = clampedSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+        }
+        return String(format: "%02d:%02d", minutes, remainingSeconds)
+    }
+
+    private static func formattedElapsedAccessibilityTime(_ seconds: Int) -> String {
+        let clampedSeconds = max(0, seconds)
+        let hours = clampedSeconds / 3_600
+        let minutes = (clampedSeconds % 3_600) / 60
+        let remainingSeconds = clampedSeconds % 60
+        if hours > 0 {
+            return "\(hours) hours, \(minutes) minutes, \(remainingSeconds) seconds"
+        }
+        if minutes > 0 {
+            return "\(minutes) minutes, \(remainingSeconds) seconds"
+        }
+        return "\(remainingSeconds) seconds"
+    }
 }
 
 struct HermesChatBubble: View {
     let message: HermesChatMessage
     var liveContent: String? = nil
     var isResponding = false
+    var responseElapsedSeconds: Int?
 
     var body: some View {
         HStack(alignment: .bottom) {
             if isUser { Spacer(minLength: 44) }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
-                Text(isUser ? "You" : "Hermes")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.hermesSecondaryText)
+                HStack(spacing: 8) {
+                    Text(isUser ? "You" : "Hermes")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.hermesSecondaryText)
+                    if let responseElapsedSeconds, !isUser {
+                        Text(Self.formattedElapsedTime(responseElapsedSeconds))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.igGradOrange)
+                            .accessibilityLabel("Response streaming time \(Self.formattedElapsedAccessibilityTime(responseElapsedSeconds))")
+                    }
+                }
 
                 HermesCopyableBubbleContent(
                     text: displayContent,
@@ -1160,6 +1209,31 @@ struct HermesChatBubble: View {
 
     private var copyContent: String {
         resolvedContent
+    }
+
+    private static func formattedElapsedTime(_ seconds: Int) -> String {
+        let clampedSeconds = max(0, seconds)
+        let hours = clampedSeconds / 3_600
+        let minutes = (clampedSeconds % 3_600) / 60
+        let remainingSeconds = clampedSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+        }
+        return String(format: "%02d:%02d", minutes, remainingSeconds)
+    }
+
+    private static func formattedElapsedAccessibilityTime(_ seconds: Int) -> String {
+        let clampedSeconds = max(0, seconds)
+        let hours = clampedSeconds / 3_600
+        let minutes = (clampedSeconds % 3_600) / 60
+        let remainingSeconds = clampedSeconds % 60
+        if hours > 0 {
+            return "\(hours) hours, \(minutes) minutes, \(remainingSeconds) seconds"
+        }
+        if minutes > 0 {
+            return "\(minutes) minutes, \(remainingSeconds) seconds"
+        }
+        return "\(remainingSeconds) seconds"
     }
 }
 
@@ -1811,7 +1885,8 @@ struct HermesChatConsoleView: View {
                             HermesChatBubble(
                                 message: message,
                                 liveContent: liveContent(for: message),
-                                isResponding: isChatPlaceholder(message)
+                                isResponding: isChatPlaceholder(message),
+                                responseElapsedSeconds: responseElapsedSeconds(for: message)
                             )
                             .id(message.id)
                         }
@@ -2113,6 +2188,11 @@ struct HermesChatConsoleView: View {
     private func liveContent(for message: HermesChatMessage) -> String? {
         let content = resolvedLiveContent(for: message)
         return content.isEmpty ? nil : content
+    }
+
+    private func responseElapsedSeconds(for message: HermesChatMessage) -> Int? {
+        guard message.role != "user", message.id == chatSession.activeResponseMessageID else { return nil }
+        return chatSession.activeResponseElapsedSeconds
     }
 
     private func resolvedLiveContent(for message: HermesChatMessage) -> String {

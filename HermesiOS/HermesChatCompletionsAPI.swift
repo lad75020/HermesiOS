@@ -26,6 +26,8 @@ final class HermesChatSession {
     var rawStreamedJSON = ""
     var debugEventText = ""
     var sessionTitle = ""
+    var activeResponseMessageID: UUID?
+    var activeResponseElapsedSeconds: Int?
 
     var displaySessionTitle: String {
         let trimmedTitle = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -37,6 +39,8 @@ final class HermesChatSession {
 
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
+    private var responseTimingStart: Date?
+    private var responseTimingTask: Task<Void, Never>?
 
     init() {
         lastKnownChatSessionID = HermesSettingsPersistence.loadLastChatSessionID()
@@ -63,6 +67,7 @@ final class HermesChatSession {
         requestTask = nil
         isSending = false
         isStreaming = false
+        stopResponseTiming()
         connectionStatus = "Cancelled"
     }
 
@@ -72,6 +77,7 @@ final class HermesChatSession {
         entries = []
         streamedText = ""
         activeAssistantEntryID = nil
+        clearResponseTiming()
         isSending = false
         isStreaming = false
         activeProfile = ""
@@ -97,6 +103,7 @@ final class HermesChatSession {
         entries = [HermesChatMessage(role: "assistant", content: "Resumed last Chat Completions session \(Self.shortSessionID(sessionID)). Send a new prompt to continue.")]
         streamedText = ""
         activeAssistantEntryID = nil
+        clearResponseTiming()
         isSending = false
         isStreaming = false
         activeChatSessionID = sessionID
@@ -115,6 +122,7 @@ final class HermesChatSession {
         requestTask = nil
         streamedText = ""
         activeAssistantEntryID = nil
+        clearResponseTiming()
         isSending = false
         isStreaming = false
         activeProfile = ""
@@ -205,6 +213,7 @@ final class HermesChatSession {
         appendExchange(prompt: displayPrompt)
         isSending = true
         isStreaming = draft.stream
+        if draft.stream { startResponseTiming() }
         connectionStatus = draft.stream ? "Connecting to chat stream" : "Sending chat request"
 
         do {
@@ -232,6 +241,7 @@ final class HermesChatSession {
 
         isSending = false
         isStreaming = false
+        if draft.stream { stopResponseTiming() }
     }
 
     private func resetForRequest() {
@@ -242,6 +252,8 @@ final class HermesChatSession {
         rawStreamedJSON = ""
         debugEventText = ""
         activeAssistantEntryID = nil
+        activeResponseMessageID = nil
+        activeResponseElapsedSeconds = nil
     }
 
     private func appendExchange(prompt: String) {
@@ -249,7 +261,42 @@ final class HermesChatSession {
         entries.append(.init(role: "user", content: prompt))
         let assistant = HermesChatMessage(role: "assistant", content: "")
         activeAssistantEntryID = assistant.id
+        activeResponseMessageID = assistant.id
         entries.append(assistant)
+    }
+
+    private func startResponseTiming() {
+        responseTimingTask?.cancel()
+        let start = Date()
+        responseTimingStart = start
+        activeResponseElapsedSeconds = 0
+        responseTimingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.isStreaming, let responseTimingStart = self.responseTimingStart else { return }
+                    self.activeResponseElapsedSeconds = max(0, Int(Date().timeIntervalSince(responseTimingStart)))
+                }
+            }
+        }
+    }
+
+    private func stopResponseTiming() {
+        if let responseTimingStart {
+            activeResponseElapsedSeconds = max(0, Int(Date().timeIntervalSince(responseTimingStart)))
+        }
+        responseTimingTask?.cancel()
+        responseTimingTask = nil
+        responseTimingStart = nil
+    }
+
+    private func clearResponseTiming() {
+        activeResponseMessageID = nil
+        activeResponseElapsedSeconds = nil
+        responseTimingTask?.cancel()
+        responseTimingTask = nil
+        responseTimingStart = nil
     }
 
     private func displayPrompt(_ prompt: String, attachment: HermesPromptAttachment?) -> String {

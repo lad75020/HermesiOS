@@ -13,6 +13,7 @@ enum CompanionMCPRegistryError: LocalizedError {
     case invalidName
     case invalidTransport
     case invalidURL
+    case insecureHTTPURL
     case missingCommand
     case commandFailed(String)
 
@@ -23,7 +24,9 @@ enum CompanionMCPRegistryError: LocalizedError {
         case .invalidTransport:
             "Choose either stdio or streamable HTTP transport."
         case .invalidURL:
-            "Enter a valid HTTP MCP URL."
+            "Enter a valid HTTPS MCP URL, or a localhost HTTP URL for local development."
+        case .insecureHTTPURL:
+            "Streamable HTTP MCP servers must use HTTPS unless the host is localhost, 127.0.0.1, or ::1."
         case .missingCommand:
             "Enter the stdio command to launch the MCP server."
         case .commandFailed(let message):
@@ -58,8 +61,15 @@ final class CompanionMCPRegistry {
             stdinLines.append("y") // enable all discovered tools
         case .streamableHTTP:
             let url = payload.url.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard url.lowercased().hasPrefix("http://") || url.lowercased().hasPrefix("https://") else {
+            guard let components = URLComponents(string: url),
+                  let scheme = components.scheme?.lowercased(),
+                  let host = components.host?.lowercased(),
+                  scheme == "https" || scheme == "http"
+            else {
                 throw CompanionMCPRegistryError.invalidURL
+            }
+            guard scheme == "https" || Self.isLocalHTTPHost(host) else {
+                throw CompanionMCPRegistryError.insecureHTTPURL
             }
             arguments += ["--url", url]
             let token = payload.bearerToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -84,6 +94,10 @@ final class CompanionMCPRegistry {
         return MCPServerOperationResult(serverName: name, output: output, servers: updated.servers)
     }
 
+    private static func isLocalHTTPHost(_ host: String) -> Bool {
+        host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".localhost")
+    }
+
     private func run(arguments: [String], stdin: String? = nil) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -106,7 +120,16 @@ final class CompanionMCPRegistry {
                 inputPipe.fileHandleForWriting.write(Data(stdin.utf8))
                 try? inputPipe.fileHandleForWriting.close()
             }
-            process.waitUntilExit()
+            let deadline = Date().addingTimeInterval(30)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if process.isRunning {
+                process.terminate()
+                throw CompanionMCPRegistryError.commandFailed("hermes \(arguments.joined(separator: " ")) timed out.")
+            }
+        } catch let error as CompanionMCPRegistryError {
+            throw error
         } catch {
             throw CompanionMCPRegistryError.commandFailed(error.localizedDescription)
         }

@@ -145,6 +145,7 @@ struct FileDownloadPayload: Codable {
 
 struct FileBrowserPayload: Codable {
     let path: String
+    let workspacePath: String?
 }
 
 struct FileBrowserEntry: Codable {
@@ -1050,6 +1051,89 @@ enum CompanionValidatorSpec: Codable, Equatable {
         case .command:
             self = .command(try container.decode([String].self, forKey: .arguments))
         }
+    }
+}
+
+enum CompanionWorkspaceSecurity {
+    private static let fileManager = FileManager.default
+
+    static func resolvedHermesWorkspaceURL(
+        from rawPath: String,
+        defaultPath: String = "~/.hermes",
+        requireSkillsDirectory: Bool = false,
+        requireHermesCLI: Bool = false
+    ) -> URL? {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expanded = NSString(string: trimmed.isEmpty ? defaultPath : trimmed).expandingTildeInPath
+        let url = URL(fileURLWithPath: expanded, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return nil
+        }
+        guard isAllowedWorkspaceShape(url) else { return nil }
+        if requireSkillsDirectory {
+            guard directoryExists(url.appendingPathComponent("skills", isDirectory: true)) else { return nil }
+        }
+        if requireHermesCLI {
+            guard fileManager.fileExists(atPath: url.appendingPathComponent("hermes-agent/hermes").path) else { return nil }
+        }
+        return url
+    }
+
+    static func approvedHermesRoots(preferredWorkspacePath: String?) -> [URL] {
+        var candidates: [String] = []
+        if let preferredWorkspacePath,
+           let preferredURL = resolvedHermesWorkspaceURL(from: preferredWorkspacePath) {
+            candidates.append(preferredURL.path)
+        }
+
+        let environment = ProcessInfo.processInfo.environment
+        if let hermesHome = environment["HERMES_HOME"], hermesHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            candidates.append(hermesHome)
+        }
+
+        let home = fileManager.homeDirectoryForCurrentUser.path
+        candidates.append(home + "/.hermes")
+        candidates.append("/Volumes/WDBlack4TB/.hermes")
+        candidates.append("/Volumes/WDBlack4TB/Code/HermesiOS/.hermes")
+
+        var seen = Set<String>()
+        return candidates.compactMap { candidate in
+            guard let url = resolvedHermesWorkspaceURL(from: candidate) else { return nil }
+            guard seen.insert(url.path).inserted else { return nil }
+            return url
+        }
+    }
+
+    static func isDescendant(_ url: URL, of root: URL) -> Bool {
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let rootPath = root.resolvingSymlinksInPath().standardizedFileURL.path
+        return path == rootPath || path.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/")
+    }
+
+    private static func isAllowedWorkspaceShape(_ url: URL) -> Bool {
+        let path = url.path
+        guard path != "/", path != "/Users", path != NSHomeDirectory() else { return false }
+        let markers = [
+            "config.yaml",
+            ".env",
+            "SOUL.md",
+            "memory.md",
+            "hermes-agent/hermes"
+        ]
+        if markers.contains(where: { fileManager.fileExists(atPath: url.appendingPathComponent($0).path) }) {
+            return true
+        }
+        let directoryMarkers = ["skills", "cron", "profiles", "plugins"]
+        return directoryMarkers.contains { directoryExists(url.appendingPathComponent($0, isDirectory: true)) }
+    }
+
+    private static func directoryExists(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 }
 

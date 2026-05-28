@@ -250,7 +250,7 @@ final class CompanionClientSession {
             do {
                 let request = try self.decoder.decode(CompanionIncomingEnvelope.self, from: data)
                 let response: CompanionOutgoingEnvelope
-                if request.authenticationToken == self.authenticationToken {
+                if CompanionAuthenticationTokenStore.securelyMatches(request.authenticationToken, authenticationToken: self.authenticationToken) {
                     response = self.route(request: request)
                 } else {
                     response = .error(id: request.id, code: "invalid_token", message: "The Host Companion API key is invalid.")
@@ -444,7 +444,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The browse_files request requires a payload.")
                 }
                 let browserPayload = try payload.decode(FileBrowserPayload.self)
-                let result = try fileDownloadRegistry.listDirectory(path: browserPayload.path, requester: id.uuidString)
+                let result = try fileDownloadRegistry.listDirectory(path: browserPayload.path, workspacePath: browserPayload.workspacePath, requester: id.uuidString)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "browse_files_failed", message: error.localizedDescription)
@@ -1086,17 +1086,23 @@ final class CompanionAuthenticationTokenStore {
     static let apiKeyLength = 256
 
     private let defaults = UserDefaults.standard
-    private let tokenKey = "companion.authentication.token"
+    private let legacyTokenKey = "companion.authentication.token"
+    private let keychainService = "fr.dubertrand.HermesHostCompanion"
+    private let keychainAccount = "companion.authentication.token"
     private let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
     private init() {}
 
     var token: String {
-        let existing = defaults.string(forKey: tokenKey) ?? ""
-        guard existing.count == Self.apiKeyLength else {
-            return regenerateToken()
+        if let existing = loadKeychainToken(), existing.count == Self.apiKeyLength {
+            return existing
         }
-        return existing
+        if let legacy = defaults.string(forKey: legacyTokenKey), legacy.count == Self.apiKeyLength {
+            saveKeychainToken(legacy)
+            defaults.removeObject(forKey: legacyTokenKey)
+            return legacy
+        }
+        return regenerateToken()
     }
 
     @discardableResult
@@ -1107,8 +1113,56 @@ final class CompanionAuthenticationTokenStore {
             randomBytes = (0..<Self.apiKeyLength).map { _ in UInt8.random(in: 0...255) }
         }
         let token = String(randomBytes.map { alphabet[Int($0) % alphabet.count] })
-        defaults.set(token, forKey: tokenKey)
+        saveKeychainToken(token)
+        defaults.removeObject(forKey: legacyTokenKey)
         return token
+    }
+
+    static func securelyMatches(_ candidate: String?, authenticationToken: String) -> Bool {
+        guard let candidate else { return false }
+        let candidateBytes = Array(candidate.utf8)
+        let expectedBytes = Array(authenticationToken.utf8)
+        var difference = candidateBytes.count ^ expectedBytes.count
+        for index in 0..<max(candidateBytes.count, expectedBytes.count) {
+            let lhs = index < candidateBytes.count ? candidateBytes[index] : 0
+            let rhs = index < expectedBytes.count ? expectedBytes[index] : 0
+            difference |= Int(lhs ^ rhs)
+        }
+        return difference == 0
+    }
+
+    private func loadKeychainToken() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func saveKeychainToken(_ token: String) {
+        let data = Data(token.utf8)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount
+        ]
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ]
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecItemNotFound {
+            var insertQuery = query
+            insertQuery[kSecValueData as String] = data
+            insertQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            SecItemAdd(insertQuery as CFDictionary, nil)
+        }
     }
 }
 

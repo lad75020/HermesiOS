@@ -4,7 +4,10 @@
 //
 
 import CryptoKit
+import Foundation
+import LocalAuthentication
 import Observation
+import Security
 import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
@@ -32,18 +35,20 @@ struct HermesUtilitiesView: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
     @AppStorage("hermes.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
+    @AppStorage("hermes.utilities.clipboardHistoryMonitoringEnabled") private var isClipboardHistoryMonitoringEnabled = false
     @AppStorage("hermes.utilities.promptHistoryExpanded") private var isPromptHistoryExpanded = false
     @AppStorage("hermes.utilities.fileDownloaderExpanded") private var isFileDownloaderExpanded = false
     @AppStorage("hermes.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @AppStorage("hermes.utilities.supermemoryManagementExpanded") private var isSupermemoryManagementExpanded = false
-    @State private var statusMessage = "Monitoring the iOS clipboard while HermesiOS is active."
+    @State private var statusMessage = "Clipboard history is encrypted and requires Face ID after restart."
+    @State private var isUnlockingClipboardHistory = false
     @State private var messagesHistoryMode: HermesMessagesHistoryMode = .prompt
     @State private var promptHistoryStatusMessage = "Capturing prompts sent from Ask Hermes and Chat with Hermes."
     @State private var isFileDownloaderFolderImporterPresented = false
     @State private var selectedDownloadFolderURL: URL?
     @State private var macFilePath = ""
     @State private var isMacFileBrowserPresented = false
-    @State private var macFileBrowserPath = "/Users"
+    @State private var macFileBrowserPath = ""
     @State private var macFileBrowserEntries: [HermesCompanionFileBrowserEntry] = []
     @State private var macFileBrowserParentPath: String?
     @State private var isLoadingMacFileBrowser = false
@@ -71,7 +76,7 @@ struct HermesUtilitiesView: View {
                                 Text("Clipboard History")
                                     .font(.igUsername)
                                     .foregroundStyle(.primary)
-                                Text("Last \(clipboardHistory.entries.count) of 10 copied objects")
+                                Text(clipboardHistorySubtitle)
                                     .font(.igSecondaryMeta)
                                     .foregroundStyle(.hermesSecondaryText)
                             }
@@ -179,7 +184,9 @@ struct HermesUtilitiesView: View {
             macFileBrowserSheet
         }
         .onAppear {
-            clipboardHistory.captureCurrentPasteboardIfNeeded()
+            if isClipboardHistoryMonitoringEnabled {
+                clipboardHistory.captureCurrentPasteboardIfNeeded()
+            }
         }
         .onDisappear {
             collapseAllUtilitySections()
@@ -198,6 +205,14 @@ struct HermesUtilitiesView: View {
     private var isSupermemoryActive: Bool {
         companionRuntime.memoryProvider.lowercased() == "supermemory"
             || companionRuntime.memoryProviders.contains { $0.name.lowercased() == "supermemory" && $0.active }
+    }
+
+    private var clipboardHistorySubtitle: String {
+        if clipboardHistory.isLocked {
+            return "Locked • encrypted history requires Face ID"
+        }
+        let privacy = isClipboardHistoryMonitoringEnabled ? "Monitoring on" : "Monitoring off"
+        return "\(privacy) • \(clipboardHistory.entries.count) encrypted items"
     }
 
     private var messagesHistorySubtitle: String {
@@ -280,7 +295,7 @@ struct HermesUtilitiesView: View {
                         Text(macFilePath.isEmpty ? "Browse Mac files" : URL(fileURLWithPath: macFilePath).lastPathComponent)
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.primary)
-                        Text(macFilePath.isEmpty ? "Starts at /Users on the remote Mac" : macFilePath)
+                        Text(macFilePath.isEmpty ? "Starts in your approved Hermes workspace" : macFilePath)
                             .font(.caption.monospaced())
                             .foregroundStyle(.hermesSecondaryText)
                             .lineLimit(1)
@@ -423,8 +438,7 @@ struct HermesUtilitiesView: View {
     }
 
     private func presentMacFileBrowser() {
-        macFileBrowserPath = macFilePath.isEmpty ? "/Users" : (URL(fileURLWithPath: macFilePath).deletingLastPathComponent().path)
-        if !macFileBrowserPath.hasPrefix("/Users") { macFileBrowserPath = "/Users" }
+        macFileBrowserPath = macFilePath.isEmpty ? companionSettings.hermesWorkspacePath : (URL(fileURLWithPath: macFilePath).deletingLastPathComponent().path)
         macFileBrowserError = ""
         isMacFileBrowserPresented = true
         loadMacFileBrowser(path: macFileBrowserPath)
@@ -435,7 +449,7 @@ struct HermesUtilitiesView: View {
             macFileBrowserError = "Enroll this device with the Host Companion first."
             return
         }
-        let requestedPath = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "/Users" : path
+        let requestedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
         Task { @MainActor in
             isLoadingMacFileBrowser = true
             macFileBrowserError = ""
@@ -445,7 +459,7 @@ struct HermesUtilitiesView: View {
                     settings: companionSettings,
                     state: companionEnrollment.identityState,
                     type: "browse_files",
-                    payload: HermesCompanionFileBrowserPayload(path: requestedPath)
+                    payload: HermesCompanionFileBrowserPayload(path: requestedPath, workspacePath: companionSettings.hermesWorkspacePath)
                 )
                 macFileBrowserPath = result.path
                 macFileBrowserParentPath = result.parentPath
@@ -620,13 +634,47 @@ struct HermesUtilitiesView: View {
 
     @ViewBuilder
     private var clipboardHistoryContent: some View {        VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: $isClipboardHistoryMonitoringEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Monitor clipboard while active")
+                        .font(.igUsername)
+                    Text("Opt-in only; history is encrypted and unlocks with Face ID next session.")
+                        .font(.igSecondaryMeta)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+            }
+            .toggleStyle(.switch)
+            .onChange(of: isClipboardHistoryMonitoringEnabled) { _, enabled in
+                statusMessage = enabled ? "Clipboard monitoring enabled. Captured items are encrypted." : "Clipboard monitoring disabled. Encrypted history stays available after Face ID unlock."
+            }
+
+            if clipboardHistory.isLocked {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Protected clipboard history is locked from a previous session.")
+                        .font(.igSecondaryMeta)
+                        .foregroundStyle(.hermesSecondaryText)
+
+                    Button {
+                        unlockClipboardHistory()
+                    } label: {
+                        Label(isUnlockingClipboardHistory ? "Unlocking…" : "Unlock with Face ID", systemImage: "faceid")
+                    }
+                    .disabled(isUnlockingClipboardHistory)
+                    .hermesGlassButton()
+                }
+            }
+
             HStack(spacing: 10) {
                 Button {
-                    clipboardHistory.captureCurrentPasteboardIfNeeded(force: true)
-                    statusMessage = "Clipboard checked."
+                    if clipboardHistory.captureCurrentPasteboardIfNeeded(force: true) {
+                        statusMessage = "Clipboard checked."
+                    } else {
+                        statusMessage = "Clipboard checked; no safe new item found."
+                    }
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
+                .disabled(clipboardHistory.isLocked)
                 .hermesGlassButton()
 
                 Button(role: .destructive) {
@@ -645,9 +693,9 @@ struct HermesUtilitiesView: View {
 
             if clipboardHistory.entries.isEmpty {
                 ContentUnavailableView(
-                    "No clipboard history yet",
+                    clipboardHistory.isLocked ? "Clipboard history locked" : "No clipboard history yet",
                     systemImage: "clipboard",
-                    description: Text("Copy text, images, or files while HermesiOS is active, then open this utility to paste them back later.")
+                    description: Text(clipboardHistory.isLocked ? "Unlock with Face ID to restore encrypted clipboard items from the previous session." : "Enable monitoring or tap Refresh to capture safe clipboard items. Stored history is encrypted and requires Face ID after restart.")
                 )
                 .frame(maxWidth: .infinity, minHeight: 220)
             } else {
@@ -681,6 +729,20 @@ struct HermesUtilitiesView: View {
             }
         }
         .padding(.top, 12)
+    }
+
+    private func unlockClipboardHistory() {
+        isUnlockingClipboardHistory = true
+        defer { isUnlockingClipboardHistory = false }
+
+        do {
+            try clipboardHistory.unlockProtectedHistory()
+            statusMessage = clipboardHistory.entries.isEmpty
+                ? "Encrypted clipboard history unlocked; no saved items found."
+                : "Unlocked \(clipboardHistory.entries.count) encrypted clipboard items."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
     }
 
     @ViewBuilder
@@ -992,36 +1054,103 @@ private struct HermesClipboardHistoryRow: View {
     }
 }
 
+private enum ClipboardProtectedStorageError: LocalizedError {
+    case accessControlCreationFailed
+    case encryptionFailed
+    case faceIDUnavailable
+    case keychain(OSStatus)
+    case storageUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .accessControlCreationFailed:
+            return "Could not create Face ID protection for clipboard history."
+        case .encryptionFailed:
+            return "Could not encrypt clipboard history."
+        case .faceIDUnavailable:
+            return "Face ID must be available and enrolled before encrypted clipboard history can be saved."
+        case .keychain(let status):
+            if status == errSecUserCanceled {
+                return "Face ID authentication was canceled."
+            }
+            if status == errSecAuthFailed {
+                return "Face ID authentication failed."
+            }
+            if status == errSecItemNotFound {
+                return "The encrypted clipboard history key was not found."
+            }
+            return "Clipboard history Keychain operation failed with status \(status)."
+        case .storageUnavailable:
+            return "Encrypted clipboard history storage is unavailable."
+        }
+    }
+}
+
+private extension JSONEncoder {
+    static var hermesClipboardHistory: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+
+private extension JSONDecoder {
+    static var hermesClipboardHistory: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+}
+
 @Observable
 final class HermesClipboardHistoryStore {
-    private let defaultsKey = "hermes.utilities.clipboardHistory.entries"
+    private static let legacyDefaultsKey = "hermes.utilities.clipboardHistory.entries"
+    private static let encryptedStorageFilename = "ClipboardHistory.v1.enc"
+    private static let keychainService = "fr.dubertrand.HermesiOS.clipboardHistory"
+    private static let keychainKeyAccount = "encryptedHistoryKey"
     private let maxEntries = 10
     private let maxStoredBytes = 25 * 1024 * 1024
     private var lastObservedChangeCount = UIPasteboard.general.changeCount
+    private var encryptionKey: SymmetricKey?
 
     var entries: [HermesClipboardHistoryEntry] = []
+    var hasProtectedHistory = false
+    var isUnlocked = false
+    var storageErrorMessage: String?
+
+    var isLocked: Bool {
+        hasProtectedHistory && !isUnlocked
+    }
 
     init() {
-        load()
+        discardLegacyPersistedHistory()
+        hasProtectedHistory = Self.encryptedStoreURL().map { FileManager.default.fileExists(atPath: $0.path) } ?? false
     }
 
     @MainActor
-    func runMonitoringLoop() async {
-        captureCurrentPasteboardIfNeeded(force: true)
+    func runMonitoringLoop(isEnabled: Bool) async {
+        guard isEnabled, !isLocked else { return }
+        _ = captureCurrentPasteboardIfNeeded(force: true)
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(1))
-            captureCurrentPasteboardIfNeeded()
+            _ = captureCurrentPasteboardIfNeeded()
         }
     }
 
     @MainActor
-    func captureCurrentPasteboardIfNeeded(force: Bool = false) {
+    @discardableResult
+    func captureCurrentPasteboardIfNeeded(force: Bool = false) -> Bool {
+        guard !isLocked else {
+            storageErrorMessage = "Unlock encrypted clipboard history with Face ID before capturing new items."
+            return false
+        }
         let pasteboard = UIPasteboard.general
-        guard force || pasteboard.changeCount != lastObservedChangeCount else { return }
+        guard force || pasteboard.changeCount != lastObservedChangeCount else { return false }
         lastObservedChangeCount = pasteboard.changeCount
 
-        guard let entry = Self.entry(from: pasteboard, maxStoredBytes: maxStoredBytes) else { return }
+        guard let entry = Self.entry(from: pasteboard, maxStoredBytes: maxStoredBytes) else { return false }
         insert(entry)
+        return true
     }
 
     @MainActor
@@ -1042,7 +1171,7 @@ final class HermesClipboardHistoryStore {
 
     func clear() {
         entries.removeAll()
-        persist()
+        deleteProtectedHistory()
     }
 
     func delete(_ entry: HermesClipboardHistoryEntry) {
@@ -1060,18 +1189,175 @@ final class HermesClipboardHistoryStore {
         persist()
     }
 
-    private func load() {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
-              let decoded = try? JSONDecoder().decode([HermesClipboardHistoryEntry].self, from: data) else {
-            entries = []
-            return
-        }
-        entries = Array(decoded.prefix(maxEntries))
+    private func discardLegacyPersistedHistory() {
+        UserDefaults.standard.removeObject(forKey: Self.legacyDefaultsKey)
     }
 
     private func persist() {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        UserDefaults.standard.set(data, forKey: defaultsKey)
+        guard !isLocked else { return }
+        do {
+            if entries.isEmpty {
+                deleteProtectedHistory()
+                return
+            }
+
+            let key = try loadOrCreateEncryptionKey()
+            let data = try JSONEncoder.hermesClipboardHistory.encode(entries)
+            let sealedBox = try AES.GCM.seal(data, using: key)
+            guard let combined = sealedBox.combined else {
+                throw ClipboardProtectedStorageError.encryptionFailed
+            }
+            guard let url = Self.encryptedStoreURL(createDirectory: true) else {
+                throw ClipboardProtectedStorageError.storageUnavailable
+            }
+            try combined.write(to: url, options: [.atomic, .completeFileProtection])
+            hasProtectedHistory = true
+            isUnlocked = true
+            storageErrorMessage = nil
+        } catch {
+            storageErrorMessage = error.localizedDescription
+        }
+    }
+
+    func unlockProtectedHistory() throws {
+        guard hasProtectedHistory else {
+            isUnlocked = true
+            storageErrorMessage = nil
+            return
+        }
+        guard let url = Self.encryptedStoreURL(), FileManager.default.fileExists(atPath: url.path) else {
+            hasProtectedHistory = false
+            isUnlocked = true
+            storageErrorMessage = nil
+            return
+        }
+
+        do {
+            let key = try loadEncryptionKey(reason: "Use Face ID to unlock encrypted clipboard history from the previous session.")
+            let encryptedData = try Data(contentsOf: url)
+            let sealedBox = try AES.GCM.SealedBox(combined: encryptedData)
+            let decryptedData = try AES.GCM.open(sealedBox, using: key)
+            entries = try JSONDecoder.hermesClipboardHistory.decode([HermesClipboardHistoryEntry].self, from: decryptedData)
+            encryptionKey = key
+            isUnlocked = true
+            hasProtectedHistory = true
+            storageErrorMessage = nil
+        } catch {
+            storageErrorMessage = error.localizedDescription
+            throw error
+        }
+    }
+
+    private func loadOrCreateEncryptionKey() throws -> SymmetricKey {
+        if let encryptionKey { return encryptionKey }
+        if hasProtectedHistory, Self.keychainKeyExists() {
+            let key = try loadEncryptionKey(reason: "Use Face ID to update encrypted clipboard history.")
+            encryptionKey = key
+            return key
+        }
+
+        Self.deleteEncryptionKey()
+        try Self.requireFaceIDAvailable()
+        let key = SymmetricKey(size: .bits256)
+        let keyData = key.withUnsafeBytes { Data($0) }
+        try Self.saveEncryptionKey(keyData)
+        encryptionKey = key
+        return key
+    }
+
+    private func loadEncryptionKey(reason: String) throws -> SymmetricKey {
+        try Self.requireFaceIDAvailable()
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainService,
+            kSecAttrAccount as String: Self.keychainKeyAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseOperationPrompt as String: reason
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else {
+            throw ClipboardProtectedStorageError.keychain(status)
+        }
+        return SymmetricKey(data: data)
+    }
+
+    private func deleteProtectedHistory() {
+        if let url = Self.encryptedStoreURL(), FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        Self.deleteEncryptionKey()
+        encryptionKey = nil
+        hasProtectedHistory = false
+        isUnlocked = false
+        storageErrorMessage = nil
+    }
+
+    private static func requireFaceIDAvailable() throws {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error), context.biometryType == .faceID else {
+            throw ClipboardProtectedStorageError.faceIDUnavailable
+        }
+    }
+
+    private static func saveEncryptionKey(_ data: Data) throws {
+        guard let accessControl = SecAccessControlCreateWithFlags(
+            nil,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            .biometryCurrentSet,
+            nil
+        ) else {
+            throw ClipboardProtectedStorageError.accessControlCreationFailed
+        }
+
+        deleteEncryptionKey()
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainKeyAccount,
+            kSecAttrAccessControl as String: accessControl,
+            kSecValueData as String: data
+        ]
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw ClipboardProtectedStorageError.keychain(status)
+        }
+    }
+
+    private static func deleteEncryptionKey() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainKeyAccount
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    private static func keychainKeyExists() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainKeyAccount,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        return status == errSecSuccess || status == errSecInteractionNotAllowed || status == errSecAuthFailed
+    }
+
+    private static func encryptedStoreURL(createDirectory: Bool = false) -> URL? {
+        guard let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let directory = applicationSupport.appendingPathComponent("HermesiOS", isDirectory: true)
+        if createDirectory {
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        return directory.appendingPathComponent(encryptedStorageFilename)
     }
 
     private static func entry(from pasteboard: UIPasteboard, maxStoredBytes: Int) -> HermesClipboardHistoryEntry? {
@@ -1082,6 +1368,7 @@ final class HermesClipboardHistoryStore {
         }
 
         if let string = pasteboard.string, !string.isEmpty,
+           !containsSensitiveText(string),
            let data = string.data(using: .utf8),
            data.count <= maxStoredBytes {
             return HermesClipboardHistoryEntry(kind: .text, typeIdentifier: UTType.utf8PlainText.identifier, payload: data, displayName: nil)
@@ -1101,13 +1388,16 @@ final class HermesClipboardHistoryStore {
             guard !isTextType(typeIdentifier), !isImageType(typeIdentifier) else { continue }
 
             if let data = value as? Data, data.count <= maxStoredBytes {
+                if let text = String(data: data, encoding: .utf8), containsSensitiveText(text) { continue }
                 return HermesClipboardHistoryEntry(kind: .file, typeIdentifier: typeIdentifier, payload: data, displayName: displayName(for: typeIdentifier))
             }
 
             if let url = value as? URL,
                url.isFileURL,
+               !containsSensitiveFilename(url.lastPathComponent),
                let data = try? Data(contentsOf: url),
                data.count <= maxStoredBytes {
+                if let text = String(data: data, encoding: .utf8), containsSensitiveText(text) { continue }
                 return HermesClipboardHistoryEntry(kind: .file, typeIdentifier: typeIdentifier, payload: data, displayName: url.lastPathComponent)
             }
         }
@@ -1117,6 +1407,43 @@ final class HermesClipboardHistoryStore {
     private static func isTextType(_ identifier: String) -> Bool {
         guard let type = UTType(identifier) else { return identifier.localizedCaseInsensitiveContains("text") }
         return type.conforms(to: .text)
+    }
+
+    private static func containsSensitiveText(_ text: String) -> Bool {
+        let lowercased = text.lowercased()
+        let obviousMarkers = [
+            "-----begin private key-----",
+            "-----begin openSSH private key-----".lowercased(),
+            "password=",
+            "password:",
+            "api_key",
+            "apikey",
+            "access_token",
+            "auth_token",
+            "bearer ",
+            "secret=",
+            "client_secret"
+        ]
+        if obviousMarkers.contains(where: { lowercased.contains($0) }) { return true }
+
+        let patterns = [
+            #"(?i)sk-[A-Za-z0-9_\-]{20,}"#,
+            #"(?i)(xox[baprs]-)[A-Za-z0-9\-]{20,}"#,
+            #"(?i)gh[pousr]_[A-Za-z0-9_]{20,}"#,
+            #"(?i)[A-Za-z0-9_\-]{24,}\.[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{20,}"#
+        ]
+        return patterns.contains { text.range(of: $0, options: .regularExpression) != nil }
+    }
+
+    private static func containsSensitiveFilename(_ filename: String) -> Bool {
+        let lowercased = filename.lowercased()
+        return lowercased.contains("id_rsa")
+            || lowercased.contains("id_ed25519")
+            || lowercased.contains("private")
+            || lowercased.contains("secret")
+            || lowercased.hasSuffix(".key")
+            || lowercased.hasSuffix(".p12")
+            || lowercased.hasSuffix(".mobileprovision")
     }
 
     private static func isImageType(_ identifier: String) -> Bool {

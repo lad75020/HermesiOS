@@ -331,12 +331,10 @@ final class CompanionGitRegistry {
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
-        let expandedPath = NSString(string: workspacePath.trimmingCharacters(in: .whitespacesAndNewlines)).expandingTildeInPath
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: expandedPath, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw CompanionGitRegistryError.invalidWorkspace(expandedPath)
+        guard let workspaceURL = CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: workspacePath) else {
+            throw CompanionGitRegistryError.invalidWorkspace(workspacePath)
         }
-        return URL(fileURLWithPath: expandedPath, isDirectory: true)
+        return workspaceURL
     }
 
     private func runGit(_ arguments: [String], repoURL: URL, timeout: TimeInterval) throws -> String {

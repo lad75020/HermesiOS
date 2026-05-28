@@ -138,7 +138,7 @@ private struct HermesHostCompanionRootView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Authentication")
                             .font(.headline)
-                        Text("The companion uses a single 256-character API key over plain HTTP WebSocket. Copy this key into HermesiOS settings. No TLS, certificates, QR codes, enrollment ports, pairing IDs, or CA material are used.")
+                        Text("The companion uses a single high-entropy API key over a local WebSocket. Copy the key into HermesiOS settings; the full value is kept in Keychain and is not displayed on screen.")
                             .foregroundStyle(.secondary)
 
                         statusRow("API URL", controller.apiURL)
@@ -146,20 +146,25 @@ private struct HermesHostCompanionRootView: View {
                         Text("API Key")
                             .font(.subheadline.bold())
                         HStack(alignment: .top, spacing: 8) {
-                            Text(controller.authenticationToken)
+                            Text(controller.authenticationTokenPreview)
                                 .font(.caption.monospaced())
-                                .textSelection(.enabled)
-                                .lineLimit(6)
+                                .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                             Button {
                                 controller.copyAuthenticationToken()
                             } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .accessibilityLabel("Copy API key")
+                                Label("Copy for 2 min", systemImage: "doc.on.doc")
+                                    .accessibilityLabel("Copy API key temporarily")
                             }
                             .buttonStyle(.borderless)
-                            .help("Copy API key")
+                            .help("Copy API key to the pasteboard temporarily")
+                        }
+
+                        if controller.tokenCopyStatus.isEmpty == false {
+                            Text(controller.tokenCopyStatus)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
 
                         HStack {
@@ -220,6 +225,7 @@ private struct HermesHostCompanionRootView: View {
 final class CompanionServerController {
     let server = CompanionServer()
     private(set) var authenticationToken: String
+    var tokenCopyStatus = ""
     var advertisedHost: String
     var apiPort: String
     var apiGatewayPort: String
@@ -246,6 +252,12 @@ final class CompanionServerController {
         "ws://\(server.currentConfiguration.host):\(server.currentConfiguration.port.rawValue)/ws"
     }
 
+    var authenticationTokenPreview: String {
+        let prefix = authenticationToken.prefix(8)
+        let suffix = authenticationToken.suffix(8)
+        return "\(prefix)…\(suffix)"
+    }
+
     func startServerIfNeeded() {
         guard server.state == .stopped else { return }
         applyNetworkConfiguration()
@@ -267,13 +279,23 @@ final class CompanionServerController {
     }
 
     func copyAuthenticationToken() {
+        let token = authenticationToken
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(authenticationToken, forType: .string)
+        pasteboard.setString(token, forType: .string)
+        tokenCopyStatus = "API key copied. It will be cleared from the pasteboard in 2 minutes if unchanged."
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(120))
+            guard NSPasteboard.general.string(forType: .string) == token else { return }
+            NSPasteboard.general.clearContents()
+            tokenCopyStatus = "API key cleared from the pasteboard."
+        }
     }
 
     func regenerateToken() {
         authenticationToken = CompanionAuthenticationTokenStore.shared.regenerateToken()
+        tokenCopyStatus = "API key regenerated. Update every enrolled iOS device."
     }
 
     func applyServicePorts() {

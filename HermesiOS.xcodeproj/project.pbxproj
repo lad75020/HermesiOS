@@ -245,7 +245,7 @@
 				INFOPLIST_FILE = HermesiOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hermes on iOS";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "HermesiOS uses Face ID to unlock your stored SSH private key for Terminal connections.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "HermesiOS uses Face ID to unlock encrypted clipboard history and your stored SSH private key.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HermesiOS uses the microphone to dictate prompts with Apple speech recognition.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "HermesiOS uses Apple speech recognition to transcribe dictated prompts live.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -288,7 +288,7 @@
 				INFOPLIST_FILE = HermesiOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hermes on iOS";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "HermesiOS uses Face ID to unlock your stored SSH private key for Terminal connections.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "HermesiOS uses Face ID to unlock encrypted clipboard history and your stored SSH private key.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HermesiOS uses the microphone to dictate prompts with Apple speech recognition.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "HermesiOS uses Apple speech recognition to transcribe dictated prompts live.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

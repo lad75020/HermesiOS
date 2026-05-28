@@ -194,11 +194,7 @@ final class CompanionGatewayRegistry {
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
-        let trimmed = workspacePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expanded = (trimmed.isEmpty ? "~/.hermes" : trimmed as NSString).expandingTildeInPath
-        let url = URL(fileURLWithPath: expanded, isDirectory: true)
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard let url = CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: workspacePath) else {
             throw CompanionGatewayRegistryError.invalidWorkspace(workspacePath)
         }
         return url

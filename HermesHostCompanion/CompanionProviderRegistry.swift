@@ -176,11 +176,7 @@ final class CompanionProviderRegistry {
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
-        let trimmedPath = workspacePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expandedPath = (trimmedPath as NSString).expandingTildeInPath
-        let workspaceURL = URL(fileURLWithPath: expandedPath, isDirectory: true)
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard let workspaceURL = CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: workspacePath) else {
             throw CompanionProviderRegistryError.invalidWorkspace(workspacePath)
         }
         return workspaceURL

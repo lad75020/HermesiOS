@@ -87,11 +87,7 @@ final class CompanionScheduleRegistry {
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
-        let trimmedPath = workspacePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expandedPath = (trimmedPath.isEmpty ? "~/.hermes" : trimmedPath as NSString).expandingTildeInPath
-        let workspaceURL = URL(fileURLWithPath: expandedPath, isDirectory: true)
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard let workspaceURL = CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: workspacePath, requireHermesCLI: true) else {
             throw CompanionScheduleRegistryError.invalidWorkspace(workspacePath)
         }
         return workspaceURL

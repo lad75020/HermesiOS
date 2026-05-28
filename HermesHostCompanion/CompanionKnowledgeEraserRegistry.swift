@@ -210,10 +210,7 @@ final class CompanionKnowledgeEraserRegistry {
     }
 
     private func resolvedWorkspaceURL(from path: String) throws -> URL {
-        let expanded = (path as NSString).expandingTildeInPath
-        let url = URL(fileURLWithPath: expanded, isDirectory: true)
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard let url = CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: path) else {
             throw CompanionKnowledgeEraserError.invalidWorkspace(path)
         }
         return url

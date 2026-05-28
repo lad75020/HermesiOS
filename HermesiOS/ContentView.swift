@@ -21,6 +21,7 @@ struct ContentView: View {
     @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @AppStorage(hermesRuntimeTabEnabledStorageKey) private var isRuntimeTabEnabled = false
+    @AppStorage("hermes.utilities.clipboardHistoryMonitoringEnabled") private var isClipboardHistoryMonitoringEnabled = false
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
     @State private var selectedPhoneSection: WorkspaceSection = .responses
@@ -155,8 +156,8 @@ struct ContentView: View {
             )
         }
         .task(id: clipboardMonitoringKey) {
-            guard !isShowingSplash, scenePhase == .active else { return }
-            await clipboardHistory.runMonitoringLoop()
+            guard !isShowingSplash, scenePhase == .active, isClipboardHistoryMonitoringEnabled else { return }
+            await clipboardHistory.runMonitoringLoop(isEnabled: isClipboardHistoryMonitoringEnabled)
         }
         .task(id: statusLoopKey) {
             guard !isShowingSplash, scenePhase == .active else { return }
@@ -330,7 +331,7 @@ struct ContentView: View {
     }
 
     private var clipboardMonitoringKey: String {
-        "scenePhase=\(scenePhase)|splash=\(isShowingSplash)"
+        "scenePhase=\(scenePhase)|splash=\(isShowingSplash)|clipboard=\(isClipboardHistoryMonitoringEnabled)"
     }
 
     private var statusRefreshKey: String {

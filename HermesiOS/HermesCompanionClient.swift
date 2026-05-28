@@ -176,6 +176,12 @@ struct HermesCompanionFileDownloadPayload: Codable {
 
 struct HermesCompanionFileBrowserPayload: Codable {
     let path: String
+    let workspacePath: String?
+
+    init(path: String, workspacePath: String? = nil) {
+        self.path = path
+        self.workspacePath = workspacePath
+    }
 }
 
 struct HermesCompanionFileBrowserEntry: Codable, Identifiable, Equatable {

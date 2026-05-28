@@ -519,15 +519,8 @@ final class CompanionTargetRegistry {
     }
 
     private func resolvedHermesWorkspaceURL(from workspacePath: String) throws -> URL {
-        let trimmedPath = workspacePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expandedPath = NSString(string: trimmedPath.isEmpty ? "~/.hermes" : trimmedPath).expandingTildeInPath
-        let workspaceURL = URL(fileURLWithPath: expandedPath, isDirectory: true)
-        var isDirectory: ObjCBool = false
-        let hasWorkspace = FileManager.default.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory)
-        let skillsRootURL = workspaceURL.appendingPathComponent("skills", isDirectory: true)
-        let hasSkills = FileManager.default.fileExists(atPath: skillsRootURL.path, isDirectory: &isDirectory)
-        guard hasWorkspace, hasSkills else {
-            throw CompanionTargetRegistryError.invalidWorkspacePath(expandedPath)
+        guard let workspaceURL = CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: workspacePath, requireSkillsDirectory: true) else {
+            throw CompanionTargetRegistryError.invalidWorkspacePath(workspacePath)
         }
         return workspaceURL
     }

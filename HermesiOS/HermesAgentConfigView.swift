@@ -138,7 +138,7 @@ struct HermesAgentConfigView: View {
 
                 HermesRuntimeAccordionPanel(
                     title: "Companion",
-                    subtitle: companionEnrollment.identityState.isEnrolled ? companionRuntime.connectionStatus : "Authenticate with the 256-character companion API key to unlock host operations",
+                    subtitle: companionEnrollment.identityState.isEnrolled ? companionRuntime.connectionStatus : "Scan the Host Companion QR code and approve this device to unlock host operations",
                     systemImage: "lock.laptopcomputer",
                     isLoaded: runtimeSectionLoaded("companion"),
                     isExpanded: Binding(

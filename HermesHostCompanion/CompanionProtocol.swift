@@ -10,7 +10,8 @@ import Foundation
 struct CompanionIncomingEnvelope: Codable {
     let id: String?
     let type: String
-    let authenticationToken: String?
+    let deviceID: String?
+    let deviceSecret: String?
     let payload: JSONValue?
 }
 
@@ -43,6 +44,40 @@ struct HelloResult: Codable {
     let protocolVersion: String
     let serverName: String
     let capabilities: [String]
+}
+
+struct CompanionOnboardingPayload: Codable {
+    let type: String
+    let version: Int
+    let endpoint: String
+    let code: String
+    let serverName: String
+}
+
+struct CompanionEnrollDevicePayload: Codable {
+    let code: String
+    let deviceName: String
+}
+
+struct CompanionEnrollDeviceResult: Codable {
+    let deviceID: String
+    let deviceSecret: String
+    let deviceName: String
+    let serverEndpoint: String
+    let approved: Bool
+    let message: String
+}
+
+struct CompanionCheckDeviceApprovalPayload: Codable {
+    let deviceID: String
+    let deviceSecret: String
+}
+
+struct CompanionCheckDeviceApprovalResult: Codable {
+    let deviceID: String
+    let approved: Bool
+    let revoked: Bool
+    let message: String
 }
 
 

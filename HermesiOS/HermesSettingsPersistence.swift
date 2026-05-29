@@ -23,7 +23,8 @@ enum HermesSettingsPersistence {
     private static let tokenService = "com.hermesios.api"
     private static let tokenAccount = "bearerToken"
     private static let companionService = "com.hermesios.companion"
-    private static let companionTokenAccount = "authenticationToken"
+    private static let companionDeviceSecretAccount = "deviceSecret"
+    private static let legacyCompanionTokenAccount = "authenticationToken"
     private static let terminalService = "com.hermesios.terminal"
     private static let terminalPrivateKeyAccount = "sshPrivateKey"
 
@@ -110,15 +111,28 @@ enum HermesSettingsPersistence {
 
     static func loadCompanionSettings() -> HermesCompanionSettings {
         var settings = decode(HermesCompanionSettings.self, from: companionSettingsKey) ?? HermesCompanionSettings()
-        settings.authenticationToken = loadKeychainString(service: companionService, account: companionTokenAccount)
+        settings.deviceSecret = loadCompanionDeviceSecret()
         return settings
     }
 
     static func saveCompanionSettings(_ settings: HermesCompanionSettings) {
         var persistedSettings = settings
-        persistedSettings.authenticationToken = ""
+        persistedSettings.deviceSecret = ""
         encode(persistedSettings, to: companionSettingsKey)
-        saveKeychainString(settings.authenticationToken, service: companionService, account: companionTokenAccount)
+        if settings.deviceSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            saveCompanionDeviceSecret(settings.deviceSecret)
+        }
+    }
+
+    static func loadCompanionDeviceSecret() -> String {
+        let current = loadKeychainString(service: companionService, account: companionDeviceSecretAccount)
+        if current.isEmpty == false { return current }
+        return ""
+    }
+
+    static func saveCompanionDeviceSecret(_ value: String) {
+        saveKeychainString(value, service: companionService, account: companionDeviceSecretAccount)
+        deleteKeychainData(service: companionService, account: legacyCompanionTokenAccount)
     }
 
     static func loadCompanionIdentityState() -> HermesCompanionIdentityState {

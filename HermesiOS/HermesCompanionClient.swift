@@ -11,7 +11,7 @@ import Observation
 
 struct HermesCompanionSettings: Codable, Equatable {
     var apiURL = HermesHostEndpoints.webSocketURLString(host: defaultHermesMacHost, port: defaultHermesCompanionPort)
-    var authenticationToken = ""
+    var deviceSecret = ""
     var hermesWorkspacePath = "/Volumes/WDBlack4TB/Code/HermesiOS/.hermes"
 }
 
@@ -19,29 +19,38 @@ struct HermesCompanionIdentityState: Codable, Equatable {
     var deviceID = ""
     var deviceName = ""
     var serverEndpoint = ""
-    var authenticationTokenFingerprint = ""
+    var deviceSecretFingerprint = ""
     var issuedAt = Date()
+    var approvedAt: Date?
+    var revokedAt: Date?
 
     init(
         deviceID: String = "",
         deviceName: String = "",
         serverEndpoint: String = "",
-        authenticationTokenFingerprint: String = "",
-        issuedAt: Date = Date()
+        deviceSecretFingerprint: String = "",
+        issuedAt: Date = Date(),
+        approvedAt: Date? = nil,
+        revokedAt: Date? = nil
     ) {
         self.deviceID = deviceID
         self.deviceName = deviceName
         self.serverEndpoint = serverEndpoint
-        self.authenticationTokenFingerprint = authenticationTokenFingerprint
+        self.deviceSecretFingerprint = deviceSecretFingerprint
         self.issuedAt = issuedAt
+        self.approvedAt = approvedAt
+        self.revokedAt = revokedAt
     }
 
     enum CodingKeys: String, CodingKey {
         case deviceID
         case deviceName
         case serverEndpoint
+        case deviceSecretFingerprint
         case authenticationTokenFingerprint
         case issuedAt
+        case approvedAt
+        case revokedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -49,24 +58,47 @@ struct HermesCompanionIdentityState: Codable, Equatable {
         deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID) ?? ""
         deviceName = try container.decodeIfPresent(String.self, forKey: .deviceName) ?? ""
         serverEndpoint = try container.decodeIfPresent(String.self, forKey: .serverEndpoint) ?? ""
-        authenticationTokenFingerprint = try container.decodeIfPresent(String.self, forKey: .authenticationTokenFingerprint) ?? ""
+        deviceSecretFingerprint = try container.decodeIfPresent(String.self, forKey: .deviceSecretFingerprint)
+            ?? container.decodeIfPresent(String.self, forKey: .authenticationTokenFingerprint)
+            ?? ""
         issuedAt = try container.decodeIfPresent(Date.self, forKey: .issuedAt) ?? Date()
+        approvedAt = try container.decodeIfPresent(Date.self, forKey: .approvedAt)
+        revokedAt = try container.decodeIfPresent(Date.self, forKey: .revokedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(deviceID, forKey: .deviceID)
+        try container.encode(deviceName, forKey: .deviceName)
+        try container.encode(serverEndpoint, forKey: .serverEndpoint)
+        try container.encode(deviceSecretFingerprint, forKey: .deviceSecretFingerprint)
+        try container.encode(issuedAt, forKey: .issuedAt)
+        try container.encodeIfPresent(approvedAt, forKey: .approvedAt)
+        try container.encodeIfPresent(revokedAt, forKey: .revokedAt)
+    }
+
+    var hasPairing: Bool {
+        serverEndpoint.isEmpty == false && deviceID.isEmpty == false && deviceSecretFingerprint.isEmpty == false
+    }
+
+    var isPendingApproval: Bool {
+        hasPairing && approvedAt == nil && revokedAt == nil
     }
 
     var isEnrolled: Bool {
-        serverEndpoint.isEmpty == false && authenticationTokenFingerprint.isEmpty == false
+        hasPairing && approvedAt != nil && revokedAt == nil
     }
 
     func matches(settings: HermesCompanionSettings) -> Bool {
         let endpoint = settings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        let token = settings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        return isEnrolled &&
+        let secret = settings.deviceSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        return hasPairing &&
             serverEndpoint == endpoint &&
-            authenticationTokenFingerprint == Self.fingerprint(for: token)
+            deviceSecretFingerprint == Self.fingerprint(for: secret)
     }
 
-    static func fingerprint(for token: String) -> String {
-        let digest = SHA256.hash(data: Data(token.utf8))
+    static func fingerprint(for secret: String) -> String {
+        let digest = SHA256.hash(data: Data(secret.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -74,7 +106,8 @@ struct HermesCompanionIdentityState: Codable, Equatable {
 struct HermesCompanionIncomingEnvelope: Codable {
     let id: String?
     let type: String
-    let authenticationToken: String?
+    let deviceID: String?
+    let deviceSecret: String?
     let payload: HermesCompanionJSONValue?
 }
 
@@ -95,6 +128,49 @@ struct HermesCompanionHelloResult: Codable {
     let protocolVersion: String
     let serverName: String
     let capabilities: [String]
+}
+
+struct HermesCompanionOnboardingPayload: Codable {
+    let type: String
+    let version: Int
+    let endpoint: String
+    let code: String
+    let serverName: String
+
+    static func decode(from text: String) throws -> HermesCompanionOnboardingPayload {
+        let data = Data(text.utf8)
+        let payload = try JSONDecoder().decode(HermesCompanionOnboardingPayload.self, from: data)
+        guard payload.type == "hermes_companion_onboarding", payload.version == 1 else {
+            throw HermesCompanionClientError.invalidOnboardingCode
+        }
+        return payload
+    }
+}
+
+struct HermesCompanionEnrollDevicePayload: Codable {
+    let code: String
+    let deviceName: String
+}
+
+struct HermesCompanionEnrollDeviceResult: Codable {
+    let deviceID: String
+    let deviceSecret: String
+    let deviceName: String
+    let serverEndpoint: String
+    let approved: Bool
+    let message: String
+}
+
+struct HermesCompanionCheckDeviceApprovalPayload: Codable {
+    let deviceID: String
+    let deviceSecret: String
+}
+
+struct HermesCompanionCheckDeviceApprovalResult: Codable {
+    let deviceID: String
+    let approved: Bool
+    let revoked: Bool
+    let message: String
 }
 
 struct HermesCompanionListTargetsResult: Codable {
@@ -1210,9 +1286,11 @@ enum HermesCompanionClientError: LocalizedError {
     case invalidResponse
     case serverRejected(String)
     case missingPayload
-    case missingAuthenticationToken
-    case invalidAuthenticationTokenLength
+    case missingDeviceSecret
+    case invalidOnboardingCode
     case notEnrolled
+    case pendingApproval
+    case deviceRevoked
     case insecureEndpoint(String)
 
     var errorDescription: String? {
@@ -1225,12 +1303,16 @@ enum HermesCompanionClientError: LocalizedError {
             message
         case .missingPayload:
             "The companion authentication response did not include a payload."
-        case .missingAuthenticationToken:
-            "Enter the 256-character Host Companion API key before verifying the connection."
-        case .invalidAuthenticationTokenLength:
-            "The Host Companion API key must be exactly 256 characters."
+        case .missingDeviceSecret:
+            "Scan the Host Companion QR code before using runtime controls."
+        case .invalidOnboardingCode:
+            "The QR code is not a valid HermesHostCompanion onboarding code."
         case .notEnrolled:
-            "Verify the Host Companion API key before using runtime controls."
+            "Approve this device in HermesHostCompanion before using runtime controls."
+        case .pendingApproval:
+            "This device is waiting for approval in HermesHostCompanion."
+        case .deviceRevoked:
+            "This device has been revoked in HermesHostCompanion. Scan the QR code again to onboard it."
         case .insecureEndpoint(let message):
             message
         }
@@ -1241,7 +1323,7 @@ enum HermesCompanionClientError: LocalizedError {
 @Observable
 final class HermesCompanionEnrollmentSession {
     var isEnrolling = false
-    var connectionStatus = "Not Authenticated"
+    var connectionStatus = "Not Paired"
     var lastErrorMessage = ""
     var identityState: HermesCompanionIdentityState
 
@@ -1251,14 +1333,23 @@ final class HermesCompanionEnrollmentSession {
         let persistedState = HermesSettingsPersistence.loadCompanionIdentityState()
         identityState = persistedState
         if persistedState.isEnrolled {
-            connectionStatus = "Authenticated"
+            connectionStatus = "Device Approved"
+        } else if persistedState.isPendingApproval {
+            connectionStatus = "Pending Approval"
         }
     }
 
-    func enroll(settings: HermesCompanionSettings) {
+    func enroll(onboarding payload: HermesCompanionOnboardingPayload, deviceName: String) {
         enrollmentTask?.cancel()
         enrollmentTask = Task {
-            await runEnrollment(settings: settings)
+            await runEnrollment(onboarding: payload, deviceName: deviceName)
+        }
+    }
+
+    func checkApproval(settings: HermesCompanionSettings) {
+        enrollmentTask?.cancel()
+        enrollmentTask = Task {
+            await runApprovalCheck(settings: settings)
         }
     }
 
@@ -1266,69 +1357,116 @@ final class HermesCompanionEnrollmentSession {
         enrollmentTask?.cancel()
         enrollmentTask = nil
         identityState = HermesCompanionIdentityState()
-        connectionStatus = "Not Authenticated"
+        connectionStatus = "Not Paired"
         lastErrorMessage = ""
         HermesSettingsPersistence.clearCompanionIdentity()
+        HermesSettingsPersistence.saveCompanionDeviceSecret("")
     }
 
     func invalidateIfSettingsChanged(settings: HermesCompanionSettings) {
-        guard identityState.isEnrolled, identityState.matches(settings: settings) == false else { return }
+        guard identityState.hasPairing, identityState.matches(settings: settings) == false else { return }
         enrollmentTask?.cancel()
         enrollmentTask = nil
         identityState = HermesCompanionIdentityState()
-        connectionStatus = "Not Authenticated"
-        lastErrorMessage = "Host Companion settings changed. Verify the API key again."
+        connectionStatus = "Not Paired"
+        lastErrorMessage = "Host Companion endpoint changed. Scan the current QR code again."
         HermesSettingsPersistence.clearCompanionIdentity()
+        HermesSettingsPersistence.saveCompanionDeviceSecret("")
     }
 
-    private func runEnrollment(settings: HermesCompanionSettings) async {
-        let token = settings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard token.isEmpty == false else {
-            lastErrorMessage = HermesCompanionClientError.missingAuthenticationToken.localizedDescription
-            connectionStatus = "Authentication Failed"
-            return
-        }
-        guard token.count == HermesCompanionSessionFactory.expectedAPIKeyLength else {
-            lastErrorMessage = HermesCompanionClientError.invalidAuthenticationTokenLength.localizedDescription
-            connectionStatus = "Authentication Failed"
-            return
-        }
-
-        guard let url = URL(string: settings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+    private func runEnrollment(onboarding payload: HermesCompanionOnboardingPayload, deviceName: String) async {
+        guard let url = URL(string: payload.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             lastErrorMessage = HermesCompanionClientError.invalidURL.localizedDescription
-            connectionStatus = "Authentication Failed"
+            connectionStatus = "Pairing Failed"
             return
         }
 
         isEnrolling = true
         lastErrorMessage = ""
-        connectionStatus = "Verifying Token"
+        connectionStatus = "Sending Pairing Request"
 
         do {
-            let result: HermesCompanionHelloResult = try await HermesCompanionSessionFactory.request(
+            let result: HermesCompanionEnrollDeviceResult = try await HermesCompanionSessionFactory.request(
                 url: url,
-                authenticationToken: token,
-                type: "hello",
-                payload: Optional<HermesCompanionEmptyPayload>.none
+                deviceID: nil,
+                deviceSecret: nil,
+                type: "enroll_device",
+                payload: HermesCompanionEnrollDevicePayload(code: payload.code, deviceName: deviceName)
             )
+            HermesSettingsPersistence.saveCompanionDeviceSecret(result.deviceSecret)
             let newState = HermesCompanionIdentityState(
-                deviceID: "token-auth",
-                deviceName: result.serverName,
-                serverEndpoint: url.absoluteString,
-                authenticationTokenFingerprint: HermesCompanionIdentityState.fingerprint(for: token),
-                issuedAt: Date()
+                deviceID: result.deviceID,
+                deviceName: result.deviceName,
+                serverEndpoint: result.serverEndpoint,
+                deviceSecretFingerprint: HermesCompanionIdentityState.fingerprint(for: result.deviceSecret),
+                issuedAt: Date(),
+                approvedAt: result.approved ? Date() : nil,
+                revokedAt: nil
             )
             HermesSettingsPersistence.saveCompanionAuthenticationState(newState)
             identityState = newState
-            connectionStatus = "Authenticated"
+            connectionStatus = result.approved ? "Device Approved" : "Pending Approval"
+            lastErrorMessage = result.message
         } catch {
             lastErrorMessage = error.localizedDescription
-            connectionStatus = "Authentication Failed"
+            connectionStatus = "Pairing Failed"
         }
 
         isEnrolling = false
     }
 
+    private func runApprovalCheck(settings: HermesCompanionSettings) async {
+        guard identityState.hasPairing else {
+            lastErrorMessage = HermesCompanionClientError.notEnrolled.localizedDescription
+            connectionStatus = "Not Paired"
+            return
+        }
+        let secret = HermesCompanionSessionFactory.deviceSecret(from: settings)
+        guard secret.isEmpty == false else {
+            lastErrorMessage = HermesCompanionClientError.missingDeviceSecret.localizedDescription
+            connectionStatus = "Not Paired"
+            return
+        }
+        guard let url = URL(string: identityState.serverEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            lastErrorMessage = HermesCompanionClientError.invalidURL.localizedDescription
+            connectionStatus = "Approval Check Failed"
+            return
+        }
+
+        isEnrolling = true
+        lastErrorMessage = ""
+        connectionStatus = "Checking Approval"
+
+        do {
+            let result: HermesCompanionCheckDeviceApprovalResult = try await HermesCompanionSessionFactory.request(
+                url: url,
+                deviceID: nil,
+                deviceSecret: nil,
+                type: "check_device_approval",
+                payload: HermesCompanionCheckDeviceApprovalPayload(deviceID: identityState.deviceID, deviceSecret: secret)
+            )
+            var newState = identityState
+            if result.revoked {
+                newState.revokedAt = Date()
+                newState.approvedAt = nil
+                connectionStatus = "Revoked"
+            } else if result.approved {
+                newState.approvedAt = newState.approvedAt ?? Date()
+                newState.revokedAt = nil
+                connectionStatus = "Device Approved"
+            } else {
+                connectionStatus = "Pending Approval"
+            }
+            HermesSettingsPersistence.saveCompanionAuthenticationState(newState)
+            identityState = newState
+            lastErrorMessage = result.message
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            connectionStatus = "Approval Check Failed"
+        }
+
+        isEnrolling = false
+    }
 }
 
 @MainActor
@@ -3106,8 +3244,6 @@ final class HermesCompanionRuntimeSession {
 }
 
 enum HermesCompanionSessionFactory {
-    static let expectedAPIKeyLength = 256
-
     static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
@@ -3120,7 +3256,8 @@ enum HermesCompanionSessionFactory {
 
     static func request<Payload: Encodable, Response: Decodable>(
         url: URL,
-        authenticationToken: String,
+        deviceID: String?,
+        deviceSecret: String?,
         type: String,
         payload: Payload?
     ) async throws -> Response {
@@ -3134,7 +3271,8 @@ enum HermesCompanionSessionFactory {
             let envelope = HermesCompanionIncomingEnvelope(
                 id: UUID().uuidString,
                 type: type,
-                authenticationToken: authenticationToken,
+                deviceID: deviceID,
+                deviceSecret: deviceSecret,
                 payload: payload.flatMap(HermesCompanionJSONValue.encode)
             )
             let data = try JSONEncoder().encode(envelope)
@@ -3174,12 +3312,15 @@ enum HermesCompanionSessionFactory {
         guard state.isEnrolled else {
             throw HermesCompanionClientError.notEnrolled
         }
-        let token = settings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard token.isEmpty == false else {
-            throw HermesCompanionClientError.missingAuthenticationToken
+        let secret = deviceSecret(from: settings)
+        guard secret.isEmpty == false else {
+            throw HermesCompanionClientError.missingDeviceSecret
         }
-        guard token.count == HermesCompanionSessionFactory.expectedAPIKeyLength else {
-            throw HermesCompanionClientError.invalidAuthenticationTokenLength
+        guard state.isPendingApproval == false else {
+            throw HermesCompanionClientError.pendingApproval
+        }
+        guard state.revokedAt == nil else {
+            throw HermesCompanionClientError.deviceRevoked
         }
         let endpoint = state.serverEndpoint.isEmpty ? settings.apiURL : state.serverEndpoint
         guard let url = URL(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -3188,7 +3329,13 @@ enum HermesCompanionSessionFactory {
         if let warning = HermesEndpointSecurity.plaintextTransportWarning(for: url.absoluteString, endpointName: "Host Companion") {
             throw HermesCompanionClientError.insecureEndpoint(warning)
         }
-        return try await request(url: url, authenticationToken: token, type: type, payload: payload)
+        return try await request(url: url, deviceID: state.deviceID, deviceSecret: secret, type: type, payload: payload)
+    }
+
+    static func deviceSecret(from settings: HermesCompanionSettings) -> String {
+        let settingSecret = settings.deviceSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        if settingSecret.isEmpty == false { return settingSecret }
+        return HermesSettingsPersistence.loadCompanionDeviceSecret()
     }
 }
 

@@ -3,8 +3,10 @@
 //  HermesiOS
 //
 
+import AVFoundation
 import Observation
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct HermesSettingsView: View {
@@ -26,6 +28,7 @@ struct HermesSettingsView: View {
     @State private var dashboardGatewayRestart = HermesDashboardGatewayRestartSession()
     @State private var isImportingTerminalPrivateKey = false
     @State private var terminalPrivateKeyStatus = ""
+    @State private var isScanningCompanionQRCode = false
 
     private let macServices: [HermesSettingsMacService] = [
         .init(id: "hermes-dashboard", title: "Hermes Dashboard", subtitle: "Host-rewriting dashboard proxy", icon: "rectangle.on.rectangle.angled"),
@@ -80,7 +83,7 @@ struct HermesSettingsView: View {
 
                 Section("Hermes Installation") {
                     if companionEnrollment.identityState.isEnrolled == false {
-                        Text("Authenticate Host Companion before checking the host Hermes Agent checkout.")
+                        Text("Approve this device in Host Companion before checking the host Hermes Agent checkout.")
                             .font(.caption)
                             .foregroundStyle(.hermesSecondaryText)
                     }
@@ -222,28 +225,53 @@ struct HermesSettingsView: View {
 
                 HStack(alignment: .center, spacing: 10) {
                     HermesSettingsStatusLED(
-                        isOn: companionAPIKeyVerified,
-                        label: companionAPIKeyVerified ? "API key verified" : "API key not verified"
+                        isOn: companionEnrollment.identityState.isEnrolled,
+                        label: companionEnrollment.identityState.isEnrolled ? "Device approved" : "Device not approved"
                     )
 
-                    SecureField("256-character API key", text: $companionSettings.authenticationToken)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(companionDeviceStatusTitle)
+                            .font(.subheadline.weight(.semibold))
+                        if companionEnrollment.identityState.deviceID.isEmpty == false {
+                            Text(companionEnrollment.identityState.deviceID)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.hermesSecondaryText)
+                                .textSelection(.enabled)
+                        }
+                    }
 
-                    Button(companionAPIKeyVerified ? "Verify API Key Again" : "Verify API Key") {
-                        companionEnrollment.enroll(settings: companionSettings)
+                    Spacer()
+
+                    Button {
+                        isScanningCompanionQRCode = true
+                    } label: {
+                        Label("Scan QR", systemImage: "qrcode.viewfinder")
                     }
                     .hermesGlassProminentButton()
-                    .disabled(
-                        companionEnrollment.isEnrolling ||
-                        companionSettings.apiURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                        companionSettings.authenticationToken.trimmingCharacters(in: .whitespacesAndNewlines).count != HermesCompanionSessionFactory.expectedAPIKeyLength
-                    )
+                    .disabled(companionEnrollment.isEnrolling)
+
+                    if companionEnrollment.identityState.hasPairing {
+                        Button("Check Approval") {
+                            companionEnrollment.checkApproval(settings: companionSettings)
+                        }
+                        .hermesGlassButton()
+                        .disabled(companionEnrollment.isEnrolling)
+                    }
                 }
 
-                Text("Paste the 256-character API key from the macOS Host Companion, then tap Verify API Key. Changing this field marks the companion as unverified until the key is verified again.")
+                Text("Open HermesHostCompanion on the Mac, scan its QR code, then approve this device in the companion app. Approved devices use a unique device ID and can be revoked on the Mac.")
                     .font(.caption)
                     .foregroundStyle(.hermesSecondaryText)
+
+                if companionEnrollment.identityState.hasPairing {
+                    Button(role: .destructive) {
+                        companionEnrollment.clearIdentity()
+                        companionSettings.deviceSecret = ""
+                    } label: {
+                        Label("Forget This Device", systemImage: "trash")
+                    }
+                    .hermesGlassButton()
+                }
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Hermes agent root folder")
@@ -318,7 +346,7 @@ struct HermesSettingsView: View {
 
                 Section("Mac Services") {
                     if companionEnrollment.identityState.isEnrolled == false {
-                        Text("Authenticate Host Companion before controlling Mac services from iOS.")
+                        Text("Approve this device in Host Companion before controlling Mac services from iOS.")
                             .font(.caption)
                             .foregroundStyle(.hermesSecondaryText)
                     }
@@ -420,7 +448,7 @@ struct HermesSettingsView: View {
 
                 Section("Tailscale Serve") {
                     if companionEnrollment.identityState.isEnrolled == false {
-                        Text("Authenticate Host Companion before controlling Tailscale Serve from iOS.")
+                        Text("Approve this device in Host Companion before controlling Tailscale Serve from iOS.")
                             .font(.caption)
                             .foregroundStyle(.hermesSecondaryText)
                     }
@@ -510,9 +538,6 @@ struct HermesSettingsView: View {
             applyMacHostToServiceURLs()
             companionEnrollment.invalidateIfSettingsChanged(settings: companionSettings)
         }
-        .onChange(of: companionSettings.authenticationToken) { _, _ in
-            companionEnrollment.invalidateIfSettingsChanged(settings: companionSettings)
-        }
         .onChange(of: companionSettings.apiURL) { _, _ in
             companionEnrollment.invalidateIfSettingsChanged(settings: companionSettings)
         }
@@ -522,6 +547,12 @@ struct HermesSettingsView: View {
             allowsMultipleSelection: false,
             onCompletion: importTerminalPrivateKey
         )
+        .sheet(isPresented: $isScanningCompanionQRCode) {
+            HermesCompanionQRScannerView { scannedText in
+                isScanningCompanionQRCode = false
+                handleCompanionQRCode(scannedText)
+            }
+        }
     }
 
     private var companionPortBinding: Binding<String> {
@@ -537,8 +568,11 @@ struct HermesSettingsView: View {
         HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
     }
 
-    private var companionAPIKeyVerified: Bool {
-        companionEnrollment.identityState.matches(settings: companionSettings)
+    private var companionDeviceStatusTitle: String {
+        if companionEnrollment.identityState.revokedAt != nil { return "Device revoked" }
+        if companionEnrollment.identityState.isEnrolled { return "Device approved" }
+        if companionEnrollment.identityState.isPendingApproval { return "Waiting for Mac approval" }
+        return "No device paired"
     }
 
     private var hostDefinedServicePorts: HermesCompanionServicePortsResult {
@@ -673,6 +707,20 @@ struct HermesSettingsView: View {
         return status.behindBy == 0 ? .igOnlineGreen : .igGradOrange
     }
 
+    private func handleCompanionQRCode(_ scannedText: String) {
+        do {
+            let payload = try HermesCompanionOnboardingPayload.decode(from: scannedText)
+            companionSettings.apiURL = payload.endpoint
+            if let host = URL(string: payload.endpoint)?.host, host.isEmpty == false {
+                macHost = host
+            }
+            companionEnrollment.enroll(onboarding: payload, deviceName: UIDevice.current.name)
+        } catch {
+            companionEnrollment.lastErrorMessage = error.localizedDescription
+            companionEnrollment.connectionStatus = "QR Scan Failed"
+        }
+    }
+
     private func importTerminalPrivateKey(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
@@ -702,6 +750,82 @@ struct HermesSettingsView: View {
                 .foregroundStyle(.hermesSecondaryText)
         }
         .font(.subheadline)
+    }
+}
+
+
+private struct HermesCompanionQRScannerView: UIViewRepresentable {
+    let onCode: (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCode: onCode)
+    }
+
+    func makeUIView(context: Context) -> QRScannerPreviewView {
+        let view = QRScannerPreviewView()
+        let session = AVCaptureSession()
+        context.coordinator.session = session
+
+        guard let device = AVCaptureDevice.default(for: .video),
+              let input = try? AVCaptureDeviceInput(device: device),
+              session.canAddInput(input)
+        else {
+            return view
+        }
+        session.addInput(input)
+
+        let output = AVCaptureMetadataOutput()
+        guard session.canAddOutput(output) else { return view }
+        session.addOutput(output)
+        output.setMetadataObjectsDelegate(context.coordinator, queue: .main)
+        output.metadataObjectTypes = [.qr]
+
+        view.previewLayer.session = session
+        DispatchQueue.global(qos: .userInitiated).async {
+            session.startRunning()
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: QRScannerPreviewView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: QRScannerPreviewView, coordinator: Coordinator) {
+        coordinator.session?.stopRunning()
+        coordinator.session = nil
+    }
+
+    final class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
+        let onCode: (String) -> Void
+        var session: AVCaptureSession?
+        private var didScan = false
+
+        init(onCode: @escaping (String) -> Void) {
+            self.onCode = onCode
+        }
+
+        func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
+            guard didScan == false,
+                  let object = metadataObjects.compactMap({ $0 as? AVMetadataMachineReadableCodeObject }).first,
+                  object.type == .qr,
+                  let value = object.stringValue
+            else { return }
+            didScan = true
+            session?.stopRunning()
+            onCode(value)
+        }
+    }
+}
+
+private final class QRScannerPreviewView: UIView {
+    override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+
+    var previewLayer: AVCaptureVideoPreviewLayer {
+        layer as! AVCaptureVideoPreviewLayer
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        previewLayer.videoGravity = .resizeAspectFill
     }
 }
 

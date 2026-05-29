@@ -45,7 +45,7 @@ struct HermesModelsPanel: View {
                 ContentUnavailableView(
                     "Authentication Required",
                     systemImage: "person.badge.key",
-                    description: Text("Use Settings → Host Companion to verify the API key before editing Hermes runtime models.")
+                    description: Text("Use Settings → Host Companion to scan the Mac QR code and approve this device before editing Hermes runtime models.")
                 )
             } else {
                 HermesSectionCard("Runtime Model Routing") {

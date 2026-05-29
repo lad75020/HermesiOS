@@ -5,6 +5,7 @@
 //  Created by Codex on 05/05/2026.
 //
 
+import CryptoKit
 import Foundation
 import Network
 import Observation
@@ -116,7 +117,7 @@ final class CompanionServer {
     }
 
     private func accept(connection: NWConnection) {
-        let session = CompanionClientSession(connection: connection, authenticationToken: CompanionAuthenticationTokenStore.shared.token)
+        let session = CompanionClientSession(connection: connection)
         sessions[session.id] = session
         session.onStop = { [weak self] sessionID in
             Task { @MainActor [weak self] in
@@ -130,6 +131,10 @@ final class CompanionServer {
 struct CompanionServerConfiguration {
     let host: String
     let port: NWEndpoint.Port
+
+    var webSocketURLString: String {
+        "ws://\(host):\(port.rawValue)/ws"
+    }
 
     static let `default` = CompanionServerConfiguration(host: "localhost", port: 9112)
 }
@@ -197,11 +202,9 @@ final class CompanionClientSession {
     private let knowledgeEraserRegistry = CompanionKnowledgeEraserRegistry()
     private let fileDownloadRegistry = CompanionFileDownloadRegistry()
     private let tailscaleServeRegistry = CompanionTailscaleServeRegistry()
-    private let authenticationToken: String
 
-    init(connection: NWConnection, authenticationToken: String) {
+    init(connection: NWConnection) {
         self.connection = connection
-        self.authenticationToken = authenticationToken
     }
 
     func start() {
@@ -250,10 +253,12 @@ final class CompanionClientSession {
             do {
                 let request = try self.decoder.decode(CompanionIncomingEnvelope.self, from: data)
                 let response: CompanionOutgoingEnvelope
-                if CompanionAuthenticationTokenStore.securelyMatches(request.authenticationToken, authenticationToken: self.authenticationToken) {
+                if CompanionDeviceAuthorizationStore.isUnauthenticatedOperation(request.type) {
+                    response = self.route(request: request)
+                } else if CompanionDeviceAuthorizationStore.shared.authenticate(deviceID: request.deviceID, deviceSecret: request.deviceSecret) {
                     response = self.route(request: request)
                 } else {
-                    response = .error(id: request.id, code: "invalid_token", message: "The Host Companion API key is invalid.")
+                    response = .error(id: request.id, code: "device_not_approved", message: "This iOS device is not approved by HermesHostCompanion.")
                 }
                 let responseData = try self.encoder.encode(response)
                 self.send(responseData)
@@ -282,6 +287,24 @@ final class CompanionClientSession {
 
     private func route(request: CompanionIncomingEnvelope) -> CompanionOutgoingEnvelope {
         switch request.type {
+        case "enroll_device":
+            do {
+                guard let requestPayload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The enroll_device request requires a payload.") }
+                let payload = try requestPayload.decode(CompanionEnrollDevicePayload.self)
+                let result = try CompanionDeviceAuthorizationStore.shared.enrollDevice(payload, endpoint: CompanionServerConfigurationStore.load().webSocketURLString)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "enroll_device_failed", message: error.localizedDescription)
+            }
+        case "check_device_approval":
+            do {
+                guard let requestPayload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The check_device_approval request requires a payload.") }
+                let payload = try requestPayload.decode(CompanionCheckDeviceApprovalPayload.self)
+                let result = try CompanionDeviceAuthorizationStore.shared.checkApproval(payload)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "check_device_approval_failed", message: error.localizedDescription)
+            }
         case "hello":
             return .success(
                 id: request.id,
@@ -290,6 +313,9 @@ final class CompanionClientSession {
                     serverName: "HermesHostCompanion",
                     capabilities: [
                         "hello",
+                        "enroll_device",
+                        "check_device_approval",
+                        "device_authorization",
                         "list_targets",
                         "read_target",
                         "validate_target",
@@ -1081,47 +1107,185 @@ final class CompanionClientSession {
     }
 }
 
-final class CompanionAuthenticationTokenStore {
-    static let shared = CompanionAuthenticationTokenStore()
-    static let apiKeyLength = 256
+
+struct CompanionAuthorizedDeviceRecord: Codable, Identifiable, Equatable {
+    let id: String
+    var deviceName: String
+    var secretFingerprint: String
+    var createdAt: Date
+    var approvedAt: Date?
+    var revokedAt: Date?
+    var lastSeenAt: Date?
+
+    var isApproved: Bool {
+        approvedAt != nil && revokedAt == nil
+    }
+
+    var statusLabel: String {
+        if revokedAt != nil { return "Revoked" }
+        if approvedAt != nil { return "Approved" }
+        return "Pending approval"
+    }
+}
+
+final class CompanionDeviceAuthorizationStore {
+    static let shared = CompanionDeviceAuthorizationStore()
 
     private let defaults = UserDefaults.standard
-    private let legacyTokenKey = "companion.authentication.token"
-    private let keychainService = "fr.dubertrand.HermesHostCompanion"
-    private let keychainAccount = "companion.authentication.token"
+    private let devicesKey = "companion.authorized.devices"
+    private let onboardingCodeKey = "companion.onboarding.code"
     private let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
     private init() {}
 
-    var token: String {
-        if let existing = loadKeychainToken(), existing.count == Self.apiKeyLength {
-            return existing
+    var onboardingCode: String {
+        let existing = defaults.string(forKey: onboardingCodeKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if existing.count >= 20 { return existing }
+        return rotateOnboardingCode()
+    }
+
+    var devices: [CompanionAuthorizedDeviceRecord] {
+        loadDevices().sorted { lhs, rhs in
+            let lhsDate = lhs.lastSeenAt ?? lhs.approvedAt ?? lhs.createdAt
+            let rhsDate = rhs.lastSeenAt ?? rhs.approvedAt ?? rhs.createdAt
+            return lhsDate > rhsDate
         }
-        if let legacy = defaults.string(forKey: legacyTokenKey), legacy.count == Self.apiKeyLength {
-            saveKeychainToken(legacy)
-            defaults.removeObject(forKey: legacyTokenKey)
-            return legacy
-        }
-        return regenerateToken()
+    }
+
+    static func isUnauthenticatedOperation(_ type: String) -> Bool {
+        type == "enroll_device" || type == "check_device_approval"
+    }
+
+    func qrPayload(endpoint: String) -> CompanionOnboardingPayload {
+        CompanionOnboardingPayload(
+            type: "hermes_companion_onboarding",
+            version: 1,
+            endpoint: endpoint,
+            code: onboardingCode,
+            serverName: "HermesHostCompanion"
+        )
     }
 
     @discardableResult
-    func regenerateToken() -> String {
-        var randomBytes = [UInt8](repeating: 0, count: Self.apiKeyLength)
-        let status = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
-        if status != errSecSuccess {
-            randomBytes = (0..<Self.apiKeyLength).map { _ in UInt8.random(in: 0...255) }
-        }
-        let token = String(randomBytes.map { alphabet[Int($0) % alphabet.count] })
-        saveKeychainToken(token)
-        defaults.removeObject(forKey: legacyTokenKey)
-        return token
+    func rotateOnboardingCode() -> String {
+        let code = randomURLSafeString(length: 32)
+        defaults.set(code, forKey: onboardingCodeKey)
+        return code
     }
 
-    static func securelyMatches(_ candidate: String?, authenticationToken: String) -> Bool {
-        guard let candidate else { return false }
+    func enrollDevice(_ payload: CompanionEnrollDevicePayload, endpoint: String) throws -> CompanionEnrollDeviceResult {
+        guard payload.code == onboardingCode else {
+            throw CompanionDeviceAuthorizationError.invalidOnboardingCode
+        }
+        let deviceID = UUID().uuidString
+        let deviceSecret = randomURLSafeString(length: 64)
+        let deviceName = payload.deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "HermesiOS Device" : payload.deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var devices = loadDevices()
+        devices.append(
+            CompanionAuthorizedDeviceRecord(
+                id: deviceID,
+                deviceName: deviceName,
+                secretFingerprint: Self.fingerprint(for: deviceSecret),
+                createdAt: Date(),
+                approvedAt: nil,
+                revokedAt: nil,
+                lastSeenAt: nil
+            )
+        )
+        saveDevices(devices)
+        rotateOnboardingCode()
+        return CompanionEnrollDeviceResult(
+            deviceID: deviceID,
+            deviceSecret: deviceSecret,
+            deviceName: deviceName,
+            serverEndpoint: endpoint,
+            approved: false,
+            message: "Device request received. Approve it in HermesHostCompanion."
+        )
+    }
+
+    func checkApproval(_ payload: CompanionCheckDeviceApprovalPayload) throws -> CompanionCheckDeviceApprovalResult {
+        guard let record = loadDevices().first(where: { $0.id == payload.deviceID && Self.securelyMatchesFingerprint(payload.deviceSecret, expectedFingerprint: $0.secretFingerprint) }) else {
+            throw CompanionDeviceAuthorizationError.unknownDevice
+        }
+        return CompanionCheckDeviceApprovalResult(
+            deviceID: record.id,
+            approved: record.isApproved,
+            revoked: record.revokedAt != nil,
+            message: record.revokedAt != nil ? "Device access was revoked." : (record.isApproved ? "Device approved." : "Waiting for approval in HermesHostCompanion.")
+        )
+    }
+
+    func authenticate(deviceID: String?, deviceSecret: String?) -> Bool {
+        guard let deviceID, let deviceSecret else { return false }
+        var devices = loadDevices()
+        guard let index = devices.firstIndex(where: { $0.id == deviceID }) else { return false }
+        guard devices[index].isApproved else { return false }
+        guard Self.securelyMatchesFingerprint(deviceSecret, expectedFingerprint: devices[index].secretFingerprint) else { return false }
+        devices[index].lastSeenAt = Date()
+        saveDevices(devices)
+        return true
+    }
+
+    func approveDevice(id: String) {
+        mutateDevice(id: id) { record in
+            record.approvedAt = Date()
+            record.revokedAt = nil
+        }
+    }
+
+    func revokeDevice(id: String) {
+        mutateDevice(id: id) { record in
+            record.revokedAt = Date()
+        }
+    }
+
+    func forgetDevice(id: String) {
+        saveDevices(loadDevices().filter { $0.id != id })
+    }
+
+    private func mutateDevice(id: String, mutate: (inout CompanionAuthorizedDeviceRecord) -> Void) {
+        var devices = loadDevices()
+        guard let index = devices.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&devices[index])
+        saveDevices(devices)
+    }
+
+    private func loadDevices() -> [CompanionAuthorizedDeviceRecord] {
+        guard let data = defaults.data(forKey: devicesKey),
+              let devices = try? JSONDecoder().decode([CompanionAuthorizedDeviceRecord].self, from: data)
+        else { return [] }
+        return devices
+    }
+
+    private func saveDevices(_ devices: [CompanionAuthorizedDeviceRecord]) {
+        if let data = try? JSONEncoder().encode(devices) {
+            defaults.set(data, forKey: devicesKey)
+        }
+    }
+
+    private func randomURLSafeString(length: Int) -> String {
+        var randomBytes = [UInt8](repeating: 0, count: length)
+        let status = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
+        if status != errSecSuccess {
+            randomBytes = (0..<length).map { _ in UInt8.random(in: 0...255) }
+        }
+        return String(randomBytes.map { alphabet[Int($0) % alphabet.count] })
+    }
+
+    static func fingerprint(for secret: String) -> String {
+        let digest = SHA256.hash(data: Data(secret.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func securelyMatchesFingerprint(_ candidateSecret: String?, expectedFingerprint: String) -> Bool {
+        guard let candidateSecret else { return false }
+        return securelyMatches(fingerprint(for: candidateSecret), expected: expectedFingerprint)
+    }
+
+    static func securelyMatches(_ candidate: String, expected: String) -> Bool {
         let candidateBytes = Array(candidate.utf8)
-        let expectedBytes = Array(authenticationToken.utf8)
+        let expectedBytes = Array(expected.utf8)
         var difference = candidateBytes.count ^ expectedBytes.count
         for index in 0..<max(candidateBytes.count, expectedBytes.count) {
             let lhs = index < candidateBytes.count ? candidateBytes[index] : 0
@@ -1130,41 +1294,22 @@ final class CompanionAuthenticationTokenStore {
         }
         return difference == 0
     }
+}
 
-    private func loadKeychainToken() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
+enum CompanionDeviceAuthorizationError: LocalizedError {
+    case invalidOnboardingCode
+    case unknownDevice
 
-    private func saveKeychainToken(_ token: String) {
-        let data = Data(token.utf8)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount
-        ]
-        let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if updateStatus == errSecItemNotFound {
-            var insertQuery = query
-            insertQuery[kSecValueData as String] = data
-            insertQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-            SecItemAdd(insertQuery as CFDictionary, nil)
+    var errorDescription: String? {
+        switch self {
+        case .invalidOnboardingCode:
+            "The QR onboarding code is invalid or expired. Scan the current QR code from HermesHostCompanion."
+        case .unknownDevice:
+            "This device is unknown to HermesHostCompanion. Scan the QR code again."
         }
     }
 }
+
 
 private extension Logger {
     static let companion = Logger(subsystem: "fr.dubertrand.HermesHostCompanion", category: "CompanionServer")

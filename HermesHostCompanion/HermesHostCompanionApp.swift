@@ -8,6 +8,7 @@
 import SwiftUI
 import Network
 import AppKit
+import CoreImage.CIFilterBuiltins
 
 @main
 struct HermesHostCompanionApp: App {
@@ -46,7 +47,7 @@ private struct HermesHostCompanionRootView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Hermes Host Companion")
                             .font(.largeTitle.bold())
-                        Text("Minimal V1 companion daemon shell for plain HTTP WebSocket access protected by one 256-character API key.")
+                        Text("Minimal V1 companion daemon shell for QR-based HermesiOS device onboarding and revokable device approval.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -94,7 +95,7 @@ private struct HermesHostCompanionRootView: View {
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("These service ports are the source of truth for HermesiOS. The iOS app fetches them from this companion after API-key verification and derives API, Dashboard, and Office URLs from its configured Mac host.")
+                        Text("These service ports are the source of truth for HermesiOS. The iOS app fetches them from this companion after device approval and derives API, Dashboard, and Office URLs from its configured Mac host.")
                             .foregroundStyle(.secondary)
 
                         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
@@ -124,7 +125,7 @@ private struct HermesHostCompanionRootView: View {
                             }
                             .buttonStyle(.borderedProminent)
 
-                            Text("Saving is immediate; restart HermesiOS or tap Verify API Key again to refresh cached ports on iOS.")
+                            Text("Saving is immediate; restart HermesiOS or check device approval again to refresh cached ports on iOS.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -135,52 +136,84 @@ private struct HermesHostCompanionRootView: View {
                 }
 
                 GroupBox {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Authentication")
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Onboard a HermesiOS device")
                             .font(.headline)
-                        Text("The companion uses a single high-entropy API key over a local WebSocket. Copy the key into HermesiOS settings; the full value is kept in Keychain and is not displayed on screen.")
+                        Text("Scan this QR code from HermesiOS Settings. The device receives a unique ID, appears below as pending, and can use host operations only after you approve it here.")
                             .foregroundStyle(.secondary)
 
                         statusRow("API URL", controller.apiURL)
 
-                        Text("API Key")
-                            .font(.subheadline.bold())
-                        HStack(alignment: .top, spacing: 8) {
-                            Text(controller.authenticationTokenPreview)
-                                .font(.caption.monospaced())
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Button {
-                                controller.copyAuthenticationToken()
-                            } label: {
-                                Label("Copy for 2 min", systemImage: "doc.on.doc")
-                                    .accessibilityLabel("Copy API key temporarily")
+                        HStack(alignment: .top, spacing: 18) {
+                            if let qrImage = controller.onboardingQRCodeImage {
+                                Image(nsImage: qrImage)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 180, height: 180)
+                                    .padding(10)
+                                    .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                                    .accessibilityLabel("HermesiOS onboarding QR code")
+                            } else {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(.quaternary)
+                                    .frame(width: 180, height: 180)
+                                    .overlay(Text("QR unavailable"))
                             }
-                            .buttonStyle(.borderless)
-                            .help("Copy API key to the pasteboard temporarily")
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Current code")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Text(controller.onboardingCodePreview)
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                                Button {
+                                    controller.rotateOnboardingCode()
+                                } label: {
+                                    Label("Rotate QR Code", systemImage: "qrcode")
+                                }
+                                .buttonStyle(.bordered)
+                                Text("Rotating expires the displayed QR code. Already approved devices keep working until revoked.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
 
-                        if controller.tokenCopyStatus.isEmpty == false {
-                            Text(controller.tokenCopyStatus)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Divider()
 
                         HStack {
-                            Button("Regenerate 256-character API Key", role: .destructive) {
-                                controller.regenerateToken()
+                            Text("Devices")
+                                .font(.headline)
+                            Spacer()
+                            Button {
+                                controller.refreshDevices()
+                            } label: {
+                                Label("Refresh", systemImage: "arrow.clockwise")
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.borderless)
+                        }
 
-                            Text("Regenerating invalidates every iOS device until the new API key is copied into settings.")
+                        if controller.devices.isEmpty {
+                            Text("No devices have requested onboarding yet.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                        } else {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(controller.devices) { device in
+                                    CompanionDeviceRow(
+                                        device: device,
+                                        approve: { controller.approveDevice(device.id) },
+                                        revoke: { controller.revokeDevice(device.id) },
+                                        forget: { controller.forgetDevice(device.id) }
+                                    )
+                                }
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } label: {
-                    Label("API Key Authentication", systemImage: "key")
+                    Label("QR Device Onboarding", systemImage: "qrcode.viewfinder")
                 }
 
                 HStack {
@@ -203,6 +236,10 @@ private struct HermesHostCompanionRootView: View {
         }
         .task {
             controller.startServerIfNeeded()
+            while !Task.isCancelled {
+                controller.refreshDevices()
+                try? await Task.sleep(for: .seconds(2))
+            }
         }
     }
 
@@ -220,12 +257,68 @@ private struct HermesHostCompanionRootView: View {
     }
 }
 
+
+private struct CompanionDeviceRow: View {
+    let device: CompanionAuthorizedDeviceRecord
+    let approve: () -> Void
+    let revoke: () -> Void
+    let forget: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: statusIcon)
+                .foregroundStyle(statusColor)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(device.deviceName)
+                    .font(.subheadline.weight(.semibold))
+                Text(device.id)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Text(device.statusLabel)
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
+            }
+
+            Spacer()
+
+            if device.approvedAt == nil && device.revokedAt == nil {
+                Button("Approve", action: approve)
+                    .buttonStyle(.borderedProminent)
+            }
+
+            if device.revokedAt == nil {
+                Button("Revoke", role: .destructive, action: revoke)
+                    .buttonStyle(.bordered)
+            } else {
+                Button("Forget", role: .destructive, action: forget)
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var statusIcon: String {
+        if device.revokedAt != nil { return "xmark.circle.fill" }
+        if device.approvedAt != nil { return "checkmark.circle.fill" }
+        return "clock.badge.questionmark"
+    }
+
+    private var statusColor: Color {
+        if device.revokedAt != nil { return .red }
+        if device.approvedAt != nil { return .green }
+        return .orange
+    }
+}
+
 @MainActor
 @Observable
 final class CompanionServerController {
     let server = CompanionServer()
-    private(set) var authenticationToken: String
-    var tokenCopyStatus = ""
+    var devices: [CompanionAuthorizedDeviceRecord] = CompanionDeviceAuthorizationStore.shared.devices
     var advertisedHost: String
     var apiPort: String
     var apiGatewayPort: String
@@ -239,7 +332,6 @@ final class CompanionServerController {
         apiGatewayPort = servicePorts.apiGatewayPort
         dashboardPort = servicePorts.dashboardPort
         officePort = servicePorts.officePort
-        authenticationToken = CompanionAuthenticationTokenStore.shared.token
 
         // Start even if SwiftUI restores the app without immediately mounting the
         // root view's `.task`; the view task remains as an idempotent fallback.
@@ -249,13 +341,20 @@ final class CompanionServerController {
     }
 
     var apiURL: String {
-        "ws://\(server.currentConfiguration.host):\(server.currentConfiguration.port.rawValue)/ws"
+        server.currentConfiguration.webSocketURLString
     }
 
-    var authenticationTokenPreview: String {
-        let prefix = authenticationToken.prefix(8)
-        let suffix = authenticationToken.suffix(8)
-        return "\(prefix)…\(suffix)"
+    var onboardingCodePreview: String {
+        let code = CompanionDeviceAuthorizationStore.shared.onboardingCode
+        return "\(code.prefix(8))…\(code.suffix(8))"
+    }
+
+    var onboardingQRCodeImage: NSImage? {
+        let payload = CompanionDeviceAuthorizationStore.shared.qrPayload(endpoint: apiURL)
+        guard let data = try? JSONEncoder().encode(payload),
+              let text = String(data: data, encoding: .utf8)
+        else { return nil }
+        return Self.makeQRCode(from: text)
     }
 
     func startServerIfNeeded() {
@@ -278,24 +377,40 @@ final class CompanionServerController {
         server.stop()
     }
 
-    func copyAuthenticationToken() {
-        let token = authenticationToken
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(token, forType: .string)
-        tokenCopyStatus = "API key copied. It will be cleared from the pasteboard in 2 minutes if unchanged."
-
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(120))
-            guard NSPasteboard.general.string(forType: .string) == token else { return }
-            NSPasteboard.general.clearContents()
-            tokenCopyStatus = "API key cleared from the pasteboard."
-        }
+    func rotateOnboardingCode() {
+        CompanionDeviceAuthorizationStore.shared.rotateOnboardingCode()
+        refreshDevices()
     }
 
-    func regenerateToken() {
-        authenticationToken = CompanionAuthenticationTokenStore.shared.regenerateToken()
-        tokenCopyStatus = "API key regenerated. Update every enrolled iOS device."
+    func refreshDevices() {
+        devices = CompanionDeviceAuthorizationStore.shared.devices
+    }
+
+    func approveDevice(_ id: String) {
+        CompanionDeviceAuthorizationStore.shared.approveDevice(id: id)
+        refreshDevices()
+    }
+
+    func revokeDevice(_ id: String) {
+        CompanionDeviceAuthorizationStore.shared.revokeDevice(id: id)
+        refreshDevices()
+    }
+
+    func forgetDevice(_ id: String) {
+        CompanionDeviceAuthorizationStore.shared.forgetDevice(id: id)
+        refreshDevices()
+    }
+
+    private static func makeQRCode(from text: String) -> NSImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(text.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage else { return nil }
+        let transformed = output.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        let representation = NSCIImageRep(ciImage: transformed)
+        let image = NSImage(size: representation.size)
+        image.addRepresentation(representation)
+        return image
     }
 
     func applyServicePorts() {

@@ -313,7 +313,7 @@ struct ContentView: View {
             "splash=\(isShowingSplash)",
             companionEnrollment.identityState.isEnrolled ? "enrolled" : "not-enrolled",
             companionEnrollment.identityState.serverEndpoint,
-            companionEnrollment.identityState.authenticationTokenFingerprint,
+            companionEnrollment.identityState.deviceSecretFingerprint,
             companionSettings.apiURL
         ].joined(separator: "|")
     }
@@ -326,7 +326,7 @@ struct ContentView: View {
             companionEnrollment.identityState.deviceID,
             companionEnrollment.identityState.serverEndpoint,
             companionSettings.apiURL,
-            companionSettings.authenticationToken.isEmpty ? "no-companion-token" : "companion-token-set"
+            companionEnrollment.identityState.deviceSecretFingerprint.isEmpty ? "no-device-secret" : "device-secret-set"
         ].joined(separator: "|")
     }
 
@@ -340,7 +340,7 @@ struct ContentView: View {
             apiSettings.apiKey.isEmpty ? "no-api-key" : "api-key-set",
             String(apiSettings.allowSelfSignedCertificates),
             companionSettings.apiURL,
-            companionSettings.authenticationToken.isEmpty ? "no-companion-token" : "companion-token-set",
+            companionEnrollment.identityState.deviceSecretFingerprint.isEmpty ? "no-device-secret" : "device-secret-set",
             companionEnrollment.identityState.deviceID,
             companionEnrollment.identityState.serverEndpoint,
             dashboardURLString

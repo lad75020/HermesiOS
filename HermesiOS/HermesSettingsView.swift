@@ -307,7 +307,7 @@ struct HermesSettingsView: View {
                         .foregroundStyle(.igGradOrange)
                 }
 
-                Text("The API gateway TCP port is configured in HermesHostCompanion and fetched automatically by HermesiOS after Host Companion verification.")
+                Text("The API gateway TCP port is configured in HermesHostCompanion and fetched automatically by HermesiOS after device approval.")
                     .font(.caption)
                     .foregroundStyle(.hermesSecondaryText)
 
@@ -708,6 +708,7 @@ struct HermesSettingsView: View {
     }
 
     private func handleCompanionQRCode(_ scannedText: String) {
+        isScanningCompanionQRCode = false
         do {
             let payload = try HermesCompanionOnboardingPayload.decode(from: scannedText)
             companionSettings.apiURL = payload.endpoint
@@ -716,8 +717,7 @@ struct HermesSettingsView: View {
             }
             companionEnrollment.enroll(onboarding: payload, deviceName: UIDevice.current.name)
         } catch {
-            companionEnrollment.lastErrorMessage = error.localizedDescription
-            companionEnrollment.connectionStatus = "QR Scan Failed"
+            companionEnrollment.resetAfterPairingFailure(message: error.localizedDescription)
         }
     }
 

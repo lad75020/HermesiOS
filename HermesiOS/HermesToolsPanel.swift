@@ -63,7 +63,7 @@ struct HermesToolsPanel: View {
                         }
 
                         if companionRuntime.hermesToolsets.isEmpty {
-                            Text("Open this panel after Host Companion authentication to load the toolsets declared by Hermes desktop semantics.")
+                            Text("Open this panel after this device is approved in Host Companion to load the toolsets declared by Hermes desktop semantics.")
                                 .font(.subheadline)
                                 .foregroundStyle(.hermesSecondaryText)
                         } else {

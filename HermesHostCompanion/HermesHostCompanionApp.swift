@@ -324,6 +324,7 @@ final class CompanionServerController {
     var apiGatewayPort: String
     var dashboardPort: String
     var officePort: String
+    nonisolated(unsafe) private var deviceChangeObserver: NSObjectProtocol?
 
     init() {
         advertisedHost = server.currentConfiguration.host
@@ -332,6 +333,16 @@ final class CompanionServerController {
         apiGatewayPort = servicePorts.apiGatewayPort
         dashboardPort = servicePorts.dashboardPort
         officePort = servicePorts.officePort
+
+        deviceChangeObserver = NotificationCenter.default.addObserver(
+            forName: CompanionDeviceAuthorizationStore.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshDevices()
+            }
+        }
 
         // Start even if SwiftUI restores the app without immediately mounting the
         // root view's `.task`; the view task remains as an idempotent fallback.
@@ -342,6 +353,12 @@ final class CompanionServerController {
 
     var apiURL: String {
         server.currentConfiguration.webSocketURLString
+    }
+
+    deinit {
+        if let deviceChangeObserver {
+            NotificationCenter.default.removeObserver(deviceChangeObserver)
+        }
     }
 
     var onboardingCodePreview: String {
@@ -445,7 +462,10 @@ final class CompanionServerController {
 
         if shouldRestart {
             stopServer()
-            startServer()
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                self?.startServer()
+            }
         }
     }
 }

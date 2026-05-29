@@ -794,40 +794,6 @@
         }
       }
     },
-    "256-character API key" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "256-stelliger API-Schlüssel"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "256-character API key"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave de API de 256 caracteres"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clé API de 256 caractères"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "256 字符 API 密钥"
-          }
-        }
-      }
-    },
     "Activate" : {
       "localizations" : {
         "de" : {
@@ -3905,40 +3871,6 @@
         }
       }
     },
-    "Edits the same provider and tool API keys as desktop Providers, writing to `.env` on the macOS host via the API-key-authenticated WebSocket companion." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bearbeitet dieselben Anbieter- und Tool-API-Schlüssel wie Desktop Providers und schreibt über den API-schlüssel-authentifizierten WebSocket-Companion in `.env` auf dem macOS-Host."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edits the same provider and tool API keys as desktop Providers, writing to `.env` on the macOS host via the API-key-authenticated WebSocket companion."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Edita las mismas claves de API de proveedor y herramientas que Providers de escritorio, escribiendo en `.env` en el host macOS mediante el companion WebSocket autenticado con clave de API."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modifie les mêmes clés API de fournisseurs et d’outils que Providers sur desktop, en écrivant dans `.env` sur l’hôte macOS via le compagnon WebSocket authentifié par clé API."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "编辑与桌面端 Providers 相同的提供商和工具 API 密钥，并通过 API 密钥认证的 WebSocket 伴侣写入 macOS 主机上的 `.env`。"
-          }
-        }
-      }
-    },
     "End Session" : {
       "localizations" : {
         "de" : {
@@ -6958,40 +6890,6 @@
         }
       }
     },
-    "Open this panel after Host Companion authentication to load the toolsets declared by Hermes desktop semantics." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffne diesen Bereich nach der Host-Companion-Authentifizierung, um die von der Hermes-Desktop-Semantik deklarierten Toolsets zu laden."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open this panel after Host Companion authentication to load the toolsets declared by Hermes desktop semantics."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre este panel después de autenticar Host Companion para cargar los conjuntos de herramientas declarados por la semántica de Hermes de escritorio."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvrez ce panneau après l’authentification du compagnon hôte pour charger les ensembles d’outils déclarés par la sémantique desktop de Hermes."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Host Companion 认证后打开此面板，以加载 Hermes 桌面语义声明的工具集。"
-          }
-        }
-      }
-    },
     "Page loading" : {
       "localizations" : {
         "de" : {
@@ -7060,40 +6958,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "粘贴 Raspberry VNC 隧道命令"
-          }
-        }
-      }
-    },
-    "Paste the 256-character API key from the macOS Host Companion, then tap Verify API Key. Changing this field marks the companion as unverified until the key is verified again." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Füge den 256-stelligen API-Schlüssel aus dem macOS Host Companion ein und tippe dann auf „API-Schlüssel überprüfen“. Wenn du dieses Feld änderst, wird der Companion als nicht verifiziert markiert, bis der Schlüssel erneut überprüft wurde."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Paste the 256-character API key from the macOS Host Companion, then tap Verify API Key. Changing this field marks the companion as unverified until the key is verified again."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pega la clave de API de 256 caracteres desde Host Companion de macOS y luego toca Verificar clave de API. Cambiar este campo marca el companion como no verificado hasta que la clave se vuelva a verificar."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Collez la clé API de 256 caractères du compagnon hôte macOS, puis touchez Vérifier la clé API. Modifier ce champ marque le compagnon comme non vérifié jusqu’à ce que la clé soit à nouveau vérifiée."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "粘贴来自 macOS Host Companion 的 256 字符 API 密钥，然后点击“验证 API 密钥”。更改此字段会将伴侣标记为未验证，直到再次验证密钥。"
           }
         }
       }
@@ -10190,9 +10054,6 @@
         }
       }
     },
-    "The API gateway TCP port is configured in HermesHostCompanion and fetched automatically by HermesiOS after Host Companion verification." : {
-
-    },
     "The form is seeded from the default profile. Creating a profile copies the default config as a template, writes the provider/model/base URL fields, and optionally creates or copies .env, SOUL.md, and the default skills folder. Editing uses the same persistent fields; the default profile name cannot be changed." : {
       "localizations" : {
         "de" : {
@@ -10873,74 +10734,6 @@
         }
       }
     },
-    "Use Settings → Host Companion to authenticate this iOS device with the host API key before attempting host configuration changes." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verwende Einstellungen → Host Companion, um dieses iOS-Gerät mit dem Host-API-Schlüssel zu authentifizieren, bevor du Änderungen an der Host-Konfiguration versuchst."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use Settings → Host Companion to authenticate this iOS device with the host API key before attempting host configuration changes."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usa Ajustes → Host Companion para autenticar este dispositivo iOS con la clave de API del host antes de intentar cambios de configuración del host."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Utilisez Réglages → Compagnon hôte pour authentifier cet appareil iOS avec la clé API de l’hôte avant de tenter de modifier la configuration de l’hôte."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在尝试更改主机配置之前，请使用“设置”→“Host Companion”通过主机 API 密钥认证此 iOS 设备。"
-          }
-        }
-      }
-    },
-    "Use Settings → Host Companion to verify the API key before editing Hermes runtime models." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verwende Einstellungen → Host Companion, um den API-Schlüssel zu verifizieren, bevor du Hermes-Laufzeitmodelle bearbeitest."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use Settings → Host Companion to verify the API key before editing Hermes runtime models."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usa Ajustes → Host Companion para verificar la clave de API antes de editar modelos de runtime de Hermes."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Utilisez Réglages → Compagnon hôte pour vérifier la clé API avant de modifier les modèles d’exécution Hermes."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在编辑 Hermes 运行时模型之前，请使用“设置”→“Host Companion”验证 API 密钥。"
-          }
-        }
-      }
-    },
     "Used with the service TCP ports below to build the HTTPS and WSS URLs, and as the SSH host for the Terminal tab." : {
       "localizations" : {
         "de" : {
@@ -11040,74 +10833,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "实用工具"
-          }
-        }
-      }
-    },
-    "Verify API Key" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "API-Schlüssel überprüfen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verify API Key"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verificar clave de API"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vérifier la clé API"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "验证 API 密钥"
-          }
-        }
-      }
-    },
-    "Verify API Key Again" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "API-Schlüssel erneut überprüfen"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verify API Key Again"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verificar clave de API de nuevo"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Revérifier la clé API"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再次验证 API 密钥"
           }
         }
       }

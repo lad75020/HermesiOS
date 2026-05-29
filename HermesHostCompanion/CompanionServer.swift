@@ -57,7 +57,11 @@ final class CompanionServer {
     }
 
     func start() async throws {
+        let hadListener = listener != nil
         stop()
+        if hadListener {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+        }
         state = .starting
         lastErrorMessage = ""
 
@@ -72,7 +76,16 @@ final class CompanionServer {
             port: configuration.port
         )
 
-        let listener = try NWListener(using: parameters)
+        let listener: NWListener
+        do {
+            listener = try NWListener(using: parameters)
+        } catch {
+            state = .failed
+            lastErrorMessage = "API listener failed on port \(configuration.port.rawValue): \(error.localizedDescription)"
+            listenerDescription = "API listener failed"
+            Logger.companion.error("Companion API server failed before listen: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
         let logger = Logger.companion
 
         listener.stateUpdateHandler = { [weak self] newState in
@@ -362,7 +375,9 @@ final class CompanionClientSession {
             do {
                 guard let requestPayload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The enroll_device request requires a payload.") }
                 let payload = try requestPayload.decode(CompanionEnrollDevicePayload.self)
+                Logger.companion.info("Received device enrollment request for \(payload.deviceName, privacy: .public)")
                 let result = try CompanionDeviceAuthorizationStore.shared.enrollDevice(payload, endpoint: CompanionServerConfigurationStore.load().webSocketURLString)
+                Logger.companion.info("Created pending device enrollment \(result.deviceID, privacy: .public)")
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "enroll_device_failed", message: error.localizedDescription)
@@ -1202,6 +1217,8 @@ struct CompanionAuthorizedDeviceRecord: Codable, Identifiable, Equatable {
 final class CompanionDeviceAuthorizationStore {
     static let shared = CompanionDeviceAuthorizationStore()
 
+    static let didChangeNotification = Notification.Name("CompanionDeviceAuthorizationStoreDidChange")
+
     private let defaults = UserDefaults.standard
     private let devicesKey = "companion.authorized.devices"
     private let onboardingCodeKey = "companion.onboarding.code"
@@ -1241,6 +1258,7 @@ final class CompanionDeviceAuthorizationStore {
     func rotateOnboardingCode() -> String {
         let code = randomURLSafeString(length: 32)
         defaults.set(code, forKey: onboardingCodeKey)
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
         return code
     }
 
@@ -1332,6 +1350,7 @@ final class CompanionDeviceAuthorizationStore {
     private func saveDevices(_ devices: [CompanionAuthorizedDeviceRecord]) {
         if let data = try? JSONEncoder().encode(devices) {
             defaults.set(data, forKey: devicesKey)
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
         }
     }
 

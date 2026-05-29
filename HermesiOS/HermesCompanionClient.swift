@@ -1293,6 +1293,7 @@ enum HermesCompanionClientError: LocalizedError {
     case pendingApproval
     case deviceRevoked
     case insecureEndpoint(String)
+    case requestTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -1316,6 +1317,8 @@ enum HermesCompanionClientError: LocalizedError {
             "This device has been revoked in HermesHostCompanion. Scan the QR code again to onboard it."
         case .insecureEndpoint(let message):
             message
+        case .requestTimedOut:
+            "The Host Companion did not answer the pairing request. Check that HermesHostCompanion is running, that its server state is Running, and scan the current QR code again."
         }
     }
 }
@@ -1357,11 +1360,20 @@ final class HermesCompanionEnrollmentSession {
     func clearIdentity() {
         enrollmentTask?.cancel()
         enrollmentTask = nil
+        isEnrolling = false
         identityState = HermesCompanionIdentityState()
         connectionStatus = "Not Paired"
         lastErrorMessage = ""
         HermesSettingsPersistence.clearCompanionIdentity()
         HermesSettingsPersistence.saveCompanionDeviceSecret("")
+    }
+
+    func resetAfterPairingFailure(message: String) {
+        enrollmentTask?.cancel()
+        enrollmentTask = nil
+        isEnrolling = false
+        lastErrorMessage = message
+        connectionStatus = "QR Scan Failed"
     }
 
     func invalidateIfSettingsChanged(settings: HermesCompanionSettings) {
@@ -1390,6 +1402,7 @@ final class HermesCompanionEnrollmentSession {
         isEnrolling = true
         lastErrorMessage = ""
         connectionStatus = "Sending Pairing Request"
+        defer { isEnrolling = false }
 
         do {
             let result: HermesCompanionEnrollDeviceResult = try await HermesCompanionSessionFactory.request(
@@ -1418,7 +1431,6 @@ final class HermesCompanionEnrollmentSession {
             connectionStatus = "Pairing Failed"
         }
 
-        isEnrolling = false
     }
 
     private func runApprovalCheck(settings: HermesCompanionSettings) async {
@@ -1447,6 +1459,7 @@ final class HermesCompanionEnrollmentSession {
         isEnrolling = true
         lastErrorMessage = ""
         connectionStatus = "Checking Approval"
+        defer { isEnrolling = false }
 
         do {
             let result: HermesCompanionCheckDeviceApprovalResult = try await HermesCompanionSessionFactory.request(
@@ -1476,7 +1489,6 @@ final class HermesCompanionEnrollmentSession {
             connectionStatus = "Approval Check Failed"
         }
 
-        isEnrolling = false
     }
 }
 
@@ -3254,6 +3266,35 @@ final class HermesCompanionRuntimeSession {
     }
 }
 
+private final class HermesCompanionRequestState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+    private var timedOut = false
+
+    var didTimeout: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return timedOut
+    }
+
+    func markResumed() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard resumed == false else { return false }
+        resumed = true
+        return true
+    }
+
+    func markTimedOut() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard resumed == false else { return false }
+        resumed = true
+        timedOut = true
+        return true
+    }
+}
+
 enum HermesCompanionSessionFactory {
     private static let networkQueue = DispatchQueue(label: "HermesCompanionNetworkWebSocket", qos: .userInitiated)
 
@@ -3262,8 +3303,8 @@ enum HermesCompanionSessionFactory {
         configuration.waitsForConnectivity = true
         configuration.allowsExpensiveNetworkAccess = true
         configuration.allowsConstrainedNetworkAccess = true
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 300
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 20
         return URLSession(configuration: configuration)
     }
 
@@ -3298,17 +3339,34 @@ enum HermesCompanionSessionFactory {
                 defer { session.invalidateAndCancel() }
 
                 let task = session.webSocketTask(with: url)
-                task.resume()
-                try await task.send(.string(text))
+                let requestState = HermesCompanionRequestState()
+                let timeoutTask = Task {
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    guard Task.isCancelled == false else { return }
+                    guard requestState.markTimedOut() else { return }
+                    task.cancel(with: .goingAway, reason: nil)
+                }
+                defer { timeoutTask.cancel() }
 
-                let message = try await task.receive()
-                switch message {
-                case .data(let data):
-                    responseData = data
-                case .string(let text):
-                    responseData = Data(text.utf8)
-                @unknown default:
-                    throw HermesCompanionClientError.invalidResponse
+                do {
+                    task.resume()
+                    try await task.send(.string(text))
+
+                    let message = try await task.receive()
+                    _ = requestState.markResumed()
+                    switch message {
+                    case .data(let data):
+                        responseData = data
+                    case .string(let text):
+                        responseData = Data(text.utf8)
+                    @unknown default:
+                        throw HermesCompanionClientError.invalidResponse
+                    }
+                } catch {
+                    if requestState.didTimeout {
+                        throw HermesCompanionClientError.requestTimedOut
+                    }
+                    throw error
                 }
             }
 
@@ -3380,25 +3438,26 @@ enum HermesCompanionSessionFactory {
 
     private static func waitUntilReady(_ connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            final class StateBox {
-                var didResume = false
-            }
-            let box = StateBox()
+            let requestState = HermesCompanionRequestState()
             connection.stateUpdateHandler = { state in
-                guard box.didResume == false else { return }
                 switch state {
                 case .ready:
-                    box.didResume = true
+                    guard requestState.markResumed() else { return }
                     continuation.resume()
                 case .failed(let error):
-                    box.didResume = true
+                    guard requestState.markResumed() else { return }
                     continuation.resume(throwing: error)
                 case .cancelled:
-                    box.didResume = true
+                    guard requestState.markResumed() else { return }
                     continuation.resume(throwing: HermesCompanionClientError.invalidResponse)
                 default:
                     break
                 }
+            }
+            networkQueue.asyncAfter(deadline: .now() + 15) {
+                guard requestState.markTimedOut() else { return }
+                connection.cancel()
+                continuation.resume(throwing: HermesCompanionClientError.requestTimedOut)
             }
             connection.start(queue: networkQueue)
         }
@@ -3408,11 +3467,13 @@ enum HermesCompanionSessionFactory {
         let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
         let context = NWConnection.ContentContext(identifier: "companion-request", metadata: [metadata])
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let requestState = HermesCompanionRequestState()
             connection.send(
                 content: Data(text.utf8),
                 contentContext: context,
                 isComplete: true,
                 completion: .contentProcessed { error in
+                    guard requestState.markResumed() else { return }
                     if let error {
                         continuation.resume(throwing: error)
                     } else {
@@ -3420,12 +3481,19 @@ enum HermesCompanionSessionFactory {
                     }
                 }
             )
+            networkQueue.asyncAfter(deadline: .now() + 15) {
+                guard requestState.markTimedOut() else { return }
+                connection.cancel()
+                continuation.resume(throwing: HermesCompanionClientError.requestTimedOut)
+            }
         }
     }
 
     private static func receiveWebSocketData(from connection: NWConnection) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+            let requestState = HermesCompanionRequestState()
             connection.receiveMessage { data, context, _, error in
+                guard requestState.markResumed() else { return }
                 if let error {
                     continuation.resume(throwing: error)
                     return
@@ -3442,6 +3510,11 @@ enum HermesCompanionSessionFactory {
                     return
                 }
                 continuation.resume(returning: data)
+            }
+            networkQueue.asyncAfter(deadline: .now() + 15) {
+                guard requestState.markTimedOut() else { return }
+                connection.cancel()
+                continuation.resume(throwing: HermesCompanionClientError.requestTimedOut)
             }
         }
     }

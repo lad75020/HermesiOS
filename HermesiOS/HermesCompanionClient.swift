@@ -1380,6 +1380,11 @@ final class HermesCompanionEnrollmentSession {
             connectionStatus = "Pairing Failed"
             return
         }
+        if let warning = HermesEndpointSecurity.plaintextTransportWarning(for: url.absoluteString, endpointName: "Host Companion") {
+            lastErrorMessage = warning
+            connectionStatus = "Pairing Failed"
+            return
+        }
 
         isEnrolling = true
         lastErrorMessage = ""
@@ -1429,6 +1434,11 @@ final class HermesCompanionEnrollmentSession {
         }
         guard let url = URL(string: identityState.serverEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             lastErrorMessage = HermesCompanionClientError.invalidURL.localizedDescription
+            connectionStatus = "Approval Check Failed"
+            return
+        }
+        if let warning = HermesEndpointSecurity.plaintextTransportWarning(for: url.absoluteString, endpointName: "Host Companion") {
+            lastErrorMessage = warning
             connectionStatus = "Approval Check Failed"
             return
         }

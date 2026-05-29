@@ -52,7 +52,7 @@ final class CompanionServer {
         CompanionServerConfigurationStore.save(configuration)
 
         if state == .running {
-            listenerDescription = "ws://\(configuration.host):\(configuration.port.rawValue)/ws"
+            listenerDescription = configuration.webSocketURLString
         }
     }
 
@@ -81,7 +81,7 @@ final class CompanionServer {
                 switch newState {
                 case .ready:
                     self.state = .running
-                    self.listenerDescription = "ws://\(self.configuration.host):\(self.configuration.port.rawValue)/ws"
+                    self.listenerDescription = self.configuration.webSocketURLString
                     logger.info("Companion HTTP/WebSocket server ready on port \(self.configuration.port.rawValue)")
                 case .failed(let error):
                     self.state = .failed
@@ -133,10 +133,66 @@ struct CompanionServerConfiguration {
     let port: NWEndpoint.Port
 
     var webSocketURLString: String {
-        "ws://\(host):\(port.rawValue)/ws"
+        "\(advertisedWebSocketScheme)://\(Self.urlHostLiteral(host)):\(port.rawValue)/ws"
+    }
+
+    var advertisedWebSocketScheme: String {
+        Self.isLoopbackHost(host) ? "ws" : "wss"
     }
 
     static let `default` = CompanionServerConfiguration(host: "localhost", port: 9112)
+
+    static func sanitizedHost(_ rawValue: String) -> String {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return Self.default.host }
+
+        if let components = URLComponents(string: trimmed), components.scheme != nil, let host = components.host, host.isEmpty == false {
+            return host
+        }
+
+        let withoutPath: String
+        if let slashIndex = trimmed.firstIndex(of: "/") {
+            withoutPath = String(trimmed[..<slashIndex])
+        } else {
+            withoutPath = trimmed
+        }
+
+        if withoutPath.hasPrefix("[") == false,
+           withoutPath.filter({ $0 == ":" }).count == 1,
+           let colonIndex = withoutPath.lastIndex(of: ":") {
+            return String(withoutPath[..<colonIndex])
+        }
+
+        return withoutPath.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    }
+
+    static func port(from rawValue: String, fallback: NWEndpoint.Port) -> NWEndpoint.Port {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let components = URLComponents(string: trimmed), let port = components.port {
+            return NWEndpoint.Port(rawValue: UInt16(port)) ?? fallback
+        }
+        if trimmed.hasPrefix("[") == false,
+           trimmed.filter({ $0 == ":" }).count == 1,
+           let colonIndex = trimmed.lastIndex(of: ":") {
+            let suffix = trimmed[trimmed.index(after: colonIndex)...]
+            if let value = UInt16(suffix) { return NWEndpoint.Port(rawValue: value) ?? fallback }
+        }
+        if let value = UInt16(trimmed) { return NWEndpoint.Port(rawValue: value) ?? fallback }
+        return fallback
+    }
+
+    static func isLoopbackHost(_ host: String) -> Bool {
+        let normalized = sanitizedHost(host).lowercased()
+        return normalized == "localhost" || normalized == "::1" || normalized == "0:0:0:0:0:0:0:1" || normalized.hasPrefix("127.")
+    }
+
+    private static func urlHostLiteral(_ host: String) -> String {
+        let sanitized = sanitizedHost(host)
+        if sanitized.contains(":"), sanitized.hasPrefix("[") == false, sanitized.hasSuffix("]") == false {
+            return "[\(sanitized)]"
+        }
+        return sanitized
+    }
 }
 
 private enum CompanionServerConfigurationStore {
@@ -148,7 +204,7 @@ private enum CompanionServerConfigurationStore {
         let host = defaults.string(forKey: hostKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let portValue = defaults.integer(forKey: portKey)
 
-        let hostValue = (host?.isEmpty == false ? host! : CompanionServerConfiguration.default.host)
+        let hostValue = CompanionServerConfiguration.sanitizedHost(host ?? CompanionServerConfiguration.default.host)
         let port = validPort(from: portValue) ?? CompanionServerConfiguration.default.port
 
         return CompanionServerConfiguration(host: hostValue, port: port)
@@ -156,7 +212,7 @@ private enum CompanionServerConfigurationStore {
 
     static func save(_ configuration: CompanionServerConfiguration) {
         let defaults = UserDefaults.standard
-        defaults.set(configuration.host, forKey: hostKey)
+        defaults.set(CompanionServerConfiguration.sanitizedHost(configuration.host), forKey: hostKey)
         defaults.set(Int(configuration.port.rawValue), forKey: portKey)
     }
 

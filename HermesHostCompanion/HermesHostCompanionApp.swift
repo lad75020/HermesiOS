@@ -65,7 +65,7 @@ private struct HermesHostCompanionRootView: View {
 
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Use your Tailscale hostname or stable IP here so the API endpoint targets the right machine from elsewhere on the same Tailnet.")
+                        Text("Use your Tailscale hostname or stable IP here so the API endpoint targets the right machine from elsewhere on the same Tailnet. Non-local hosts are advertised as WSS for iOS App Transport Security; localhost remains WS.")
                             .foregroundStyle(.secondary)
 
                         TextField("Advertised host or IP", text: $controller.advertisedHost)
@@ -79,7 +79,7 @@ private struct HermesHostCompanionRootView: View {
                             }
                             .buttonStyle(.borderedProminent)
 
-                            Text("The listener binds to local loopback; this advertised value controls the endpoint shown to iOS clients and may be served through Tailscale.")
+                            Text("The listener binds to local loopback. For Tailscale hosts, expose this port with Tailscale Serve HTTPS so the QR code's WSS endpoint forwards to this local listener.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -426,17 +426,20 @@ final class CompanionServerController {
     }
 
     func applyNetworkConfiguration() {
-        let trimmedHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        let host = trimmedHost.isEmpty ? CompanionServerConfiguration.default.host : trimmedHost
-        let resolvedAPIPort = UInt16(apiPort) ?? CompanionServerConfiguration.default.port.rawValue
+        let rawHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = CompanionServerConfiguration.sanitizedHost(rawHost)
+        let resolvedPort = CompanionServerConfiguration.port(
+            from: apiPort.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? rawHost : apiPort,
+            fallback: CompanionServerConfiguration.default.port
+        )
         let shouldRestart = server.state == .running
 
         advertisedHost = host
-        apiPort = String(resolvedAPIPort)
+        apiPort = String(resolvedPort.rawValue)
         server.updateConfiguration(
             CompanionServerConfiguration(
                 host: host,
-                port: NWEndpoint.Port(rawValue: resolvedAPIPort) ?? CompanionServerConfiguration.default.port
+                port: resolvedPort
             )
         )
 

@@ -137,7 +137,7 @@ struct CompanionServerConfiguration {
     }
 
     var advertisedWebSocketScheme: String {
-        Self.isLoopbackHost(host) ? "ws" : "wss"
+        Self.isPlaintextWebSocketHost(host) ? "ws" : "wss"
     }
 
     static let `default` = CompanionServerConfiguration(host: "localhost", port: 9112)
@@ -184,6 +184,21 @@ struct CompanionServerConfiguration {
     static func isLoopbackHost(_ host: String) -> Bool {
         let normalized = sanitizedHost(host).lowercased()
         return normalized == "localhost" || normalized == "::1" || normalized == "0:0:0:0:0:0:0:1" || normalized.hasPrefix("127.")
+    }
+
+    static func isTailnetHost(_ host: String) -> Bool {
+        let normalized = sanitizedHost(host).lowercased()
+        if normalized.hasSuffix(".ts.net") { return true }
+        if normalized.hasPrefix("fd7a:115c:a1e0:") { return true }
+        let pieces = normalized.split(separator: ".")
+        guard pieces.count == 4,
+              let first = UInt8(pieces[0]),
+              let second = UInt8(pieces[1]) else { return false }
+        return first == 100 && (64...127).contains(second)
+    }
+
+    static func isPlaintextWebSocketHost(_ host: String) -> Bool {
+        isLoopbackHost(host) || isTailnetHost(host)
     }
 
     private static func urlHostLiteral(_ host: String) -> String {

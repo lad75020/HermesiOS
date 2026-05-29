@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import Network
 
 let hermesMacHostStorageKey = "hermes.mac.host"
 let defaultHermesMacHost = ".ts.net"
@@ -60,7 +61,9 @@ enum HermesHostEndpoints {
     }
 
     static func webSocketURLString(host: String, port: String, path: String = "/ws") -> String {
-        urlString(scheme: "wss", host: host, port: port, path: path)
+        let normalizedHost = normalizedHost(host)
+        let scheme = HermesEndpointSecurity.isTailnetHost(normalizedHost) || HermesEndpointSecurity.isLoopbackHost(normalizedHost) ? "ws" : "wss"
+        return urlString(scheme: scheme, host: normalizedHost, port: port, path: path)
     }
 
     private static func urlString(scheme: String, host: String, port: String, path: String) -> String {
@@ -82,7 +85,7 @@ enum HermesEndpointSecurity {
     static func isPlaintextTransportAllowed(for url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), ["http", "ws"].contains(scheme) else { return true }
         guard let host = url.host?.lowercased() else { return false }
-        return isLoopbackHost(host)
+        return isLoopbackHost(host) || isTailnetHost(host)
     }
 
     static func plaintextTransportWarning(for urlString: String, endpointName: String) -> String? {
@@ -90,15 +93,27 @@ enum HermesEndpointSecurity {
               let scheme = url.scheme?.lowercased(),
               ["http", "ws"].contains(scheme),
               !isPlaintextTransportAllowed(for: url) else { return nil }
-        return "Plaintext \(scheme.uppercased()) is blocked for \(endpointName) unless the host is localhost or 127.0.0.1. Use HTTPS/WSS for remote or Tailscale endpoints."
+        return "Plaintext \(scheme.uppercased()) is blocked for \(endpointName) unless the host is localhost, 127.0.0.1, or a Tailscale tailnet endpoint. Use HTTPS/WSS for other remote endpoints."
     }
 
     static func isSelfSignedTrustAllowed(forHost host: String) -> Bool {
         let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-        return isLoopbackHost(normalized) || normalized.hasSuffix(".ts.net")
+        return isLoopbackHost(normalized) || isTailnetHost(normalized)
     }
 
-    private static func isLoopbackHost(_ host: String) -> Bool {
+    static func isTailnetHost(_ host: String) -> Bool {
+        let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        if normalized.hasSuffix(".ts.net") { return true }
+        if normalized == defaultHermesMacHost { return true }
+        if normalized.hasPrefix("fd7a:115c:a1e0:") { return true }
+        if let ipv4 = IPv4Address(normalized) {
+            let octets = ipv4.rawValue
+            return octets.count == 4 && octets[0] == 100 && (64...127).contains(octets[1])
+        }
+        return false
+    }
+
+    static func isLoopbackHost(_ host: String) -> Bool {
         let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         return normalized == "localhost" || normalized == "::1" || normalized == "0:0:0:0:0:0:0:1" || normalized.hasPrefix("127.")
     }

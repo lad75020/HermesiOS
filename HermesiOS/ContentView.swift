@@ -128,6 +128,11 @@ struct ContentView: View {
         .onChange(of: terminalSettings) { _, newValue in
             HermesSettingsPersistence.saveTerminalSettings(newValue)
         }
+        #if DEBUG
+        .onAppear {
+            installGstackSnapshotAccessors()
+        }
+        #endif
         .task {
             webBrowserStore.loadAllUnloadedWebPages()
         }
@@ -676,12 +681,152 @@ struct ContentView: View {
     private func resumeConversationInChat(_ result: HermesDashboardConversationResult) {
         guard !chatSession.isSending else { return }
         chatSession.resumeConversation(from: result)
+        openChatWorkspace()
+    }
+
+    private func openChatWorkspace() {
         selectedWorkspace = .chat
         selectedPhoneSection = .chat
     }
+
+    #if DEBUG
+    @MainActor
+    private func installGstackSnapshotAccessors() {
+        let server = StateServer.shared
+        server.register(buildId: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "debug", accessorHash: "hermesios-contentview-v1") { keys in
+            if let raw = keys["ui.selected_workspace"] as? String, let section = WorkspaceSection(rawValue: raw) {
+                selectedWorkspace = section
+            } else if keys["ui.selected_workspace"] != nil {
+                return .typeMismatch("ui.selected_workspace")
+            }
+
+            if let raw = keys["ui.selected_phone_section"] as? String, let section = WorkspaceSection(rawValue: raw) {
+                selectedPhoneSection = section
+            } else if keys["ui.selected_phone_section"] != nil {
+                return .typeMismatch("ui.selected_phone_section")
+            }
+
+            if let raw = keys["settings.app_theme"] as? String, let theme = HermesAppTheme(rawValue: raw) {
+                appTheme = theme
+            } else if keys["settings.app_theme"] != nil {
+                return .typeMismatch("settings.app_theme")
+            }
+
+            if let value = keys["settings.runtime_tab_enabled"] as? Bool {
+                isRuntimeTabEnabled = value
+            } else if keys["settings.runtime_tab_enabled"] != nil {
+                return .typeMismatch("settings.runtime_tab_enabled")
+            }
+
+            if let value = keys["ui.is_splash_visible"] as? Bool {
+                isShowingSplash = value
+            } else if keys["ui.is_splash_visible"] != nil {
+                return .typeMismatch("ui.is_splash_visible")
+            }
+
+            return .ok
+        }
+
+        server.registerAccessor(
+            key: "ui.selected_workspace",
+            type: "String<WorkspaceSection?>",
+            read: { selectedWorkspace?.rawValue ?? NSNull() },
+            write: { value in
+                guard let raw = value as? String, let section = WorkspaceSection(rawValue: raw) else { return false }
+                selectedWorkspace = section
+                selectedPhoneSection = section
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "ui.selected_phone_section",
+            type: "String<WorkspaceSection>",
+            read: { selectedPhoneSection.rawValue },
+            write: { value in
+                guard let raw = value as? String, let section = WorkspaceSection(rawValue: raw) else { return false }
+                selectedPhoneSection = section
+                selectedWorkspace = section
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "ui.is_splash_visible",
+            type: "Bool",
+            read: { isShowingSplash },
+            write: { value in
+                guard let bool = value as? Bool else { return false }
+                isShowingSplash = bool
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "settings.runtime_tab_enabled",
+            type: "Bool",
+            read: { isRuntimeTabEnabled },
+            write: { value in
+                guard let bool = value as? Bool else { return false }
+                isRuntimeTabEnabled = bool
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "settings.app_theme",
+            type: "String<HermesAppTheme>",
+            read: { appTheme.rawValue },
+            write: { value in
+                guard let raw = value as? String, let theme = HermesAppTheme(rawValue: raw) else { return false }
+                appTheme = theme
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "settings.mac_host",
+            type: "String",
+            read: { macHost },
+            write: { value in
+                guard let string = value as? String, !string.isEmpty else { return false }
+                macHost = string
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "settings.dashboard_port",
+            type: "String",
+            read: { dashboardPort },
+            write: { value in
+                guard let string = value as? String, !string.isEmpty else { return false }
+                dashboardPort = string
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "settings.office_port",
+            type: "String",
+            read: { officePort },
+            write: { value in
+                guard let string = value as? String, !string.isEmpty else { return false }
+                officePort = string
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "responses.workspace_count",
+            type: "Int(readonly)",
+            read: { responseWorkspaces.count },
+            write: { _ in false }
+        )
+        server.registerAccessor(
+            key: "status.any_stream_active",
+            type: "Bool(readonly)",
+            read: { isAnyHermesStreamActive },
+            write: { _ in false }
+        )
+    }
+    #endif
 }
 
 private struct HermesTransientToast: View {
+
     let message: String
     var buttonTitle: String?
     var action: (() -> Void)?

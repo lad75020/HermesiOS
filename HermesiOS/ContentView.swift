@@ -31,6 +31,8 @@ struct ContentView: View {
     @State private var responsesDraft: HermesRequestDraft
     @State private var responseWorkspaces: [HermesResponsesWorkspace]
     @State private var selectedResponseWorkspaceID: HermesResponsesWorkspace.ID
+    @State private var tuiWorkspaces: [HermesTUIWorkspace]
+    @State private var selectedTUIWorkspaceID: HermesTUIWorkspace.ID
     @State private var chatDraft: HermesChatDraft
     @State private var terminalSettings: HermesTerminalSettings
     @State private var chatSession = HermesChatSession()
@@ -58,11 +60,14 @@ struct ContentView: View {
         HermesSettingsPersistence.removeLegacyLocalHistoryFile()
         let loadedResponsesDraft = HermesSettingsPersistence.loadResponsesDraft()
         let initialResponseWorkspace = HermesResponsesWorkspace(number: 1, draft: loadedResponsesDraft, session: HermesResponsesSession())
+        let initialTUIWorkspace = HermesTUIWorkspace(number: 1)
         _apiSettings = State(initialValue: HermesSettingsPersistence.loadAPISettings())
         _companionSettings = State(initialValue: HermesSettingsPersistence.loadCompanionSettings())
         _responsesDraft = State(initialValue: loadedResponsesDraft)
         _responseWorkspaces = State(initialValue: [initialResponseWorkspace])
         _selectedResponseWorkspaceID = State(initialValue: initialResponseWorkspace.id)
+        _tuiWorkspaces = State(initialValue: [initialTUIWorkspace])
+        _selectedTUIWorkspaceID = State(initialValue: initialTUIWorkspace.id)
         _chatDraft = State(initialValue: HermesSettingsPersistence.loadChatDraft())
         _terminalSettings = State(initialValue: HermesSettingsPersistence.loadTerminalSettings())
     }
@@ -236,6 +241,16 @@ struct ContentView: View {
         activeResponseWorkspace.session
     }
 
+    private var activeTUIWorkspace: HermesTUIWorkspace {
+        if let workspace = tuiWorkspaces.first(where: { $0.id == selectedTUIWorkspaceID }) {
+            return workspace
+        }
+        if let workspace = tuiWorkspaces.first {
+            return workspace
+        }
+        return HermesTUIWorkspace(number: 1)
+    }
+
     private var isAnyResponseWorkspaceStreaming: Bool {
         responseWorkspaces.contains { $0.session.isSending }
     }
@@ -254,6 +269,14 @@ struct ContentView: View {
         }
     }
 
+    private var isAnyTUIWorkspaceBusy: Bool {
+        tuiWorkspaces.contains { $0.store.isConnecting || $0.store.isStreaming || $0.store.isResumingSession || $0.store.isRefreshingSessions }
+    }
+
+    private var isAnyTUIWorkspaceStreaming: Bool {
+        tuiWorkspaces.contains { $0.store.isStreaming }
+    }
+
     private var apiChannelActive: Bool {
         isAnyResponseWorkspaceStreaming || chatSession.isSending
     }
@@ -263,11 +286,11 @@ struct ContentView: View {
     }
 
     private var dashboardChannelActive: Bool {
-        dashboardHistorySearchSession.isDashboardHTTPActive
+        dashboardHistorySearchSession.isDashboardHTTPActive || isAnyTUIWorkspaceBusy
     }
 
     private var isAnyHermesStreamActive: Bool {
-        isAnyResponseWorkspaceActivelyStreaming || chatSession.isStreaming
+        isAnyResponseWorkspaceActivelyStreaming || chatSession.isStreaming || isAnyTUIWorkspaceStreaming
     }
 
     private var shouldShowPhoneConnectionIssueOverlay: Bool {
@@ -383,6 +406,7 @@ struct ContentView: View {
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive,
                 isResponsesStreamingActive: isAnyResponseWorkspaceStreaming,
+                isTUIGatewayActive: isAnyTUIWorkspaceBusy,
                 isHistorySearchActive: dashboardHistorySearchSession.isSearching,
                 hasUnreadResponsesCompletion: hasUnreadResponseWorkspaceCompletion,
                 hasUnreadResponsesFailure: hasUnreadResponseWorkspaceFailure,
@@ -429,6 +453,22 @@ struct ContentView: View {
                     Image(systemName: "text.bubble")
                 }
                 .tag(WorkspaceSection.chat)
+
+                NavigationStack {
+                    HermesTUIGatewayWorkspacesView(
+                        apiSettings: $apiSettings,
+                        dashboardURLString: dashboardURLString,
+                        workspaces: tuiWorkspaces,
+                        selectedWorkspaceID: selectedTUIWorkspaceBinding,
+                        onSelectWorkspace: selectTUIWorkspace,
+                        onAddWorkspace: createTUIWorkspace,
+                        onDeleteWorkspace: deleteTUIWorkspace
+                    )
+                }
+                .tabItem {
+                    Image(systemName: "terminal.fill")
+                }
+                .tag(WorkspaceSection.tuiGateway)
 
                 NavigationStack {
                     HermesHistoryView(
@@ -544,6 +584,13 @@ struct ContentView: View {
         )
     }
 
+    private var selectedTUIWorkspaceBinding: Binding<HermesTUIWorkspace.ID> {
+        Binding(
+            get: { selectedTUIWorkspaceID },
+            set: { selectedTUIWorkspaceID = $0 }
+        )
+    }
+
     private func createResponseWorkspace() {
         guard responseWorkspaces.count < 4 else { return }
         let nextNumber = (1...4).first { number in
@@ -561,6 +608,38 @@ struct ContentView: View {
         responsesDraft = workspace.draft
     }
 
+    private func createTUIWorkspace() {
+        let nextNumber = (tuiWorkspaces.map(\.number).max() ?? 0) + 1
+        let workspace = HermesTUIWorkspace(number: nextNumber)
+        tuiWorkspaces.append(workspace)
+        selectedTUIWorkspaceID = workspace.id
+    }
+
+    private func selectTUIWorkspace(_ workspace: HermesTUIWorkspace) {
+        workspace.acknowledgeCurrentStatus()
+        selectedTUIWorkspaceID = workspace.id
+    }
+
+    private func deleteTUIWorkspace(_ workspace: HermesTUIWorkspace) {
+        guard !workspace.store.isStreaming,
+              !workspace.store.isConnecting,
+              !workspace.store.isResumingSession,
+              let deletedIndex = tuiWorkspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
+
+        let wasSelected = selectedTUIWorkspaceID == workspace.id
+        workspace.store.disconnect()
+        tuiWorkspaces.remove(at: deletedIndex)
+
+        if tuiWorkspaces.isEmpty {
+            let replacement = HermesTUIWorkspace(number: 1)
+            tuiWorkspaces = [replacement]
+            selectedTUIWorkspaceID = replacement.id
+        } else if wasSelected {
+            let replacementIndex = min(deletedIndex, tuiWorkspaces.count - 1)
+            selectedTUIWorkspaceID = tuiWorkspaces[replacementIndex].id
+        }
+    }
+
     @ViewBuilder
     private func workspaceDetail(for section: WorkspaceSection) -> some View {
         switch section {
@@ -576,6 +655,16 @@ struct ContentView: View {
                 companionRuntime: companionRuntime,
                 chatSession: chatSession,
                 promptHistory: promptHistory
+            )
+        case .tuiGateway:
+            HermesTUIGatewayWorkspacesView(
+                apiSettings: $apiSettings,
+                dashboardURLString: dashboardURLString,
+                workspaces: tuiWorkspaces,
+                selectedWorkspaceID: selectedTUIWorkspaceBinding,
+                onSelectWorkspace: selectTUIWorkspace,
+                onAddWorkspace: createTUIWorkspace,
+                onDeleteWorkspace: deleteTUIWorkspace
             )
         case .history:
             HermesHistoryView(

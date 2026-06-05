@@ -8,6 +8,7 @@ import SwiftUI
 enum WorkspaceSection: String, CaseIterable, Identifiable {
     case responses
     case chat
+    case tuiGateway
     case history
     case web
     case terminal
@@ -23,6 +24,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Ask Hermes"
         case .chat:
             "Chat with Hermes"
+        case .tuiGateway:
+            "TUI Gateway"
         case .history:
             "History"
         case .web:
@@ -44,6 +47,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Use `/v1/responses` with SSE and response chaining."
         case .chat:
             "Use `/v1/chat/completions` with an independent transcript."
+        case .tuiGateway:
+            "Talk to Hermes through the dashboard TUI Gateway WebSocket."
         case .history:
             "Review saved requests and final responses grouped by session."
         case .web:
@@ -65,6 +70,8 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "dot.radiowaves.left.and.right"
         case .chat:
             "text.bubble"
+        case .tuiGateway:
+            "terminal.fill"
         case .history:
             "clock.arrow.circlepath"
         case .web:
@@ -95,6 +102,7 @@ struct WorkspaceSidebar: View {
     var companionChannelActive = false
     var dashboardChannelActive = false
     var isResponsesStreamingActive = false
+    var isTUIGatewayActive = false
     var isHistorySearchActive = false
     var hasUnreadResponsesCompletion = false
     var hasUnreadResponsesFailure = false
@@ -113,7 +121,7 @@ struct WorkspaceSidebar: View {
             isChatCompletionUnread
         case .history:
             isHistorySearchCompletionUnread
-        case .web, .utilities, .settings, .runtime, .terminal:
+        case .tuiGateway, .web, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -126,7 +134,7 @@ struct WorkspaceSidebar: View {
             isChatFailureUnread
         case .history:
             isHistorySearchFailureUnread
-        case .web, .utilities, .settings, .runtime, .terminal:
+        case .tuiGateway, .web, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -137,6 +145,8 @@ struct WorkspaceSidebar: View {
             isResponsesStreamingActive
         case .chat:
             chatSession.isSending
+        case .tuiGateway:
+            isTUIGatewayActive
         case .history:
             isHistorySearchActive
         case .runtime:
@@ -158,7 +168,7 @@ struct WorkspaceSidebar: View {
             "Runtime sections are loading from the Mac host companion."
         case .web:
             "Saved web pages are loading."
-        case .responses, .chat, .history, .utilities, .settings, .terminal:
+        case .responses, .chat, .tuiGateway, .history, .utilities, .settings, .terminal:
             "Activity in progress."
         }
     }
@@ -174,7 +184,7 @@ struct WorkspaceSidebar: View {
         case .history:
             isHistorySearchCompletionUnread = false
             isHistorySearchFailureUnread = false
-        case .web, .utilities, .settings, .runtime, .terminal:
+        case .tuiGateway, .web, .utilities, .settings, .runtime, .terminal:
             break
         }
     }

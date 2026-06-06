@@ -19,6 +19,8 @@ enum HermesSettingsPersistence {
     private static let lastChatSessionTitleKey = "hermes.lastChatSessionTitle"
     private static let companionSettingsKey = "hermes.companionSettings"
     private static let companionIdentityStateKey = "hermes.companionIdentityState"
+    private static let companionConnectionsKey = "hermes.companionConnections"
+    private static let activeCompanionConnectionIDKey = "hermes.activeCompanionConnectionID"
     private static let terminalSettingsKey = "hermes.terminalSettings"
     private static let tokenService = "com.hermesios.api"
     private static let tokenAccount = "bearerToken"
@@ -112,6 +114,9 @@ enum HermesSettingsPersistence {
     static func loadCompanionSettings() -> HermesCompanionSettings {
         var settings = decode(HermesCompanionSettings.self, from: companionSettingsKey) ?? HermesCompanionSettings()
         settings.deviceSecret = loadCompanionDeviceSecret()
+        if let activeConnection = loadCompanionConnections().first(where: { $0.id == loadActiveCompanionConnectionID() }) {
+            settings.apiURL = activeConnection.identityState.serverEndpoint
+        }
         return settings
     }
 
@@ -124,19 +129,47 @@ enum HermesSettingsPersistence {
         }
     }
 
-    static func loadCompanionDeviceSecret() -> String {
+    static func loadCompanionDeviceSecret(deviceID: String? = nil) -> String {
+        if let deviceID, deviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            let current = loadKeychainString(service: companionService, account: companionDeviceSecretAccount(for: deviceID))
+            if current.isEmpty == false { return current }
+        }
+        let activeDeviceID = loadActiveCompanionConnectionID()
+        if activeDeviceID.isEmpty == false {
+            let current = loadKeychainString(service: companionService, account: companionDeviceSecretAccount(for: activeDeviceID))
+            if current.isEmpty == false { return current }
+        }
         let current = loadKeychainString(service: companionService, account: companionDeviceSecretAccount)
         if current.isEmpty == false { return current }
         return ""
     }
 
-    static func saveCompanionDeviceSecret(_ value: String) {
-        saveKeychainString(value, service: companionService, account: companionDeviceSecretAccount)
-        deleteKeychainData(service: companionService, account: legacyCompanionTokenAccount)
+    static func saveCompanionDeviceSecret(_ value: String, deviceID: String? = nil) {
+        let trimmedDeviceID = deviceID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let targetDeviceID = trimmedDeviceID.isEmpty ? loadActiveCompanionConnectionID() : trimmedDeviceID
+        if targetDeviceID.isEmpty == false {
+            saveKeychainString(value, service: companionService, account: companionDeviceSecretAccount(for: targetDeviceID))
+        } else {
+            saveKeychainString(value, service: companionService, account: companionDeviceSecretAccount)
+        }
+        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            deleteKeychainData(service: companionService, account: legacyCompanionTokenAccount)
+        }
+    }
+
+    static func deleteCompanionDeviceSecret(deviceID: String) {
+        let trimmed = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return }
+        deleteKeychainData(service: companionService, account: companionDeviceSecretAccount(for: trimmed))
     }
 
     static func loadCompanionIdentityState() -> HermesCompanionIdentityState {
-        decode(HermesCompanionIdentityState.self, from: companionIdentityStateKey) ?? HermesCompanionIdentityState()
+        let connections = loadCompanionConnections()
+        let activeID = loadActiveCompanionConnectionID()
+        if let active = connections.first(where: { $0.id == activeID }) ?? connections.first {
+            return active.identityState
+        }
+        return decode(HermesCompanionIdentityState.self, from: companionIdentityStateKey) ?? HermesCompanionIdentityState()
     }
 
     static func loadTerminalSettings() -> HermesTerminalSettings {
@@ -180,10 +213,74 @@ enum HermesSettingsPersistence {
 
     static func saveCompanionAuthenticationState(_ state: HermesCompanionIdentityState) {
         encode(state, to: companionIdentityStateKey)
+        if state.hasPairing {
+            saveActiveCompanionConnectionID(state.deviceID)
+            var connection = loadCompanionConnections().first(where: { $0.id == state.deviceID }) ?? HermesCompanionSavedConnection(identityState: state)
+            connection.identityState = state
+            connection.updatedAt = Date()
+            upsertCompanionConnection(connection)
+        }
+    }
+
+    static func loadCompanionConnections() -> [HermesCompanionSavedConnection] {
+        if let connections = decode([HermesCompanionSavedConnection].self, from: companionConnectionsKey), connections.isEmpty == false {
+            return connections
+        }
+        guard let legacyState = decode(HermesCompanionIdentityState.self, from: companionIdentityStateKey), legacyState.hasPairing else {
+            return []
+        }
+        return [HermesCompanionSavedConnection(identityState: legacyState)]
+    }
+
+    static func saveCompanionConnections(_ connections: [HermesCompanionSavedConnection]) {
+        let uniqueConnections = connections.reduce(into: [HermesCompanionSavedConnection]()) { result, connection in
+            guard connection.id.isEmpty == false else { return }
+            result.removeAll { $0.id == connection.id }
+            result.append(connection)
+        }
+        encode(uniqueConnections, to: companionConnectionsKey)
+        if uniqueConnections.isEmpty {
+            UserDefaults.standard.removeObject(forKey: activeCompanionConnectionIDKey)
+        } else if uniqueConnections.contains(where: { $0.id == loadActiveCompanionConnectionID() }) == false {
+            saveActiveCompanionConnectionID(uniqueConnections[0].id)
+        }
+    }
+
+    static func upsertCompanionConnection(_ connection: HermesCompanionSavedConnection) {
+        guard connection.id.isEmpty == false else { return }
+        var connections = loadCompanionConnections()
+        connections.removeAll { $0.id == connection.id }
+        connections.append(connection)
+        saveCompanionConnections(connections.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending })
+    }
+
+    static func removeCompanionConnection(deviceID: String) {
+        let trimmed = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return }
+        let remaining = loadCompanionConnections().filter { $0.id != trimmed }
+        deleteCompanionDeviceSecret(deviceID: trimmed)
+        saveCompanionConnections(remaining)
+        if loadActiveCompanionConnectionID() == trimmed {
+            saveActiveCompanionConnectionID(remaining.first?.id ?? "")
+        }
+    }
+
+    static func loadActiveCompanionConnectionID() -> String {
+        UserDefaults.standard.string(forKey: activeCompanionConnectionIDKey) ?? ""
+    }
+
+    static func saveActiveCompanionConnectionID(_ deviceID: String) {
+        let trimmed = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: activeCompanionConnectionIDKey)
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: activeCompanionConnectionIDKey)
+        }
     }
 
     static func clearCompanionIdentity() {
         UserDefaults.standard.removeObject(forKey: companionIdentityStateKey)
+        UserDefaults.standard.removeObject(forKey: activeCompanionConnectionIDKey)
     }
 
     static func removeLegacyLocalHistoryFile() {
@@ -210,6 +307,10 @@ enum HermesSettingsPersistence {
 
     private static func loadBearerToken() -> String {
         loadKeychainString(service: tokenService, account: tokenAccount)
+    }
+
+    private static func companionDeviceSecretAccount(for deviceID: String) -> String {
+        "\(companionDeviceSecretAccount).\(deviceID)"
     }
 
     private static func saveBearerToken(_ token: String) {

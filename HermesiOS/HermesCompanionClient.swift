@@ -104,6 +104,55 @@ struct HermesCompanionIdentityState: Codable, Equatable {
     }
 }
 
+struct HermesCompanionSavedConnection: Codable, Identifiable, Equatable {
+    var nickname = ""
+    var serverName = ""
+    var identityState = HermesCompanionIdentityState()
+    var lastMessage = ""
+    var updatedAt = Date()
+
+    var id: String { identityState.deviceID }
+
+    init(
+        nickname: String = "",
+        serverName: String = "",
+        identityState: HermesCompanionIdentityState = HermesCompanionIdentityState(),
+        lastMessage: String = "",
+        updatedAt: Date = Date()
+    ) {
+        self.nickname = nickname
+        self.serverName = serverName
+        self.identityState = identityState
+        self.lastMessage = lastMessage
+        self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case nickname
+        case serverName
+        case identityState
+        case lastMessage
+        case updatedAt
+    }
+
+    var displayName: String {
+        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedNickname.isEmpty == false { return trimmedNickname }
+        let trimmedServerName = serverName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedServerName.isEmpty == false { return trimmedServerName }
+        if let host = URL(string: identityState.serverEndpoint)?.host, host.isEmpty == false { return host }
+        if identityState.deviceName.isEmpty == false { return identityState.deviceName }
+        return identityState.deviceID.isEmpty ? "Host Companion" : "Host \(identityState.deviceID.prefix(8))"
+    }
+
+    var statusLabel: String {
+        if identityState.revokedAt != nil { return "Revoked" }
+        if identityState.isEnrolled { return "Approved" }
+        if identityState.isPendingApproval { return "Pending approval" }
+        return "Not paired"
+    }
+}
+
 struct HermesCompanionIncomingEnvelope: Codable {
     let id: String?
     let type: String
@@ -1330,38 +1379,85 @@ final class HermesCompanionEnrollmentSession {
     var connectionStatus = "Not Paired"
     var lastErrorMessage = ""
     var identityState: HermesCompanionIdentityState
+    var connections: [HermesCompanionSavedConnection]
+    var activeConnectionID: String
 
     private var enrollmentTask: Task<Void, Never>?
 
     init() {
-        let persistedState = HermesSettingsPersistence.loadCompanionIdentityState()
+        let loadedConnections = HermesSettingsPersistence.loadCompanionConnections()
+        var loadedActiveConnectionID = HermesSettingsPersistence.loadActiveCompanionConnectionID()
+        if loadedActiveConnectionID.isEmpty, let firstConnection = loadedConnections.first {
+            loadedActiveConnectionID = firstConnection.id
+            HermesSettingsPersistence.saveActiveCompanionConnectionID(firstConnection.id)
+        }
+        let persistedState = loadedConnections.first(where: { $0.id == loadedActiveConnectionID })?.identityState
+            ?? HermesSettingsPersistence.loadCompanionIdentityState()
+        connections = loadedConnections
+        activeConnectionID = loadedActiveConnectionID
         identityState = persistedState
-        if persistedState.isEnrolled {
-            connectionStatus = "Device Approved"
-        } else if persistedState.isPendingApproval {
-            connectionStatus = "Pending Approval"
+        connectionStatus = Self.statusTitle(for: persistedState)
+    }
+
+    func enroll(onboarding payload: HermesCompanionOnboardingPayload, deviceName: String, activateWhenFinished: Bool = true) {
+        enrollmentTask?.cancel()
+        enrollmentTask = Task {
+            await runEnrollment(onboarding: payload, deviceName: deviceName, activateWhenFinished: activateWhenFinished)
         }
     }
 
-    func enroll(onboarding payload: HermesCompanionOnboardingPayload, deviceName: String) {
+    func checkApproval(settings: HermesCompanionSettings, connectionID: String? = nil) {
         enrollmentTask?.cancel()
         enrollmentTask = Task {
-            await runEnrollment(onboarding: payload, deviceName: deviceName)
+            await runApprovalCheck(settings: settings, connectionID: connectionID)
         }
     }
 
-    func checkApproval(settings: HermesCompanionSettings) {
+    func activateConnection(id: String) {
+        guard let connection = connections.first(where: { $0.id == id }) else { return }
+        activeConnectionID = connection.id
+        identityState = connection.identityState
+        connectionStatus = Self.statusTitle(for: connection.identityState)
+        lastErrorMessage = connection.lastMessage
+        HermesSettingsPersistence.saveActiveCompanionConnectionID(connection.id)
+        HermesSettingsPersistence.saveCompanionAuthenticationState(connection.identityState)
+    }
+
+    func forgetConnection(id: String) {
         enrollmentTask?.cancel()
-        enrollmentTask = Task {
-            await runApprovalCheck(settings: settings)
+        enrollmentTask = nil
+        isEnrolling = false
+        let wasActive = id == activeConnectionID
+        HermesSettingsPersistence.removeCompanionConnection(deviceID: id)
+        connections = HermesSettingsPersistence.loadCompanionConnections()
+        activeConnectionID = HermesSettingsPersistence.loadActiveCompanionConnectionID()
+        if activeConnectionID.isEmpty, let firstConnection = connections.first {
+            activeConnectionID = firstConnection.id
+            HermesSettingsPersistence.saveActiveCompanionConnectionID(firstConnection.id)
         }
+        if wasActive {
+            identityState = connections.first(where: { $0.id == activeConnectionID })?.identityState ?? HermesCompanionIdentityState()
+            connectionStatus = Self.statusTitle(for: identityState)
+        }
+        if connections.isEmpty {
+            identityState = HermesCompanionIdentityState()
+            connectionStatus = "Not Paired"
+            HermesSettingsPersistence.clearCompanionIdentity()
+        }
+        lastErrorMessage = ""
     }
 
     func clearIdentity() {
+        if activeConnectionID.isEmpty == false {
+            forgetConnection(id: activeConnectionID)
+            return
+        }
         enrollmentTask?.cancel()
         enrollmentTask = nil
         isEnrolling = false
         identityState = HermesCompanionIdentityState()
+        connections = []
+        activeConnectionID = ""
         connectionStatus = "Not Paired"
         lastErrorMessage = ""
         HermesSettingsPersistence.clearCompanionIdentity()
@@ -1380,14 +1476,14 @@ final class HermesCompanionEnrollmentSession {
         guard identityState.hasPairing, identityState.matches(settings: settings) == false else { return }
         enrollmentTask?.cancel()
         enrollmentTask = nil
-        identityState = HermesCompanionIdentityState()
-        connectionStatus = "Not Paired"
-        lastErrorMessage = "Host Companion endpoint changed. Scan the current QR code again."
-        HermesSettingsPersistence.clearCompanionIdentity()
-        HermesSettingsPersistence.saveCompanionDeviceSecret("")
+        lastErrorMessage = "Host Companion endpoint changed. Select a saved host or scan the current QR code."
     }
 
-    private func runEnrollment(onboarding payload: HermesCompanionOnboardingPayload, deviceName: String) async {
+    func connection(for id: String) -> HermesCompanionSavedConnection? {
+        connections.first { $0.id == id }
+    }
+
+    private func runEnrollment(onboarding payload: HermesCompanionOnboardingPayload, deviceName: String, activateWhenFinished: Bool) async {
         guard let url = URL(string: payload.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             lastErrorMessage = HermesCompanionClientError.invalidURL.localizedDescription
             connectionStatus = "Pairing Failed"
@@ -1412,7 +1508,7 @@ final class HermesCompanionEnrollmentSession {
                 type: "enroll_device",
                 payload: HermesCompanionEnrollDevicePayload(code: payload.code, deviceName: deviceName)
             )
-            HermesSettingsPersistence.saveCompanionDeviceSecret(result.deviceSecret)
+            HermesSettingsPersistence.saveCompanionDeviceSecret(result.deviceSecret, deviceID: result.deviceID)
             let newState = HermesCompanionIdentityState(
                 deviceID: result.deviceID,
                 deviceName: result.deviceName,
@@ -1422,10 +1518,22 @@ final class HermesCompanionEnrollmentSession {
                 approvedAt: result.approved ? Date() : nil,
                 revokedAt: nil
             )
-            HermesSettingsPersistence.saveCompanionAuthenticationState(newState)
-            identityState = newState
-            connectionStatus = result.approved ? "Device Approved" : "Pending Approval"
-            lastErrorMessage = result.message
+            let connection = HermesCompanionSavedConnection(
+                serverName: payload.serverName,
+                identityState: newState,
+                lastMessage: result.message,
+                updatedAt: Date()
+            )
+            upsert(connection)
+            let shouldActivate = activateWhenFinished || identityState.hasPairing == false
+            if shouldActivate {
+                activateConnection(id: newState.deviceID)
+                connectionStatus = result.approved ? "Device Approved" : "Pending Approval"
+                lastErrorMessage = result.message
+            } else {
+                connectionStatus = "Host Stored"
+                lastErrorMessage = "\(connection.displayName) was stored. Switch hosts after active streams finish."
+            }
         } catch {
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Pairing Failed"
@@ -1433,19 +1541,25 @@ final class HermesCompanionEnrollmentSession {
 
     }
 
-    private func runApprovalCheck(settings: HermesCompanionSettings) async {
-        guard identityState.hasPairing else {
+    private func runApprovalCheck(settings: HermesCompanionSettings, connectionID: String?) async {
+        let targetState: HermesCompanionIdentityState
+        if let connectionID, let connection = connections.first(where: { $0.id == connectionID }) {
+            targetState = connection.identityState
+        } else {
+            targetState = identityState
+        }
+        guard targetState.hasPairing else {
             lastErrorMessage = HermesCompanionClientError.notEnrolled.localizedDescription
             connectionStatus = "Not Paired"
             return
         }
-        let secret = HermesCompanionSessionFactory.deviceSecret(from: settings)
+        let secret = HermesCompanionSessionFactory.deviceSecret(from: settings, deviceID: targetState.deviceID)
         guard secret.isEmpty == false else {
             lastErrorMessage = HermesCompanionClientError.missingDeviceSecret.localizedDescription
             connectionStatus = "Not Paired"
             return
         }
-        guard let url = URL(string: identityState.serverEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        guard let url = URL(string: targetState.serverEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             lastErrorMessage = HermesCompanionClientError.invalidURL.localizedDescription
             connectionStatus = "Approval Check Failed"
             return
@@ -1467,9 +1581,9 @@ final class HermesCompanionEnrollmentSession {
                 deviceID: nil,
                 deviceSecret: nil,
                 type: "check_device_approval",
-                payload: HermesCompanionCheckDeviceApprovalPayload(deviceID: identityState.deviceID, deviceSecret: secret)
+                payload: HermesCompanionCheckDeviceApprovalPayload(deviceID: targetState.deviceID, deviceSecret: secret)
             )
-            var newState = identityState
+            var newState = targetState
             if result.revoked {
                 newState.revokedAt = Date()
                 newState.approvedAt = nil
@@ -1481,14 +1595,35 @@ final class HermesCompanionEnrollmentSession {
             } else {
                 connectionStatus = "Pending Approval"
             }
-            HermesSettingsPersistence.saveCompanionAuthenticationState(newState)
-            identityState = newState
+            var updatedConnection = connections.first(where: { $0.id == newState.deviceID }) ?? HermesCompanionSavedConnection(identityState: newState)
+            updatedConnection.identityState = newState
+            updatedConnection.lastMessage = result.message
+            updatedConnection.updatedAt = Date()
+            upsert(updatedConnection)
+            if newState.deviceID == activeConnectionID {
+                identityState = newState
+                HermesSettingsPersistence.saveCompanionAuthenticationState(newState)
+            }
             lastErrorMessage = result.message
         } catch {
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Approval Check Failed"
         }
 
+    }
+
+    private func upsert(_ connection: HermesCompanionSavedConnection) {
+        connections.removeAll { $0.id == connection.id }
+        connections.append(connection)
+        connections.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        HermesSettingsPersistence.saveCompanionConnections(connections)
+    }
+
+    private static func statusTitle(for state: HermesCompanionIdentityState) -> String {
+        if state.revokedAt != nil { return "Revoked" }
+        if state.isEnrolled { return "Device Approved" }
+        if state.isPendingApproval { return "Pending Approval" }
+        return "Not Paired"
     }
 }
 
@@ -3519,10 +3654,10 @@ enum HermesCompanionSessionFactory {
         }
     }
 
-    static func deviceSecret(from settings: HermesCompanionSettings) -> String {
+    static func deviceSecret(from settings: HermesCompanionSettings, deviceID: String? = nil) -> String {
         let settingSecret = settings.deviceSecret.trimmingCharacters(in: .whitespacesAndNewlines)
-        if settingSecret.isEmpty == false { return settingSecret }
-        return HermesSettingsPersistence.loadCompanionDeviceSecret()
+        if settingSecret.isEmpty == false, deviceID == nil || deviceID == HermesSettingsPersistence.loadActiveCompanionConnectionID() { return settingSecret }
+        return HermesSettingsPersistence.loadCompanionDeviceSecret(deviceID: deviceID)
     }
 }
 

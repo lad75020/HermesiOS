@@ -536,7 +536,8 @@ struct ContentView: View {
                         terminalSettings: $terminalSettings,
                         appTheme: $appTheme,
                         companionEnrollment: companionEnrollment,
-                        companionRuntime: companionRuntime
+                        companionRuntime: companionRuntime,
+                        canSwitchHosts: !isAnyHermesStreamActive
                     )
                 }
                 .tabItem {
@@ -720,7 +721,8 @@ struct ContentView: View {
                 terminalSettings: $terminalSettings,
                 appTheme: $appTheme,
                 companionEnrollment: companionEnrollment,
-                companionRuntime: companionRuntime
+                companionRuntime: companionRuntime,
+                canSwitchHosts: !isAnyHermesStreamActive
             )
         case .runtime:
             HermesAgentConfigView(

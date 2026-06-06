@@ -18,6 +18,7 @@ struct HermesSettingsView: View {
     @Binding var appTheme: HermesAppTheme
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    let canSwitchHosts: Bool
     @AppStorage(hermesMacHostStorageKey) private var macHost = defaultHermesMacHost
     @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
@@ -223,6 +224,22 @@ struct HermesSettingsView: View {
                         .foregroundStyle(.igDestructive)
                 }
 
+                if companionEnrollment.connections.isEmpty == false {
+                    Picker("Active Host", selection: activeCompanionConnectionBinding) {
+                        ForEach(companionEnrollment.connections) { connection in
+                            Text("\(connection.displayName) — \(connection.statusLabel)").tag(connection.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(companionEnrollment.isEnrolling || !canSwitchHosts)
+
+                    if !canSwitchHosts {
+                        Text("Host switching is disabled while any Ask Hermes, Chat with Hermes, or TUI Gateway response is streaming.")
+                            .font(.caption)
+                            .foregroundStyle(.igGradOrange)
+                    }
+                }
+
                 HStack(alignment: .center, spacing: 10) {
                     HermesSettingsStatusLED(
                         isOn: companionEnrollment.identityState.isEnrolled,
@@ -259,18 +276,40 @@ struct HermesSettingsView: View {
                     }
                 }
 
-                Text("Open HermesHostCompanion on the Mac, scan its QR code, then approve this device in the companion app. Approved devices use a unique device ID and can be revoked on the Mac.")
+                Text("Open HermesHostCompanion on each Mac, scan each QR code, then approve this iOS device in every companion app you want to use. Saved hosts keep independent device approval state.")
                     .font(.caption)
                     .foregroundStyle(.hermesSecondaryText)
+
+                if companionEnrollment.connections.isEmpty == false {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(companionEnrollment.connections) { connection in
+                            HermesCompanionSavedHostRow(
+                                connection: connection,
+                                isActive: connection.id == companionEnrollment.activeConnectionID,
+                                isBusy: companionEnrollment.isEnrolling,
+                                canForget: canSwitchHosts || connection.id != companionEnrollment.activeConnectionID,
+                                onCheckApproval: {
+                                    companionEnrollment.checkApproval(settings: companionSettings, connectionID: connection.id)
+                                },
+                                onForget: {
+                                    companionEnrollment.forgetConnection(id: connection.id)
+                                    syncActiveCompanionConnectionToSettings()
+                                }
+                            )
+                        }
+                    }
+                }
 
                 if companionEnrollment.identityState.hasPairing {
                     Button(role: .destructive) {
                         companionEnrollment.clearIdentity()
-                        companionSettings.deviceSecret = ""
+                        companionSettings.deviceSecret = HermesSettingsPersistence.loadCompanionDeviceSecret()
+                        syncActiveCompanionConnectionToSettings()
                     } label: {
-                        Label("Forget This Device", systemImage: "trash")
+                        Label("Forget Active Host", systemImage: "trash")
                     }
                     .hermesGlassButton()
+                    .disabled(!canSwitchHosts)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -541,6 +580,9 @@ struct HermesSettingsView: View {
         .onChange(of: companionSettings.apiURL) { _, _ in
             companionEnrollment.invalidateIfSettingsChanged(settings: companionSettings)
         }
+        .onChange(of: companionEnrollment.activeConnectionID) { _, _ in
+            syncActiveCompanionConnectionToSettings()
+        }
         .fileImporter(
             isPresented: $isImportingTerminalPrivateKey,
             allowedContentTypes: [.item],
@@ -560,6 +602,17 @@ struct HermesSettingsView: View {
             get: { HermesHostEndpoints.tcpPort(from: companionSettings.apiURL, fallback: defaultHermesCompanionPort) },
             set: { newPort in
                 companionSettings.apiURL = HermesHostEndpoints.webSocketURLString(host: macHost, port: newPort)
+            }
+        )
+    }
+
+    private var activeCompanionConnectionBinding: Binding<String> {
+        Binding(
+            get: { companionEnrollment.activeConnectionID },
+            set: { newConnectionID in
+                guard canSwitchHosts else { return }
+                companionEnrollment.activateConnection(id: newConnectionID)
+                syncActiveCompanionConnectionToSettings()
             }
         )
     }
@@ -644,10 +697,12 @@ struct HermesSettingsView: View {
         }
     }
 
-    private func applyMacHostToServiceURLs() {
+    private func applyMacHostToServiceURLs(preserveCompanionEndpoint: Bool = false) {
         let apiPort = HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.apiGatewayPort, fallback: HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort))
         apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: macHost, port: apiPort, path: "/v1")
-        companionSettings.apiURL = HermesHostEndpoints.webSocketURLString(host: macHost, port: companionPortBinding.wrappedValue)
+        if preserveCompanionEndpoint == false {
+            companionSettings.apiURL = HermesHostEndpoints.webSocketURLString(host: macHost, port: companionPortBinding.wrappedValue)
+        }
         dashboardPort = HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.dashboardPort, fallback: dashboardPort)
         officePort = HermesHostEndpoints.tcpPort(from: hostDefinedServicePorts.officePort, fallback: officePort)
     }
@@ -707,15 +762,32 @@ struct HermesSettingsView: View {
         return status.behindBy == 0 ? .igOnlineGreen : .igGradOrange
     }
 
+    private func syncActiveCompanionConnectionToSettings() {
+        guard let connection = companionEnrollment.connection(for: companionEnrollment.activeConnectionID) else {
+            companionSettings.deviceSecret = ""
+            return
+        }
+        companionSettings.apiURL = connection.identityState.serverEndpoint
+        companionSettings.deviceSecret = HermesSettingsPersistence.loadCompanionDeviceSecret(deviceID: connection.id)
+        if let host = URL(string: connection.identityState.serverEndpoint)?.host, host.isEmpty == false {
+            macHost = host
+            applyMacHostToServiceURLs(preserveCompanionEndpoint: true)
+        }
+    }
+
     private func handleCompanionQRCode(_ scannedText: String) {
         isScanningCompanionQRCode = false
         do {
             let payload = try HermesCompanionOnboardingPayload.decode(from: scannedText)
-            companionSettings.apiURL = payload.endpoint
-            if let host = URL(string: payload.endpoint)?.host, host.isEmpty == false {
-                macHost = host
+            let shouldActivate = canSwitchHosts || companionEnrollment.identityState.hasPairing == false
+            if shouldActivate {
+                companionSettings.apiURL = payload.endpoint
+                if let host = URL(string: payload.endpoint)?.host, host.isEmpty == false {
+                    macHost = host
+                    applyMacHostToServiceURLs(preserveCompanionEndpoint: true)
+                }
             }
-            companionEnrollment.enroll(onboarding: payload, deviceName: UIDevice.current.name)
+            companionEnrollment.enroll(onboarding: payload, deviceName: UIDevice.current.name, activateWhenFinished: shouldActivate)
         } catch {
             companionEnrollment.resetAfterPairingFailure(message: error.localizedDescription)
         }
@@ -826,6 +898,82 @@ private final class QRScannerPreviewView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         previewLayer.videoGravity = .resizeAspectFill
+    }
+}
+
+private struct HermesCompanionSavedHostRow: View {
+    let connection: HermesCompanionSavedConnection
+    let isActive: Bool
+    let isBusy: Bool
+    let canForget: Bool
+    let onCheckApproval: () -> Void
+    let onForget: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: statusIcon)
+                .foregroundStyle(statusColor)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(connection.displayName)
+                        .font(.subheadline.weight(.semibold))
+                    if isActive {
+                        Text("Active")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.igActionBlue))
+                    }
+                }
+                Text(connection.identityState.serverEndpoint)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(connection.statusLabel)
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
+            }
+
+            Spacer()
+
+            Button("Check") {
+                onCheckApproval()
+            }
+            .buttonStyle(.bordered)
+            .disabled(isBusy)
+
+            Button(role: .destructive) {
+                onForget()
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.bordered)
+            .disabled(isBusy || !canForget)
+            .accessibilityLabel("Forget \(connection.displayName)")
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.hermesSurfaceInput.opacity(0.72))
+        )
+    }
+
+    private var statusIcon: String {
+        if connection.identityState.revokedAt != nil { return "xmark.circle.fill" }
+        if connection.identityState.isEnrolled { return "checkmark.circle.fill" }
+        if connection.identityState.isPendingApproval { return "clock.fill" }
+        return "questionmark.circle"
+    }
+
+    private var statusColor: Color {
+        if connection.identityState.revokedAt != nil { return .igDestructive }
+        if connection.identityState.isEnrolled { return .igOnlineGreen }
+        if connection.identityState.isPendingApproval { return .igGradOrange }
+        return .hermesSecondaryText
     }
 }
 

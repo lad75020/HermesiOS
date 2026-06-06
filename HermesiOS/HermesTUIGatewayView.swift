@@ -243,7 +243,6 @@ final class HermesTUIGatewayStore {
     private var receiveTask: Task<Void, Never>?
     private var requestCounter = 0
     private var pendingResponses: [String: CheckedContinuation<JSONValue, Error>] = [:]
-    private var cachedTokenByBaseURL: [String: String] = [:]
     private var activeAssistantMessageID: UUID?
     private var activeStreamMessageID: UUID?
     private var activeStreamContentType: String?
@@ -377,20 +376,34 @@ final class HermesTUIGatewayStore {
         connectionStatus = "Connecting"
         do {
             let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let wsURL = try await webSocketURL(baseURL: baseURL, apiSettings: apiSettings)
-            let session = HermesNetworkSessionFactory.session(for: apiSettings)
-            let task = session.webSocketTask(with: wsURL)
-            webSocketTask = task
-            task.resume()
-            isConnected = true
-            isConnecting = false
-            connectionStatus = "Connected"
-            receiveTask?.cancel()
-            receiveTask = Task { await receiveLoop(task) }
-            if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                await createGatewaySession()
+            let candidateURLs = try await webSocketURLs(baseURL: baseURL, apiSettings: apiSettings)
+            var lastConnectionError: Error?
+
+            for wsURL in candidateURLs {
+                do {
+                    let session = HermesNetworkSessionFactory.session(for: apiSettings)
+                    let task = session.webSocketTask(with: wsURL)
+                    webSocketTask = task
+                    task.resume()
+                    isConnected = true
+                    isConnecting = false
+                    connectionStatus = "Connected"
+                    receiveTask?.cancel()
+                    receiveTask = Task { await receiveLoop(task) }
+                    if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        try await createGatewaySessionThrowing()
+                    }
+                    await refreshActiveSessions()
+                    return
+                } catch {
+                    lastConnectionError = error
+                    closeFailedConnection(error)
+                    isConnecting = true
+                    connectionStatus = "Trying fallback"
+                }
             }
-            await refreshActiveSessions()
+
+            throw lastConnectionError ?? HermesTUIGatewayError.requestFailed("Unable to connect to the TUI Gateway WebSocket.")
         } catch {
             isConnecting = false
             isConnected = false
@@ -434,21 +447,25 @@ final class HermesTUIGatewayStore {
 
     private func createGatewaySession() async {
         do {
-            let result = try await request("session.create", params: [:], timeoutSeconds: 120)
-            let object = result.objectValue
-            sessionID = object["session_id"]?.stringValue ?? ""
-            storedSessionID = object["stored_session_id"]?.stringValue ?? ""
-            sessionTitle = "TUI session \(shortSessionID(sessionID))"
-            messages.removeAll()
-            resetStreamGrouping()
-            isStreaming = false
-            connectionStatus = sessionID.isEmpty ? "Session create failed" : "Session ready"
-            appendEvent(title: "Session ready", content: "Created live TUI session \(shortSessionID(sessionID)).", eventType: "session.create")
-            await refreshActiveSessions()
+            try await createGatewaySessionThrowing()
         } catch {
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Session create failed"
         }
+    }
+
+    private func createGatewaySessionThrowing() async throws {
+        let result = try await request("session.create", params: [:], timeoutSeconds: 120)
+        let object = result.objectValue
+        sessionID = object["session_id"]?.stringValue ?? ""
+        storedSessionID = object["stored_session_id"]?.stringValue ?? ""
+        sessionTitle = "TUI session \(shortSessionID(sessionID))"
+        messages.removeAll()
+        resetStreamGrouping()
+        isStreaming = false
+        connectionStatus = sessionID.isEmpty ? "Session create failed" : "Session ready"
+        appendEvent(title: "Session ready", content: "Created live TUI session \(shortSessionID(sessionID)).", eventType: "session.create")
+        await refreshActiveSessions()
     }
 
     private func submit(_ text: String, attachment: HermesPromptAttachment? = nil) async {
@@ -672,19 +689,22 @@ final class HermesTUIGatewayStore {
         let data = try JSONEncoder().encode(request)
         guard let text = String(data: data, encoding: .utf8) else { throw HermesTUIGatewayError.requestFailed("Could not encode JSON-RPC request.") }
         return try await withTaskCancellationHandler {
-            try await withThrowingTaskGroup(of: JSONValue.self) { group in
-                group.addTask { [weak self] in
-                    guard let self else { throw HermesTUIGatewayError.notConnected }
-                    return try await self.waitForResponse(id: id)
+            try await withCheckedThrowingContinuation { continuation in
+                pendingResponses[id] = continuation
+                Task {
+                    do {
+                        try await task.send(.string(text))
+                    } catch {
+                        resolvePendingResponse(id: id, result: .failure(error))
+                    }
                 }
-                group.addTask {
-                    try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                    throw HermesTUIGatewayError.requestFailed("Timed out waiting for \(method).")
+                Task {
+                    try? await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
+                    resolvePendingResponse(
+                        id: id,
+                        result: .failure(HermesTUIGatewayError.requestFailed("Timed out waiting for \(method)."))
+                    )
                 }
-                try await task.send(.string(text))
-                guard let value = try await group.next() else { throw HermesTUIGatewayError.requestFailed("No response for \(method).") }
-                group.cancelAll()
-                return value
             }
         } onCancel: {
             Task { @MainActor in
@@ -695,10 +715,53 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func waitForResponse(id: String) async throws -> JSONValue {
-        try await withCheckedThrowingContinuation { continuation in
-            pendingResponses[id] = continuation
+    private func resolvePendingResponse(id: String, result: Result<JSONValue, Error>) {
+        guard let continuation = pendingResponses.removeValue(forKey: id) else { return }
+        switch result {
+        case .success(let value):
+            continuation.resume(returning: value)
+        case .failure(let error):
+            continuation.resume(throwing: error)
         }
+    }
+
+    private func closeFailedConnection(_ error: Error) {
+        receiveTask?.cancel()
+        receiveTask = nil
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTask = nil
+        isConnected = false
+        isStreaming = false
+        failPending(error)
+    }
+
+    private func webSocketURLs(baseURL: URL, apiSettings: HermesAPISettings) async throws -> [URL] {
+        var urls: [URL] = []
+        var lastError: Error?
+        for candidate in dashboardBaseURLCandidates(from: baseURL) {
+            do {
+                let url = try await webSocketURL(baseURL: candidate, apiSettings: apiSettings)
+                if !urls.contains(url) { urls.append(url) }
+            } catch {
+                lastError = error
+            }
+        }
+        guard !urls.isEmpty else { throw lastError ?? HermesTUIGatewayError.invalidWebSocketURL }
+        return urls
+    }
+
+    private func dashboardBaseURLCandidates(from baseURL: URL) -> [URL] {
+        var candidates = [baseURL]
+        guard baseURL.scheme?.lowercased() == "https",
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        else { return candidates }
+        components.scheme = "http"
+        guard let plaintextURL = components.url,
+              HermesEndpointSecurity.isPlaintextTransportAllowed(for: plaintextURL),
+              !candidates.contains(plaintextURL)
+        else { return candidates }
+        candidates.append(plaintextURL)
+        return candidates
     }
 
     private func webSocketURL(baseURL: URL, apiSettings: HermesAPISettings) async throws -> URL {
@@ -723,8 +786,6 @@ final class HermesTUIGatewayStore {
     }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
-        let cacheKey = baseURL.absoluteString
-        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (data, response) = try await session.data(from: baseURL)
         try validate(response: response)
@@ -735,9 +796,7 @@ final class HermesTUIGatewayStore {
         guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else {
             throw HermesTUIGatewayError.requestFailed("The dashboard session token was not found in the dashboard HTML.")
         }
-        let token = String(html[tokenRange])
-        cachedTokenByBaseURL[cacheKey] = token
-        return token
+        return String(html[tokenRange])
     }
 
     private func fetchWebSocketTicket(baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws -> String {
@@ -998,6 +1057,50 @@ private struct HermesTUIWorkspaceButtonLabel: View {
     }
 }
 
+private struct HermesTUICompactStatusRow: View {
+    let items: [HermesStatusItem]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(items) { item in
+                HermesTUICompactStatusPill(item: item)
+            }
+        }
+    }
+}
+
+private struct HermesTUICompactStatusPill: View {
+    let item: HermesStatusItem
+
+    var body: some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(item.accent)
+                .frame(width: 2, height: 12)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(item.title.uppercased())
+                    .font(.system(size: 6, weight: .semibold))
+                    .tracking(0.35)
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(1)
+                Text(item.value)
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hermesLiquidGlass(cornerRadius: 8, tint: item.accent.opacity(0.08), interactive: false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.title): \(item.value)")
+    }
+}
+
 private struct HermesTUIGatewayView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Binding var apiSettings: HermesAPISettings
@@ -1007,6 +1110,7 @@ private struct HermesTUIGatewayView: View {
 
     @State private var isImportingAttachment = false
     @State private var dashboardSkills = HermesDashboardSkillsStore()
+    @State private var isPhoneComposerActionsExpanded = false
 
     private var store: HermesTUIGatewayStore { workspace.store }
     private var isPhoneLayout: Bool { horizontalSizeClass == .compact }
@@ -1029,24 +1133,38 @@ private struct HermesTUIGatewayView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
-                HermesTabHeader("TUI Gateway", systemImage: "terminal.fill")
-                Spacer(minLength: 8)
-                if !isPhoneLayout { workspaceControls }
+                if isPhoneLayout {
+                    Image(systemName: "terminal.fill")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(Color.igActionBlue)
+                        .frame(width: 34, height: 34)
+                        .accessibilityLabel("TUI Gateway")
+                    workspaceControls
+                } else {
+                    HermesTabHeader("TUI Gateway", systemImage: "terminal.fill")
+                    Spacer(minLength: 8)
+                    workspaceControls
+                }
                 if store.isConnecting || store.isStreaming || store.isResumingSession || store.isRefreshingSessions {
                     ProgressView().controlSize(.small)
                 }
+                if isPhoneLayout { Spacer(minLength: 0) }
             }
-            if isPhoneLayout { workspaceControls }
 
-            HermesStatusRow(items: [
+            statusRow(items: [
                 HermesStatusItem(title: "Session", value: store.sessionTitle, accent: .igActionBlue, marqueeCharacterLimit: 28),
                 HermesStatusItem(title: "Status", value: store.connectionStatus, accent: .igGradOrange, marqueeCharacterLimit: 24),
                 HermesStatusItem(title: "Events", value: "\(store.eventCount)", accent: .igGradPurple)
             ])
 
-            ViewThatFits {
-                HStack(spacing: 10) { controls }
-                VStack(alignment: .leading, spacing: 10) { controls }
+            if isPhoneLayout {
+                HStack(spacing: 8) { controls }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ViewThatFits {
+                    HStack(spacing: 10) { controls }
+                    VStack(alignment: .leading, spacing: 10) { controls }
+                }
             }
 
             if !store.lastErrorMessage.isEmpty {
@@ -1061,45 +1179,129 @@ private struct HermesTUIGatewayView: View {
     }
 
     @ViewBuilder
-    private var controls: some View {
-        Button(store.isConnected ? "Reconnect" : "Connect") {
-            store.disconnect()
-            store.connect(dashboardBaseURL: dashboardURLString, apiSettings: apiSettings)
+    private func statusRow(items: [HermesStatusItem]) -> some View {
+        if isPhoneLayout {
+            HermesTUICompactStatusRow(items: items)
+        } else {
+            HermesStatusRow(items: items)
         }
-        .hermesGlassProminentButton()
-        .disabled(store.isConnecting)
+    }
 
-        Button("New session") { store.createSession() }
-            .hermesGlassButton()
+    @ViewBuilder
+    private var controls: some View {
+        if isPhoneLayout {
+            Button {
+                store.disconnect()
+                store.connect(dashboardBaseURL: dashboardURLString, apiSettings: apiSettings)
+            } label: {
+                phoneControlIcon(
+                    store.isConnected ? "arrow.triangle.2.circlepath" : "antenna.radiowaves.left.and.right",
+                    tint: .igActionBlue,
+                    prominent: true
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(store.isConnecting)
+            .accessibilityLabel(store.isConnected ? "Reconnect TUI Gateway" : "Connect TUI Gateway")
+
+            Button { store.createSession() } label: {
+                phoneControlIcon("plus.bubble")
+            }
+            .buttonStyle(.plain)
             .disabled(!store.isConnected || store.isStreaming || store.isResumingSession)
+            .accessibilityLabel("New TUI Gateway session")
 
-        Button("Interrupt") { store.interruptSession() }
-            .hermesGlassButton()
+            Button { store.interruptSession() } label: {
+                phoneControlIcon("stop.circle")
+            }
+            .buttonStyle(.plain)
             .disabled(!store.isStreaming)
+            .accessibilityLabel("Interrupt TUI Gateway session")
 
-        Button("Close") { store.closeSession() }
-            .hermesGlassButton()
+            Button { store.closeSession() } label: {
+                phoneControlIcon("checkmark.circle")
+            }
+            .buttonStyle(.plain)
             .disabled(!store.isConnected || store.sessionID.isEmpty)
+            .accessibilityLabel("Done with TUI Gateway session")
+        } else {
+            Button(store.isConnected ? "Reconnect" : "Connect") {
+                store.disconnect()
+                store.connect(dashboardBaseURL: dashboardURLString, apiSettings: apiSettings)
+            }
+            .hermesGlassProminentButton()
+            .disabled(store.isConnecting)
 
-        Menu {
-            if store.activeSessions.isEmpty {
-                Text("No live sessions")
-            } else {
-                ForEach(store.activeSessions) { session in
-                    Button {
-                        store.activateSession(session)
-                    } label: {
-                        Label(session.title, systemImage: session.isCurrent ? "checkmark.circle.fill" : "circle")
-                    }
+            Button("New session") { store.createSession() }
+                .hermesGlassButton()
+                .disabled(!store.isConnected || store.isStreaming || store.isResumingSession)
+
+            Button("Interrupt") { store.interruptSession() }
+                .hermesGlassButton()
+                .disabled(!store.isStreaming)
+
+            Button("Close") { store.closeSession() }
+                .hermesGlassButton()
+                .disabled(!store.isConnected || store.sessionID.isEmpty)
+        }
+
+        if isPhoneLayout {
+            Menu {
+                liveSessionsMenuContent
+            } label: {
+                phoneControlIcon("rectangle.stack.badge.person.crop")
+            }
+            .buttonStyle(.plain)
+            .disabled(!store.isConnected)
+            .accessibilityLabel("Live TUI Gateway sessions")
+        } else {
+            Menu {
+                liveSessionsMenuContent
+            } label: {
+                Label("Live sessions", systemImage: "rectangle.stack.badge.person.crop")
+            }
+            .hermesGlassButton()
+            .disabled(!store.isConnected)
+            .accessibilityLabel("Live TUI Gateway sessions")
+        }
+    }
+
+    @ViewBuilder
+    private var liveSessionsMenuContent: some View {
+        if store.activeSessions.isEmpty {
+            Text("No live sessions")
+        } else {
+            ForEach(store.activeSessions) { session in
+                Button {
+                    store.activateSession(session)
+                } label: {
+                    Label(session.title, systemImage: session.isCurrent ? "checkmark.circle.fill" : "circle")
                 }
             }
-            Divider()
-            Button("Refresh live sessions") { store.refreshSessions() }
-        } label: {
-            Label("Live sessions", systemImage: "rectangle.stack.badge.person.crop")
         }
-        .hermesGlassButton()
-        .disabled(!store.isConnected)
+        Divider()
+        Button("Refresh live sessions") { store.refreshSessions() }
+    }
+
+    private func phoneControlIcon(_ systemImage: String, tint: Color = .primary, prominent: Bool = false) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(prominent ? Color.white : tint)
+            .frame(width: 34, height: 34)
+            .background {
+                Circle()
+                    .fill(prominent ? Color.igActionBlue.opacity(0.92) : Color.hermesSurfaceInput.opacity(0.54))
+            }
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.white.opacity(prominent ? 0.20 : 0.14), lineWidth: 1)
+            }
+            .hermesLiquidGlass(
+                cornerRadius: 17,
+                tint: prominent ? Color.igActionBlue.opacity(0.26) : Color.white.opacity(0.06),
+                interactive: true
+            )
+            .contentShape(Circle())
     }
 
     private var transcript: some View {
@@ -1186,29 +1388,74 @@ private struct HermesTUIGatewayView: View {
                         }
                 }
 
-                VStack(spacing: 8) {
-                    Button { isImportingAttachment = true } label: {
-                        Image(systemName: workspace.selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                            .font(.headline)
-                            .frame(width: 42, height: 42)
-                    }
-                    .hermesGlassButton()
-                    .disabled(!store.isConnected || store.isStreaming)
-                    .accessibilityLabel(workspace.selectedAttachment == nil ? "Attach file" : "Change attached file")
-
-                    Button { submitPrompt() } label: {
-                        Image(systemName: "paperplane.fill")
-                            .font(.headline)
-                            .frame(width: 42, height: 42)
-                    }
-                    .hermesGlassProminentButton()
-                    .disabled(!store.canSendPrompt || (workspace.promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && workspace.selectedAttachment == nil))
-                    .accessibilityLabel("Send through TUI Gateway")
-                }
+                composerActions
             }
         }
         .padding(14)
         .background(.ultraThinMaterial)
+    }
+
+    @ViewBuilder
+    private var composerActions: some View {
+        if isPhoneLayout {
+            if isPhoneComposerActionsExpanded {
+                HStack(spacing: 8) {
+                    attachButton(frame: 42)
+                    sendButton(frame: 42)
+                }
+                .transition(.scale(scale: 0.82, anchor: .trailing).combined(with: .opacity))
+            } else {
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                        isPhoneComposerActionsExpanded = true
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.headline)
+                        .frame(width: 42, height: 42)
+                }
+                .hermesGlassProminentButton()
+                .disabled(!store.isConnected || store.isStreaming)
+                .accessibilityLabel("Show TUI Gateway prompt actions")
+            }
+        } else {
+            VStack(spacing: 8) {
+                attachButton(frame: 42)
+                sendButton(frame: 42)
+            }
+        }
+    }
+
+    private func attachButton(frame: CGFloat) -> some View {
+        Button {
+            if isPhoneLayout {
+                withAnimation(.easeOut(duration: 0.16)) { isPhoneComposerActionsExpanded = false }
+            }
+            isImportingAttachment = true
+        } label: {
+            Image(systemName: workspace.selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                .font(.headline)
+                .frame(width: frame, height: frame)
+        }
+        .hermesGlassButton()
+        .disabled(!store.isConnected || store.isStreaming)
+        .accessibilityLabel(workspace.selectedAttachment == nil ? "Attach file" : "Change attached file")
+    }
+
+    private func sendButton(frame: CGFloat) -> some View {
+        Button {
+            if isPhoneLayout {
+                withAnimation(.easeOut(duration: 0.16)) { isPhoneComposerActionsExpanded = false }
+            }
+            submitPrompt()
+        } label: {
+            Image(systemName: "paperplane.fill")
+                .font(.headline)
+                .frame(width: frame, height: frame)
+        }
+        .hermesGlassProminentButton()
+        .disabled(!store.canSendPrompt || (workspace.promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && workspace.selectedAttachment == nil))
+        .accessibilityLabel("Send through TUI Gateway")
     }
 
     private var activeSkillQuery: String? { workspace.promptText.hermesActiveSlashSkillQuery }

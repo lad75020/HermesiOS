@@ -4,13 +4,5 @@
 <dict>
 	<key>aps-environment</key>
 	<string>production</string>
-	<key>com.apple.developer.applesignin</key>
-	<array>
-		<string></string>
-	</array>
-	<key>keychain-access-groups</key>
-	<array>
-		<string>$(AppIdentifierPrefix)fr.dubertrand.HermesiOS</string>
-	</array>
 </dict>
 </plist>

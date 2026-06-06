@@ -565,7 +565,7 @@ struct HermesSettingsView: View {
     }
 
     private var dashboardURL: String {
-        HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
+        HermesHostEndpoints.dashboardURLString(host: macHost, port: dashboardPort)
     }
 
     private var companionDeviceStatusTitle: String {

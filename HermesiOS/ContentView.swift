@@ -270,7 +270,11 @@ struct ContentView: View {
     }
 
     private var isAnyTUIWorkspaceBusy: Bool {
-        tuiWorkspaces.contains { $0.store.isConnecting || $0.store.isStreaming || $0.store.isResumingSession || $0.store.isRefreshingSessions }
+        tuiWorkspaces.contains(where: isTUIWorkspaceBusy)
+    }
+
+    private var areAllTUIWorkspacesBusy: Bool {
+        !tuiWorkspaces.contains { !isTUIWorkspaceBusy($0) }
     }
 
     private var isAnyTUIWorkspaceStreaming: Bool {
@@ -333,7 +337,7 @@ struct ContentView: View {
     }
 
     private var dashboardURLString: String {
-        HermesHostEndpoints.httpURLString(host: macHost, port: dashboardPort)
+        HermesHostEndpoints.dashboardURLString(host: macHost, port: dashboardPort)
     }
 
     private var companionServicePortsLoadKey: String {
@@ -382,7 +386,7 @@ struct ContentView: View {
                 identityState: companionEnrollment.identityState
             )
             let apiPort = HermesHostEndpoints.tcpPort(from: ports.apiGatewayPort, fallback: HermesHostEndpoints.tcpPort(from: apiSettings.baseURL, fallback: defaultHermesAPIPort))
-            let fetchedDashboardPort = HermesHostEndpoints.tcpPort(from: ports.dashboardPort, fallback: dashboardPort)
+            let fetchedDashboardPort = HermesHostEndpoints.remoteDashboardPort(from: ports.dashboardPort, host: macHost, fallback: dashboardPort)
             let fetchedOfficePort = HermesHostEndpoints.tcpPort(from: ports.officePort, fallback: officePort)
             apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: macHost, port: apiPort, path: "/v1")
             dashboardPort = fetchedDashboardPort
@@ -476,8 +480,10 @@ struct ContentView: View {
                         searchSession: dashboardHistorySearchSession,
                         isResponsesStreaming: !responseWorkspaces.contains { !$0.session.isSending },
                         isChatStreaming: chatSession.isSending,
+                        isTUIGatewayBusy: areAllTUIWorkspacesBusy,
                         onResumeResponses: resumeConversationInResponses,
-                        onResumeChat: resumeConversationInChat
+                        onResumeChat: resumeConversationInChat,
+                        onResumeTUI: resumeConversationInTUIGateway
                     )
                 }
                 .tabItem {
@@ -640,6 +646,10 @@ struct ContentView: View {
         }
     }
 
+    private func isTUIWorkspaceBusy(_ workspace: HermesTUIWorkspace) -> Bool {
+        workspace.store.isConnecting || workspace.store.isStreaming || workspace.store.isResumingSession || workspace.store.isRefreshingSessions
+    }
+
     @ViewBuilder
     private func workspaceDetail(for section: WorkspaceSection) -> some View {
         switch section {
@@ -672,8 +682,10 @@ struct ContentView: View {
                 searchSession: dashboardHistorySearchSession,
                 isResponsesStreaming: !responseWorkspaces.contains { !$0.session.isSending },
                 isChatStreaming: chatSession.isSending,
+                isTUIGatewayBusy: areAllTUIWorkspacesBusy,
                 onResumeResponses: resumeConversationInResponses,
-                onResumeChat: resumeConversationInChat
+                onResumeChat: resumeConversationInChat,
+                onResumeTUI: resumeConversationInTUIGateway
             )
         case .web:
             HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString, officeURLString: officeURLString)
@@ -771,6 +783,28 @@ struct ContentView: View {
         guard !chatSession.isSending else { return }
         chatSession.resumeConversation(from: result)
         openChatWorkspace()
+    }
+
+    private func resumeConversationInTUIGateway(_ result: HermesDashboardConversationResult) {
+        let sessionID = [result.sessionID, result.session.id]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
+        guard !sessionID.isEmpty else { return }
+
+        let workspace = tuiWorkspaces.first(where: { $0.id == selectedTUIWorkspaceID && !isTUIWorkspaceBusy($0) })
+            ?? tuiWorkspaces.first(where: { !isTUIWorkspaceBusy($0) })
+        guard let workspace else { return }
+
+        selectedTUIWorkspaceID = workspace.id
+        workspace.acknowledgeCurrentStatus()
+        workspace.store.resumeStoredSession(
+            sessionID,
+            title: result.sessionFriendlyName,
+            dashboardBaseURL: dashboardURLString,
+            apiSettings: apiSettings
+        )
+        selectedWorkspace = .tuiGateway
+        selectedPhoneSection = .tuiGateway
     }
 
     private func openChatWorkspace() {

@@ -11,6 +11,7 @@ let defaultHermesMacHost = ".ts.net"
 
 let hermesDashboardPortStorageKey = "hermes.history.dashboard.port"
 let defaultHermesDashboardPort = "9120"
+let legacyLocalHermesDashboardPort = "9119"
 
 let hermesOfficePortStorageKey = "hermes.office.port"
 let defaultHermesOfficePort = "9116"
@@ -58,6 +59,19 @@ enum HermesHostEndpoints {
 
     static func httpURLString(host: String, port: String, path: String = "") -> String {
         urlString(scheme: "https", host: host, port: port, path: path)
+    }
+
+    static func dashboardURLString(host: String, port: String, path: String = "") -> String {
+        urlString(scheme: "https", host: host, port: remoteDashboardPort(from: port, host: host), path: path)
+    }
+
+    static func remoteDashboardPort(from value: String, host: String, fallback: String = defaultHermesDashboardPort) -> String {
+        let port = tcpPort(from: value, fallback: fallback)
+        let normalizedHost = normalizedHost(host)
+        guard port == legacyLocalHermesDashboardPort,
+              !HermesEndpointSecurity.isLoopbackHost(normalizedHost)
+        else { return port }
+        return defaultHermesDashboardPort
     }
 
     static func webSocketURLString(host: String, port: String, path: String = "/ws") -> String {

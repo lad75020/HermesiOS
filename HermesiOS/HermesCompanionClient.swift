@@ -3463,47 +3463,7 @@ enum HermesCompanionSessionFactory {
                 throw HermesCompanionClientError.invalidResponse
             }
 
-            let responseData: Data
-            if url.scheme?.lowercased() == "ws", HermesEndpointSecurity.isPlaintextTransportAllowed(for: url) {
-                // Tailscale exposes the companion as a plain WebSocket over the
-                // encrypted tailnet. URLSession applies ATS before the VPN layer is
-                // considered, so use Network.framework for explicitly allowed WS hosts.
-                responseData = try await networkWebSocketRoundTrip(url: url, text: text)
-            } else {
-                let session = makeSession()
-                defer { session.invalidateAndCancel() }
-
-                let task = session.webSocketTask(with: url)
-                let requestState = HermesCompanionRequestState()
-                let timeoutTask = Task {
-                    try? await Task.sleep(nanoseconds: 20_000_000_000)
-                    guard Task.isCancelled == false else { return }
-                    guard requestState.markTimedOut() else { return }
-                    task.cancel(with: .goingAway, reason: nil)
-                }
-                defer { timeoutTask.cancel() }
-
-                do {
-                    task.resume()
-                    try await task.send(.string(text))
-
-                    let message = try await task.receive()
-                    _ = requestState.markResumed()
-                    switch message {
-                    case .data(let data):
-                        responseData = data
-                    case .string(let text):
-                        responseData = Data(text.utf8)
-                    @unknown default:
-                        throw HermesCompanionClientError.invalidResponse
-                    }
-                } catch {
-                    if requestState.didTimeout {
-                        throw HermesCompanionClientError.requestTimedOut
-                    }
-                    throw error
-                }
-            }
+            let responseData = try await companionWebSocketRoundTrip(url: url, text: text)
 
             let response = try JSONDecoder().decode(HermesCompanionOutgoingEnvelope.self, from: responseData)
             guard response.ok else {
@@ -3545,33 +3505,74 @@ enum HermesCompanionSessionFactory {
         return try await request(url: url, deviceID: state.deviceID, deviceSecret: secret, type: type, payload: payload)
     }
 
-    private static func networkWebSocketRoundTrip(url: URL, text: String) async throws -> Data {
-        let portValue = url.port ?? (url.scheme?.lowercased() == "wss" ? 443 : 80)
+    private static func companionWebSocketRoundTrip(url: URL, text: String) async throws -> Data {
+        guard let scheme = url.scheme?.lowercased() else {
+            throw HermesCompanionClientError.invalidURL
+        }
+        if scheme == "ws", HermesEndpointSecurity.isPlaintextTransportAllowed(for: url) {
+            return try await plaintextWebSocketRoundTrip(url: url, text: text)
+        }
+        return try await urlSessionWebSocketRoundTrip(url: url, text: text)
+    }
+
+    private static func urlSessionWebSocketRoundTrip(url: URL, text: String) async throws -> Data {
+        let session = makeSession()
+        defer { session.invalidateAndCancel() }
+
+        let task = session.webSocketTask(with: url)
+        let requestState = HermesCompanionRequestState()
+        let timeoutTask = Task {
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            guard Task.isCancelled == false else { return }
+            guard requestState.markTimedOut() else { return }
+            task.cancel(with: .goingAway, reason: nil)
+        }
+        defer { timeoutTask.cancel() }
+
+        do {
+            task.resume()
+            try await task.send(.string(text))
+
+            let message = try await task.receive()
+            _ = requestState.markResumed()
+            switch message {
+            case .data(let data):
+                return data
+            case .string(let text):
+                return Data(text.utf8)
+            @unknown default:
+                throw HermesCompanionClientError.invalidResponse
+            }
+        } catch {
+            if requestState.didTimeout {
+                throw HermesCompanionClientError.requestTimedOut
+            }
+            throw error
+        }
+    }
+
+    private static func plaintextWebSocketRoundTrip(url: URL, text: String) async throws -> Data {
+        let portValue = url.port ?? 80
         guard let host = url.host,
               let port = NWEndpoint.Port(rawValue: UInt16(portValue)) else {
             throw HermesCompanionClientError.invalidURL
         }
 
-        let tcpOptions = NWProtocolTCP.Options()
-        let parameters = NWParameters(tls: nil, tcp: tcpOptions)
-        let webSocketOptions = NWProtocolWebSocket.Options(.version13)
-        webSocketOptions.autoReplyPing = true
-        webSocketOptions.maximumMessageSize = 1 << 20
-        parameters.defaultProtocolStack.applicationProtocols.insert(webSocketOptions, at: 0)
-
-        let connection = NWConnection(
-            host: NWEndpoint.Host(host),
-            port: port,
-            using: parameters
-        )
+        let parameters = NWParameters.tcp
+        let connection = NWConnection(host: NWEndpoint.Host(host), port: port, using: parameters)
         defer { connection.cancel() }
 
-        try await waitUntilReady(connection)
-        try await sendWebSocketText(text, on: connection)
-        return try await receiveWebSocketData(from: connection)
+        let key = webSocketKey()
+        try await waitUntilTCPReady(connection)
+        let handshake = plaintextWebSocketHandshake(url: url, host: host, port: portValue, key: key)
+        try await sendTCPData(Data(handshake.utf8), on: connection)
+        let headers = try await receiveHTTPHeaders(from: connection)
+        try validatePlaintextWebSocketHandshake(headers, expectedKey: key)
+        try await sendTCPData(maskedWebSocketFrame(opcode: 0x1, payload: Data(text.utf8)), on: connection)
+        return try await receivePlaintextWebSocketMessage(from: connection)
     }
 
-    private static func waitUntilReady(_ connection: NWConnection) async throws {
+    private static func waitUntilTCPReady(_ connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let requestState = HermesCompanionRequestState()
             connection.stateUpdateHandler = { state in
@@ -3584,7 +3585,7 @@ enum HermesCompanionSessionFactory {
                     continuation.resume(throwing: error)
                 case .cancelled:
                     guard requestState.markResumed() else { return }
-                    continuation.resume(throwing: HermesCompanionClientError.invalidResponse)
+                    continuation.resume(throwing: requestState.didTimeout ? HermesCompanionClientError.requestTimedOut : HermesCompanionClientError.invalidResponse)
                 default:
                     break
                 }
@@ -3598,24 +3599,17 @@ enum HermesCompanionSessionFactory {
         }
     }
 
-    private static func sendWebSocketText(_ text: String, on connection: NWConnection) async throws {
-        let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
-        let context = NWConnection.ContentContext(identifier: "companion-request", metadata: [metadata])
+    private static func sendTCPData(_ data: Data, on connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let requestState = HermesCompanionRequestState()
-            connection.send(
-                content: Data(text.utf8),
-                contentContext: context,
-                isComplete: true,
-                completion: .contentProcessed { error in
-                    guard requestState.markResumed() else { return }
-                    if let error {
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume()
-                    }
+            connection.send(content: data, completion: .contentProcessed { error in
+                guard requestState.markResumed() else { return }
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
                 }
-            )
+            })
             networkQueue.asyncAfter(deadline: .now() + 15) {
                 guard requestState.markTimedOut() else { return }
                 connection.cancel()
@@ -3624,27 +3618,20 @@ enum HermesCompanionSessionFactory {
         }
     }
 
-    private static func receiveWebSocketData(from connection: NWConnection) async throws -> Data {
+    private static func receiveTCPData(from connection: NWConnection, maximumLength: Int) async throws -> Data {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
             let requestState = HermesCompanionRequestState()
-            connection.receiveMessage { data, context, _, error in
+            connection.receive(minimumIncompleteLength: 1, maximumLength: maximumLength) { data, _, isComplete, error in
                 guard requestState.markResumed() else { return }
                 if let error {
                     continuation.resume(throwing: error)
                     return
                 }
-
-                if let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata,
-                   metadata.opcode == .close {
-                    continuation.resume(throwing: HermesCompanionClientError.invalidResponse)
+                if let data, data.isEmpty == false {
+                    continuation.resume(returning: data)
                     return
                 }
-
-                guard let data, data.isEmpty == false else {
-                    continuation.resume(throwing: HermesCompanionClientError.invalidResponse)
-                    return
-                }
-                continuation.resume(returning: data)
+                continuation.resume(throwing: isComplete ? HermesCompanionClientError.invalidResponse : HermesCompanionClientError.requestTimedOut)
             }
             networkQueue.asyncAfter(deadline: .now() + 15) {
                 guard requestState.markTimedOut() else { return }
@@ -3652,6 +3639,142 @@ enum HermesCompanionSessionFactory {
                 continuation.resume(throwing: HermesCompanionClientError.requestTimedOut)
             }
         }
+    }
+
+    private static func receiveExactTCPData(length: Int, from connection: NWConnection) async throws -> Data {
+        var buffer = Data()
+        while buffer.count < length {
+            let chunk = try await receiveTCPData(from: connection, maximumLength: length - buffer.count)
+            buffer.append(chunk)
+        }
+        return buffer
+    }
+
+    private static func receiveHTTPHeaders(from connection: NWConnection) async throws -> String {
+        let terminator = Data("\r\n\r\n".utf8)
+        var buffer = Data()
+        while buffer.range(of: terminator) == nil {
+            let chunk = try await receiveTCPData(from: connection, maximumLength: 4096)
+            buffer.append(chunk)
+            guard buffer.count <= 65_536 else {
+                throw HermesCompanionClientError.invalidResponse
+            }
+        }
+        guard let text = String(data: buffer, encoding: .utf8) else {
+            throw HermesCompanionClientError.invalidResponse
+        }
+        return text
+    }
+
+    private static func plaintextWebSocketHandshake(url: URL, host: String, port: Int, key: String) -> String {
+        let querySuffix = url.query.map { "?\($0)" } ?? ""
+        let path = (url.path.isEmpty ? "/" : url.path) + querySuffix
+        let hostHeader = webSocketHostHeader(host: host, port: port)
+        return "GET \(path) HTTP/1.1\r\n"
+            + "Host: \(hostHeader)\r\n"
+            + "Upgrade: websocket\r\n"
+            + "Connection: Upgrade\r\n"
+            + "Sec-WebSocket-Key: \(key)\r\n"
+            + "Sec-WebSocket-Version: 13\r\n"
+            + "User-Agent: HermesiOS Host Companion\r\n"
+            + "\r\n"
+    }
+
+    private static func webSocketHostHeader(host: String, port: Int) -> String {
+        let normalizedHost = host.contains(":") && host.hasPrefix("[") == false ? "[\(host)]" : host
+        return port == 80 ? normalizedHost : "\(normalizedHost):\(port)"
+    }
+
+    private static func validatePlaintextWebSocketHandshake(_ headers: String, expectedKey: String) throws {
+        let lines = headers.components(separatedBy: "\r\n")
+        guard let statusLine = lines.first,
+              statusLine.contains(" 101 ") || statusLine.hasSuffix(" 101") || statusLine.contains(" 101 Switching Protocols") else {
+            throw HermesCompanionClientError.invalidResponse
+        }
+        var headerFields: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard let colonIndex = line.firstIndex(of: ":") else { continue }
+            let name = String(line[..<colonIndex]).lowercased()
+            let value = line[line.index(after: colonIndex)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            headerFields[name] = value
+        }
+        let expectedAccept = webSocketAcceptValue(for: expectedKey)
+        guard headerFields["sec-websocket-accept"] == expectedAccept else {
+            throw HermesCompanionClientError.invalidResponse
+        }
+    }
+
+    private static func receivePlaintextWebSocketMessage(from connection: NWConnection) async throws -> Data {
+        while true {
+            let header = try await receiveExactTCPData(length: 2, from: connection)
+            let firstByte = header[header.startIndex]
+            let secondByte = header[header.index(after: header.startIndex)]
+            let isFinal = (firstByte & 0x80) != 0
+            let opcode = firstByte & 0x0F
+            var payloadLength = Int(secondByte & 0x7F)
+            if payloadLength == 126 {
+                let lengthData = try await receiveExactTCPData(length: 2, from: connection)
+                payloadLength = Int(UInt16(lengthData[0]) << 8 | UInt16(lengthData[1]))
+            } else if payloadLength == 127 {
+                let lengthData = try await receiveExactTCPData(length: 8, from: connection)
+                payloadLength = lengthData.reduce(0) { ($0 << 8) | Int($1) }
+            }
+            let isMasked = (secondByte & 0x80) != 0
+            let mask = isMasked ? try await receiveExactTCPData(length: 4, from: connection) : Data()
+            var payload = payloadLength > 0 ? try await receiveExactTCPData(length: payloadLength, from: connection) : Data()
+            if isMasked {
+                for index in payload.indices {
+                    payload[index] ^= mask[index % 4]
+                }
+            }
+
+            switch opcode {
+            case 0x1, 0x2:
+                guard isFinal else { throw HermesCompanionClientError.invalidResponse }
+                return payload
+            case 0x8:
+                throw HermesCompanionClientError.invalidResponse
+            case 0x9:
+                try await sendTCPData(maskedWebSocketFrame(opcode: 0xA, payload: payload), on: connection)
+            case 0xA:
+                continue
+            default:
+                throw HermesCompanionClientError.invalidResponse
+            }
+        }
+    }
+
+    private static func maskedWebSocketFrame(opcode: UInt8, payload: Data) -> Data {
+        var frame = Data([0x80 | opcode])
+        let payloadCount = payload.count
+        let mask = Data((0..<4).map { _ in UInt8.random(in: 0...255) })
+        if payloadCount < 126 {
+            frame.append(0x80 | UInt8(payloadCount))
+        } else if payloadCount <= UInt16.max {
+            frame.append(0x80 | 126)
+            frame.append(UInt8((payloadCount >> 8) & 0xFF))
+            frame.append(UInt8(payloadCount & 0xFF))
+        } else {
+            frame.append(0x80 | 127)
+            for shift in stride(from: 56, through: 0, by: -8) {
+                frame.append(UInt8((UInt64(payloadCount) >> UInt64(shift)) & 0xFF))
+            }
+        }
+        frame.append(mask)
+        for (offset, byte) in payload.enumerated() {
+            frame.append(byte ^ mask[offset % 4])
+        }
+        return frame
+    }
+
+    private static func webSocketKey() -> String {
+        Data((0..<16).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
+    }
+
+    private static func webSocketAcceptValue(for key: String) -> String {
+        let magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+        let digest = Insecure.SHA1.hash(data: Data((key + magic).utf8))
+        return Data(digest).base64EncodedString()
     }
 
     static func deviceSecret(from settings: HermesCompanionSettings, deviceID: String? = nil) -> String {

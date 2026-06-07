@@ -77,7 +77,7 @@ final class HermesStatusMonitor {
     ) async {
         async let apiIsUp = checkAPIServer(settings: apiSettings)
         async let companionIsUp = checkCompanion(settings: companionSettings, identityState: identityState)
-        async let dashboardIsUp = checkDashboard(baseURLString: dashboardURLString)
+        async let dashboardIsUp = checkDashboard(baseURLString: dashboardURLString, apiSettings: apiSettings)
 
         apiServerStatus = await apiIsUp ? .up : .down
         companionStatus = await companionIsUp ? .up : .down
@@ -123,7 +123,7 @@ final class HermesStatusMonitor {
         }
     }
 
-    private func checkDashboard(baseURLString: String) async -> Bool {
+    private func checkDashboard(baseURLString: String, apiSettings: HermesAPISettings) async -> Bool {
         let trimmed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return false }
         isDashboardProbeActive = true
@@ -134,7 +134,7 @@ final class HermesStatusMonitor {
         request.timeoutInterval = 3
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else { return false }
             return (200..<500).contains(httpResponse.statusCode)
         } catch {
@@ -183,9 +183,8 @@ struct HermesStatusBand: View {
                     label: "DASH",
                     tooltip: "Hermes Dashboard",
                     showsLabel: showsLabels,
-                    status: .up,
-                    isActive: dashboardChannelActive,
-                    inactiveColor: Color.igOnlineGreen.opacity(0.34),
+                    status: statusMonitor.dashboardStatus,
+                    isActive: dashboardChannelActive || statusMonitor.isDashboardProbeActive,
                     activeFlashOffColor: Color.igOnlineGreen.opacity(0.42)
                 )
                 .hermesGlassEffectID("led.dash", in: ledNamespace)

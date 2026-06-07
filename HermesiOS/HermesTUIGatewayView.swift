@@ -757,7 +757,7 @@ final class HermesTUIGatewayStore {
         else { return candidates }
         components.scheme = "http"
         guard let plaintextURL = components.url,
-              HermesEndpointSecurity.isPlaintextTransportAllowed(for: plaintextURL),
+              HermesEndpointSecurity.isLoopbackHost(plaintextURL.host ?? ""),
               !candidates.contains(plaintextURL)
         else { return candidates }
         candidates.append(plaintextURL)
@@ -765,6 +765,10 @@ final class HermesTUIGatewayStore {
     }
 
     private func webSocketURL(baseURL: URL, apiSettings: HermesAPISettings) async throws -> URL {
+        if baseURL.scheme?.lowercased() == "http",
+           !HermesEndpointSecurity.isLoopbackHost(baseURL.host ?? "") {
+            throw HermesTUIGatewayError.blockedPlaintext("Plaintext dashboard HTTP is blocked for remote TUI Gateway connections by iOS App Transport Security. Expose the dashboard through HTTPS/Tailscale Serve and retry.")
+        }
         if !HermesEndpointSecurity.isPlaintextTransportAllowed(for: baseURL),
            let warning = HermesEndpointSecurity.plaintextTransportWarning(for: baseURL.absoluteString, endpointName: "TUI Gateway") {
             throw HermesTUIGatewayError.blockedPlaintext(warning)

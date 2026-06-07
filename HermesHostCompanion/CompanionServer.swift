@@ -1244,13 +1244,15 @@ final class CompanionDeviceAuthorizationStore {
         type == "enroll_device" || type == "check_device_approval"
     }
 
-    func qrPayload(endpoint: String) -> CompanionOnboardingPayload {
+    func qrPayload(endpoint: String, hermesConfigFolderPath: String, apiGatewayAPIKey: String) -> CompanionOnboardingPayload {
         CompanionOnboardingPayload(
             type: "hermes_companion_onboarding",
             version: 1,
             endpoint: endpoint,
             code: onboardingCode,
-            serverName: "HermesHostCompanion"
+            serverName: "HermesHostCompanion",
+            hermesConfigFolderPath: hermesConfigFolderPath,
+            apiGatewayAPIKey: apiGatewayAPIKey
         )
     }
 

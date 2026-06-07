@@ -52,6 +52,8 @@ struct CompanionOnboardingPayload: Codable {
     let endpoint: String
     let code: String
     let serverName: String
+    let hermesConfigFolderPath: String?
+    let apiGatewayAPIKey: String?
 }
 
 struct CompanionEnrollDevicePayload: Codable {

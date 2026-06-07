@@ -786,6 +786,13 @@ struct HermesSettingsView: View {
                     macHost = host
                     applyMacHostToServiceURLs(preserveCompanionEndpoint: true)
                 }
+                if let hermesConfigFolderPath = payload.hermesConfigFolderPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   hermesConfigFolderPath.isEmpty == false {
+                    companionSettings.hermesWorkspacePath = hermesConfigFolderPath
+                }
+                if let apiGatewayAPIKey = payload.apiGatewayAPIKey {
+                    apiSettings.apiKey = apiGatewayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
             }
             companionEnrollment.enroll(onboarding: payload, deviceName: UIDevice.current.name, activateWhenFinished: shouldActivate)
         } catch {

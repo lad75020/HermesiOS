@@ -9,6 +9,7 @@ import SwiftUI
 import Network
 import AppKit
 import CoreImage.CIFilterBuiltins
+import Security
 
 @main
 struct HermesHostCompanionApp: App {
@@ -133,6 +134,43 @@ private struct HermesHostCompanionRootView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } label: {
                     Label("Hermes Service Ports", systemImage: "number.square")
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("These values are embedded in the onboarding QR code so HermesiOS can prefill its Hermes agent folder and API gateway credentials immediately after scanning.")
+                            .foregroundStyle(.secondary)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Hermes agent config folder")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            TextField("/path/to/.hermes", text: $controller.hermesConfigFolderPath)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Hermes API gateway API key")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            SecureField("API key", text: $controller.apiGatewayAPIKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        HStack {
+                            Button("Save QR Settings") {
+                                controller.applyOnboardingSettings()
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Text(controller.apiGatewayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "QR contains no API key until one is set." : "API key is stored in Keychain and only shown through the QR code.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } label: {
+                    Label("Hermes Agent QR Settings", systemImage: "gearshape.2")
                 }
 
                 GroupBox {
@@ -324,6 +362,8 @@ final class CompanionServerController {
     var apiGatewayPort: String
     var dashboardPort: String
     var officePort: String
+    var hermesConfigFolderPath: String
+    var apiGatewayAPIKey: String
     nonisolated(unsafe) private var deviceChangeObserver: NSObjectProtocol?
 
     init() {
@@ -333,6 +373,9 @@ final class CompanionServerController {
         apiGatewayPort = servicePorts.apiGatewayPort
         dashboardPort = servicePorts.dashboardPort
         officePort = servicePorts.officePort
+        let onboardingSettings = CompanionOnboardingSettingsStore.load()
+        hermesConfigFolderPath = onboardingSettings.hermesConfigFolderPath
+        apiGatewayAPIKey = onboardingSettings.apiGatewayAPIKey
 
         deviceChangeObserver = NotificationCenter.default.addObserver(
             forName: CompanionDeviceAuthorizationStore.didChangeNotification,
@@ -367,7 +410,15 @@ final class CompanionServerController {
     }
 
     var onboardingQRCodeImage: NSImage? {
-        let payload = CompanionDeviceAuthorizationStore.shared.qrPayload(endpoint: apiURL)
+        let sanitizedSettings = CompanionOnboardingSettingsStore.sanitize(
+            hermesConfigFolderPath: hermesConfigFolderPath,
+            apiGatewayAPIKey: apiGatewayAPIKey
+        )
+        let payload = CompanionDeviceAuthorizationStore.shared.qrPayload(
+            endpoint: apiURL,
+            hermesConfigFolderPath: sanitizedSettings.hermesConfigFolderPath,
+            apiGatewayAPIKey: sanitizedSettings.apiGatewayAPIKey
+        )
         guard let data = try? JSONEncoder().encode(payload),
               let text = String(data: data, encoding: .utf8)
         else { return nil }
@@ -442,6 +493,17 @@ final class CompanionServerController {
         CompanionServicePortsStore.save(ports)
     }
 
+    func applyOnboardingSettings() {
+        let settings = CompanionOnboardingSettingsStore.sanitize(
+            hermesConfigFolderPath: hermesConfigFolderPath,
+            apiGatewayAPIKey: apiGatewayAPIKey
+        )
+        hermesConfigFolderPath = settings.hermesConfigFolderPath
+        apiGatewayAPIKey = settings.apiGatewayAPIKey
+        CompanionOnboardingSettingsStore.save(settings)
+        refreshDevices()
+    }
+
     func applyNetworkConfiguration() {
         let rawHost = advertisedHost.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = CompanionServerConfiguration.sanitizedHost(rawHost)
@@ -467,6 +529,87 @@ final class CompanionServerController {
                 self?.startServer()
             }
         }
+    }
+}
+
+
+struct CompanionOnboardingSettings: Equatable {
+    var hermesConfigFolderPath: String
+    var apiGatewayAPIKey: String
+}
+
+enum CompanionOnboardingSettingsStore {
+    private static let hermesConfigFolderPathKey = "hermes.onboarding.configFolderPath"
+    private static let apiGatewayAPIKeyService = "com.nous.HermesHostCompanion.gateway"
+    private static let apiGatewayAPIKeyAccount = "apiGatewayAPIKey"
+
+    static let defaultConfigFolderPath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".hermes")
+        .path
+
+    static func load() -> CompanionOnboardingSettings {
+        sanitize(
+            hermesConfigFolderPath: UserDefaults.standard.string(forKey: hermesConfigFolderPathKey) ?? defaultConfigFolderPath,
+            apiGatewayAPIKey: loadKeychainString(service: apiGatewayAPIKeyService, account: apiGatewayAPIKeyAccount)
+        )
+    }
+
+    static func save(_ settings: CompanionOnboardingSettings) {
+        let sanitized = sanitize(
+            hermesConfigFolderPath: settings.hermesConfigFolderPath,
+            apiGatewayAPIKey: settings.apiGatewayAPIKey
+        )
+        if sanitized.hermesConfigFolderPath.isEmpty {
+            UserDefaults.standard.removeObject(forKey: hermesConfigFolderPathKey)
+        } else {
+            UserDefaults.standard.set(sanitized.hermesConfigFolderPath, forKey: hermesConfigFolderPathKey)
+        }
+        saveKeychainString(sanitized.apiGatewayAPIKey, service: apiGatewayAPIKeyService, account: apiGatewayAPIKeyAccount)
+    }
+
+    static func sanitize(hermesConfigFolderPath: String, apiGatewayAPIKey: String) -> CompanionOnboardingSettings {
+        CompanionOnboardingSettings(
+            hermesConfigFolderPath: hermesConfigFolderPath.trimmingCharacters(in: .whitespacesAndNewlines),
+            apiGatewayAPIKey: apiGatewayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    private static func loadKeychainString(service: String, account: String) -> String {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let value = String(data: data, encoding: .utf8)
+        else { return "" }
+        return value
+    }
+
+    private static func saveKeychainString(_ value: String, service: String, account: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        if trimmed.isEmpty {
+            SecItemDelete(baseQuery as CFDictionary)
+            return
+        }
+        let data = Data(trimmed.utf8)
+        let update = [kSecValueData as String: data]
+        let status = SecItemUpdate(baseQuery as CFDictionary, update as CFDictionary)
+        if status == errSecSuccess { return }
+        var addQuery = baseQuery
+        addQuery[kSecValueData as String] = data
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(addQuery as CFDictionary, nil)
     }
 }
 

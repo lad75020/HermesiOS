@@ -186,6 +186,8 @@ struct HermesCompanionOnboardingPayload: Codable {
     let endpoint: String
     let code: String
     let serverName: String
+    let hermesConfigFolderPath: String?
+    let apiGatewayAPIKey: String?
 
     static func decode(from text: String) throws -> HermesCompanionOnboardingPayload {
         let data = Data(text.utf8)

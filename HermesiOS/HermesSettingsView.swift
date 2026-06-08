@@ -98,7 +98,7 @@ struct HermesSettingsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(companionRuntime.hermesInstallationStatusMessage)
                                 .font(.subheadline.weight(.semibold))
-                            Text("Compared with official Hermes Agent main. Refreshes hourly.")
+                            Text("Checks local main against upstream NousResearch/hermes-agent main. Refreshes hourly.")
                                 .font(.caption)
                                 .foregroundStyle(.hermesSecondaryText)
                         }
@@ -129,16 +129,16 @@ struct HermesSettingsView: View {
                         }
                         .font(.subheadline)
 
-                        settingsRow(label: "Local / official main", value: "\(status.currentCommit) / \(status.upstreamCommit)")
+                        settingsRow(label: "Local main / upstream", value: "\(status.currentCommit) / \(status.upstreamCommit)")
                         settingsRow(label: "Last Checked", value: status.checkedAt.formatted(date: .abbreviated, time: .shortened))
 
                         if status.isUpdateBlocked {
-                            settingsRow(label: "Pending Update", value: "\(status.pendingUpdateBranch ?? "local branch") → \(status.pendingUpdateCommit ?? status.upstreamCommit)")
+                            settingsRow(label: "Merge State", value: "Stopped on main while merging upstream \(status.pendingUpdateCommit ?? status.upstreamCommit)")
                         }
 
                         if status.conflictFiles.isEmpty == false {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Files to review")
+                                Text("Merge conflicts")
                                     .font(.caption.weight(.semibold))
                                 Text(status.conflictFiles.joined(separator: "\n"))
                                     .font(.caption2.monospaced())
@@ -170,7 +170,7 @@ struct HermesSettingsView: View {
                                 )
                             }
                         } label: {
-                            Label("Refresh Hermes Version", systemImage: "arrow.clockwise")
+                            Label("Refresh Lag", systemImage: "arrow.clockwise")
                         }
                         .hermesGlassButton()
                         .disabled(companionEnrollment.identityState.isEnrolled == false || companionRuntime.isCheckingHermesInstallation || companionRuntime.isUpdatingHermesInstallation)
@@ -181,32 +181,10 @@ struct HermesSettingsView: View {
                                 identityState: companionEnrollment.identityState
                             )
                         } label: {
-                            Label("Hermes Update", systemImage: "arrow.down.circle")
+                            Label("Update Hermes", systemImage: "arrow.down.circle")
                         }
                         .hermesGlassProminentButton()
                         .disabled(hermesUpdateDisabled)
-
-                        Button {
-                            companionRuntime.reviewHermesInstallationConflicts(
-                                settings: companionSettings,
-                                identityState: companionEnrollment.identityState
-                            )
-                        } label: {
-                            Label("Review Conflicts with Hermes", systemImage: "wand.and.stars")
-                        }
-                        .hermesGlassProminentButton()
-                        .disabled(reviewHermesConflictsDisabled)
-
-                        Button {
-                            companionRuntime.mergeReviewedHermesInstallationUpdate(
-                                settings: companionSettings,
-                                identityState: companionEnrollment.identityState
-                            )
-                        } label: {
-                            Label("Merge Reviewed Update", systemImage: "arrow.triangle.merge")
-                        }
-                        .hermesGlassButton()
-                        .disabled(mergeReviewedHermesUpdateDisabled)
                     }
                 }
 
@@ -730,23 +708,8 @@ struct HermesSettingsView: View {
         companionEnrollment.identityState.isEnrolled == false ||
         companionRuntime.isCheckingHermesInstallation ||
         companionRuntime.isUpdatingHermesInstallation ||
-        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false)
-    }
-
-    private var mergeReviewedHermesUpdateDisabled: Bool {
-        companionEnrollment.identityState.isEnrolled == false ||
-        companionRuntime.isCheckingHermesInstallation ||
-        companionRuntime.isUpdatingHermesInstallation ||
-        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false) == false ||
-        (companionRuntime.hermesInstallationStatus?.conflictFiles.isEmpty ?? true) == false
-    }
-
-    private var reviewHermesConflictsDisabled: Bool {
-        companionEnrollment.identityState.isEnrolled == false ||
-        companionRuntime.isCheckingHermesInstallation ||
-        companionRuntime.isUpdatingHermesInstallation ||
-        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false) == false ||
-        (companionRuntime.hermesInstallationStatus?.conflictFiles.isEmpty ?? true)
+        (companionRuntime.hermesInstallationStatus?.isUpdateBlocked ?? false) ||
+        (companionRuntime.hermesInstallationStatus?.conflictFiles.isEmpty == false)
     }
 
     private var hermesInstallationStatusColor: Color {

@@ -421,8 +421,6 @@ final class CompanionClientSession {
                         "set_tailscale_serve",
                         "hermes_installation_status",
                         "hermes_installation_update",
-                        "hermes_installation_review_conflicts",
-                        "hermes_installation_merge_reviewed_update",
                         "list_skills",
                         "set_skill_state",
                         "list_mcp_servers",

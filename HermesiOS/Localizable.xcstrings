@@ -2249,6 +2249,9 @@
     "Check Approval" : {
 
     },
+    "Checks local main against upstream NousResearch/hermes-agent main. Refreshes hourly." : {
+
+    },
     "Choose a key" : {
       "localizations" : {
         "de" : {
@@ -2568,6 +2571,7 @@
       }
     },
     "Compared with official Hermes Agent main. Refreshes hourly." : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -4360,6 +4364,7 @@
       }
     },
     "Files to review" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -4843,6 +4848,7 @@
       }
     },
     "Hermes Update" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -5721,7 +5727,11 @@
         }
       }
     },
+    "Merge conflicts" : {
+
+    },
     "Merge Reviewed Update" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7581,6 +7591,7 @@
       }
     },
     "Refresh Hermes Version" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -7613,6 +7624,9 @@
           }
         }
       }
+    },
+    "Refresh Lag" : {
+
     },
     "Refresh live sessions" : {
       "comment" : "A button that refreshes the list of live sessions.",
@@ -8285,6 +8299,7 @@
       }
     },
     "Review Conflicts with Hermes" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -10779,6 +10794,9 @@
           }
         }
       }
+    },
+    "Update Hermes" : {
+
     },
     "Use" : {
       "localizations" : {

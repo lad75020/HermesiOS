@@ -2106,7 +2106,7 @@ final class HermesCompanionRuntimeSession {
                 )
                 self.applyHermesInstallationStatus(result.status)
                 self.hermesInstallationOperationOutput = result.output
-                self.connectionStatus = "Hermes Update Ready for Review"
+                self.connectionStatus = result.status.conflictFiles.isEmpty ? "Hermes Updated and Pushed" : "Hermes Merge Conflicts"
             } catch {
                 self.hermesInstallationStatusError = error.localizedDescription
                 self.hermesInstallationStatusMessage = "Update Failed"
@@ -2178,17 +2178,17 @@ final class HermesCompanionRuntimeSession {
     }
 
     private static func hermesInstallationStatusMessage(for result: HermesCompanionInstallationStatusResult) -> String {
-        if result.isUpdateBlocked {
+        if result.isUpdateBlocked || result.conflictFiles.isEmpty == false {
             let conflictCount = result.conflictFiles.count
             if conflictCount > 0 {
-                return "Review \(conflictCount) conflict\(conflictCount == 1 ? "" : "s") before merge"
+                return "Resolve \(conflictCount) merge conflict\(conflictCount == 1 ? "" : "s") on the Mac"
             }
-            return "Update fetched; review before merge"
+            return "Merge stopped; refresh after resolving"
         }
         if result.behindBy == 0 {
             return "Up to date"
         }
-        return "\(result.behindBy) commit\(result.behindBy == 1 ? "" : "s") behind official main"
+        return "\(result.behindBy) commit\(result.behindBy == 1 ? "" : "s") behind upstream main"
     }
 
     private func loadSelectedTarget(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) async throws {

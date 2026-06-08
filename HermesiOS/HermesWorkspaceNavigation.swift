@@ -102,7 +102,7 @@ struct WorkspaceSidebar: View {
     var companionChannelActive = false
     var dashboardChannelActive = false
     var isResponsesStreamingActive = false
-    var isTUIGatewayActive = false
+    var tuiGatewayAttention: HermesTUIWorkspaceAttention?
     var isHistorySearchActive = false
     var hasUnreadResponsesCompletion = false
     var hasUnreadResponsesFailure = false
@@ -119,9 +119,11 @@ struct WorkspaceSidebar: View {
             hasUnreadResponsesCompletion
         case .chat:
             isChatCompletionUnread
+        case .tuiGateway:
+            tuiGatewayAttention == .completed
         case .history:
             isHistorySearchCompletionUnread
-        case .tuiGateway, .web, .utilities, .settings, .runtime, .terminal:
+        case .web, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -132,9 +134,11 @@ struct WorkspaceSidebar: View {
             hasUnreadResponsesFailure
         case .chat:
             isChatFailureUnread
+        case .tuiGateway:
+            tuiGatewayAttention == .failed
         case .history:
             isHistorySearchFailureUnread
-        case .tuiGateway, .web, .utilities, .settings, .runtime, .terminal:
+        case .web, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -146,7 +150,7 @@ struct WorkspaceSidebar: View {
         case .chat:
             chatSession.isSending
         case .tuiGateway:
-            isTUIGatewayActive
+            tuiGatewayAttention == .streaming
         case .history:
             isHistorySearchActive
         case .runtime:

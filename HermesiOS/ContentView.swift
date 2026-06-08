@@ -281,6 +281,13 @@ struct ContentView: View {
         tuiWorkspaces.contains { $0.store.isStreaming }
     }
 
+    private var tuiGatewaySidebarAttention: HermesTUIWorkspaceAttention? {
+        if tuiWorkspaces.contains(where: { $0.attention == .failed }) { return .failed }
+        if tuiWorkspaces.contains(where: { $0.attention == .completed }) { return .completed }
+        if tuiWorkspaces.contains(where: { $0.attention == .streaming }) { return .streaming }
+        return nil
+    }
+
     private var apiChannelActive: Bool {
         isAnyResponseWorkspaceStreaming || chatSession.isSending
     }
@@ -410,7 +417,7 @@ struct ContentView: View {
                 companionChannelActive: companionChannelActive,
                 dashboardChannelActive: dashboardChannelActive,
                 isResponsesStreamingActive: isAnyResponseWorkspaceStreaming,
-                isTUIGatewayActive: isAnyTUIWorkspaceBusy,
+                tuiGatewayAttention: tuiGatewaySidebarAttention,
                 isHistorySearchActive: dashboardHistorySearchSession.isSearching,
                 hasUnreadResponsesCompletion: hasUnreadResponseWorkspaceCompletion,
                 hasUnreadResponsesFailure: hasUnreadResponseWorkspaceFailure,

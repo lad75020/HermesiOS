@@ -23,6 +23,21 @@ let defaultHermesAPIPort = "8642"
 let defaultHermesCompanionPort = "9112"
 
 enum HermesHostEndpoints {
+    static func displayHost(from value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Hermes Agent" }
+
+        if let components = URLComponents(string: trimmed), components.scheme != nil, let host = components.host, !host.isEmpty {
+            if let port = components.port {
+                return "\(host):\(port)"
+            }
+            return host
+        }
+
+        let normalized = normalizedHost(trimmed)
+        return normalized.isEmpty ? "Hermes Agent" : normalized
+    }
+
     static func normalizedHost(_ host: String) -> String {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return defaultHermesMacHost }
@@ -96,6 +111,11 @@ enum HermesHostEndpoints {
 }
 
 enum HermesEndpointSecurity {
+    static func validateSensitiveURL(_ url: URL) throws {
+        guard !isPlaintextTransportAllowed(for: url) else { return }
+        throw HermesEndpointSecurityError.sensitivePlaintextURL(url)
+    }
+
     static func isPlaintextTransportAllowed(for url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), ["http", "ws"].contains(scheme) else { return true }
         guard let host = url.host?.lowercased() else { return false }
@@ -130,6 +150,18 @@ enum HermesEndpointSecurity {
     static func isLoopbackHost(_ host: String) -> Bool {
         let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         return normalized == "localhost" || normalized == "::1" || normalized == "0:0:0:0:0:0:0:1" || normalized.hasPrefix("127.")
+    }
+}
+
+enum HermesEndpointSecurityError: LocalizedError {
+    case sensitivePlaintextURL(URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .sensitivePlaintextURL(let url):
+            let host = url.host ?? "unknown host"
+            return "Refusing to send credentials over plaintext transport to \(host). Use HTTPS/WSS, localhost, or a Tailscale tailnet endpoint."
+        }
     }
 }
 

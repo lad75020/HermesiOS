@@ -407,8 +407,8 @@ final class HermesChatSession {
         let profile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
         request.setValue(profile.isEmpty ? "default" : profile, forHTTPHeaderField: "X-Hermes-Profile")
 
-        if !apiSettings.apiKey.isEmpty {
-            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        if apiSettings.hasAuthorizationToken {
+            request.setHermesAuthorization(from: apiSettings)
         }
 
         request.httpBody = try JSONEncoder().encode(payload)

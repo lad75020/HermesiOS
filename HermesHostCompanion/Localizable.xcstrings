@@ -50,7 +50,7 @@
     "API gateway" : {
 
     },
-    "API key" : {
+    "API key (Bearer optional)" : {
 
     },
     "API key is stored in Keychain and only shown through the QR code." : {

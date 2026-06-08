@@ -92,8 +92,8 @@ final class HermesStatusMonitor {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 3
-        if settings.apiKey.isEmpty == false {
-            request.setValue("Bearer \(settings.apiKey)", forHTTPHeaderField: "Authorization")
+        if settings.hasAuthorizationToken {
+            request.setHermesAuthorization(from: settings)
         }
 
         do {

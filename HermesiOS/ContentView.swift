@@ -42,6 +42,7 @@ struct ContentView: View {
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
+    @State private var approvalsInbox = HermesApprovalsInboxStore()
     @StateObject private var webBrowserStore = HermesWebBrowserDeckStore()
     @State private var isShowingSplash = true
     @State private var didKickstartRuntimeSectionsAfterLoad = false
@@ -168,6 +169,10 @@ struct ContentView: View {
         .task(id: clipboardMonitoringKey) {
             guard !isShowingSplash, scenePhase == .active, isClipboardHistoryMonitoringEnabled else { return }
             await clipboardHistory.runMonitoringLoop(isEnabled: isClipboardHistoryMonitoringEnabled)
+        }
+        .task(id: approvalsRefreshKey) {
+            guard !isShowingSplash, scenePhase == .active else { return }
+            await approvalsInbox.runAutoRefreshLoop(apiSettings: apiSettings)
         }
         .task(id: statusLoopKey) {
             guard !isShowingSplash, scenePhase == .active else { return }
@@ -386,6 +391,17 @@ struct ContentView: View {
         ].joined(separator: "|")
     }
 
+    private var approvalsRefreshKey: String {
+        [
+            "approvals",
+            apiSettings.baseURL,
+            apiSettings.apiKey.isEmpty ? "no-api-key" : "api-key-set",
+            String(apiSettings.allowSelfSignedCertificates),
+            "scenePhase=\(scenePhase)",
+            "splash=\(isShowingSplash)"
+        ].joined(separator: "|")
+    }
+
     private func refreshServicePortsFromCompanion() async {
         do {
             let ports = try await companionRuntime.refreshServicePorts(
@@ -418,6 +434,7 @@ struct ContentView: View {
                 dashboardChannelActive: dashboardChannelActive,
                 isResponsesStreamingActive: isAnyResponseWorkspaceStreaming,
                 tuiGatewayAttention: tuiGatewaySidebarAttention,
+                hasPendingApprovals: approvalsInbox.hasPendingApprovals,
                 isHistorySearchActive: dashboardHistorySearchSession.isSearching,
                 hasUnreadResponsesCompletion: hasUnreadResponseWorkspaceCompletion,
                 hasUnreadResponsesFailure: hasUnreadResponseWorkspaceFailure,
@@ -482,6 +499,19 @@ struct ContentView: View {
                 .tag(WorkspaceSection.tuiGateway)
 
                 NavigationStack {
+                    HermesApprovalsInboxView(
+                        store: approvalsInbox,
+                        apiSettings: apiSettings,
+                        connectedHostName: HermesHostEndpoints.displayHost(from: apiSettings.baseURL)
+                    )
+                }
+                .tabItem {
+                    Image(systemName: WorkspaceSection.approvals.systemImage)
+                }
+                .badge(approvalsInbox.pendingCount)
+                .tag(WorkspaceSection.approvals)
+
+                NavigationStack {
                     HermesHistoryView(
                         apiSettings: $apiSettings,
                         searchSession: dashboardHistorySearchSession,
@@ -524,6 +554,7 @@ struct ContentView: View {
                         promptHistory: promptHistory,
                         responseSession: activeResponseSession,
                         chatSession: chatSession,
+                        apiSettings: apiSettings,
                         companionSettings: companionSettings,
                         companionEnrollment: companionEnrollment,
                         companionRuntime: companionRuntime
@@ -684,6 +715,12 @@ struct ContentView: View {
                 onAddWorkspace: createTUIWorkspace,
                 onDeleteWorkspace: deleteTUIWorkspace
             )
+        case .approvals:
+            HermesApprovalsInboxView(
+                store: approvalsInbox,
+                apiSettings: apiSettings,
+                connectedHostName: HermesHostEndpoints.displayHost(from: apiSettings.baseURL)
+            )
         case .history:
             HermesHistoryView(
                 apiSettings: $apiSettings,
@@ -709,6 +746,7 @@ struct ContentView: View {
                 promptHistory: promptHistory,
                 responseSession: activeResponseSession,
                 chatSession: chatSession,
+                apiSettings: apiSettings,
                 companionSettings: companionSettings,
                 companionEnrollment: companionEnrollment,
                 companionRuntime: companionRuntime

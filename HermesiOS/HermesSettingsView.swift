@@ -308,7 +308,7 @@ struct HermesSettingsView: View {
                 }
 
                 Section("Gateway") {
-                SecureField("Bearer token", text: $apiSettings.apiKey)
+                SecureField("API key (Bearer optional)", text: $apiSettings.apiKey)
 
                 Toggle("Allow self-signed HTTPS certificates", isOn: $apiSettings.allowSelfSignedCertificates)
 
@@ -754,7 +754,7 @@ struct HermesSettingsView: View {
                     companionSettings.hermesWorkspacePath = hermesConfigFolderPath
                 }
                 if let apiGatewayAPIKey = payload.apiGatewayAPIKey {
-                    apiSettings.apiKey = apiGatewayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    apiSettings.apiKey = HermesAPISettings.normalizedAPIKey(apiGatewayAPIKey)
                 }
             }
             companionEnrollment.enroll(onboarding: payload, deviceName: UIDevice.current.name, activateWhenFinished: shouldActivate)

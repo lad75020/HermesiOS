@@ -32,7 +32,7 @@ enum HermesSettingsPersistence {
 
     static func loadAPISettings() -> HermesAPISettings {
         var settings = decode(HermesAPISettings.self, from: apiSettingsKey) ?? HermesAPISettings()
-        settings.apiKey = loadBearerToken()
+        settings.apiKey = HermesAPISettings.normalizedAPIKey(loadBearerToken())
         return settings
     }
 
@@ -40,7 +40,7 @@ enum HermesSettingsPersistence {
         var persistedSettings = settings
         persistedSettings.apiKey = ""
         encode(persistedSettings, to: apiSettingsKey)
-        saveBearerToken(settings.apiKey)
+        saveBearerToken(HermesAPISettings.normalizedAPIKey(settings.apiKey))
     }
 
     static func loadResponsesDraft() -> HermesRequestDraft {

@@ -31,6 +31,7 @@ struct HermesUtilitiesView: View {
     @Bindable var promptHistory: HermesPromptHistoryStore
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var chatSession: HermesChatSession
+    let apiSettings: HermesAPISettings
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
@@ -38,6 +39,7 @@ struct HermesUtilitiesView: View {
     @AppStorage("hermes.utilities.clipboardHistoryMonitoringEnabled") private var isClipboardHistoryMonitoringEnabled = false
     @AppStorage("hermes.utilities.promptHistoryExpanded") private var isPromptHistoryExpanded = false
     @AppStorage("hermes.utilities.fileDownloaderExpanded") private var isFileDownloaderExpanded = false
+    @AppStorage("hermes.utilities.commandCenterExpanded") private var isCommandCenterExpanded = false
     @AppStorage("hermes.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @AppStorage("hermes.utilities.supermemoryManagementExpanded") private var isSupermemoryManagementExpanded = false
     @State private var statusMessage = "Clipboard history is encrypted and requires Face ID after restart."
@@ -55,6 +57,7 @@ struct HermesUtilitiesView: View {
     @State private var macFileBrowserError = ""
     @State private var fileDownloaderStatus = "Pick an iOS Files folder, browse the Mac, then download."
     @State private var isDownloadingFile = false
+    @State private var commandCenter = HermesCommandCenterStore()
 
     var body: some View {
         ScrollView {
@@ -113,6 +116,26 @@ struct HermesUtilitiesView: View {
                             title: "File Downloader",
                             subtitle: fileDownloaderSubtitle,
                             systemImage: "tray.and.arrow.down"
+                        )
+                    }
+                    .tint(.igActionBlue)
+
+                    Divider()
+                        .overlay(Color.hermesDivider.opacity(0.5))
+                        .padding(.vertical, 4)
+
+                    DisclosureGroup(isExpanded: $isCommandCenterExpanded) {
+                        HermesCommandCenterPanel(
+                            store: commandCenter,
+                            apiSettings: apiSettings,
+                            responseSession: responseSession,
+                            chatSession: chatSession
+                        )
+                    } label: {
+                        utilityDisclosureLabel(
+                            title: "Active Agents / Runs",
+                            subtitle: commandCenterSubtitle,
+                            systemImage: "waveform.path.ecg.rectangle"
                         )
                     }
                     .tint(.igActionBlue)
@@ -188,6 +211,9 @@ struct HermesUtilitiesView: View {
                 clipboardHistory.captureCurrentPasteboardIfNeeded()
             }
         }
+        .task(id: commandCenterRefreshKey) {
+            await commandCenter.runStatusLoop(apiSettings: apiSettings)
+        }
         .onDisappear {
             collapseAllUtilitySections()
         }
@@ -198,8 +224,26 @@ struct HermesUtilitiesView: View {
         isClipboardHistoryExpanded = false
         isPromptHistoryExpanded = false
         isFileDownloaderExpanded = false
+        isCommandCenterExpanded = false
         isDebuggingExpanded = false
         isSupermemoryManagementExpanded = false
+    }
+
+    private var commandCenterRefreshKey: String {
+        [
+            apiSettings.baseURL,
+            apiSettings.apiKey.isEmpty ? "no-key" : "key-set",
+            apiSettings.allowSelfSignedCertificates ? "self-signed" : "strict"
+        ].joined(separator: "|")
+    }
+
+    private var commandCenterSubtitle: String {
+        let foregroundCount = [responseSession.isSending || responseSession.isStreaming, chatSession.isSending || chatSession.isStreaming].filter { $0 }.count
+        let activeCount = foregroundCount + commandCenter.activeTrackedRunsCount + commandCenter.activeAgentsCount
+        if activeCount > 0 {
+            return "\(activeCount) active • \(commandCenter.status)"
+        }
+        return "Monitor runs, tool activity, elapsed time, tokens and cancellation"
     }
 
     private var isSupermemoryActive: Bool {

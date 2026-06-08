@@ -153,7 +153,7 @@ private struct HermesHostCompanionRootView: View {
                             Text("Hermes API gateway API key")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                            SecureField("API key", text: $controller.apiGatewayAPIKey)
+                            SecureField("API key (Bearer optional)", text: $controller.apiGatewayAPIKey)
                                 .textFieldStyle(.roundedBorder)
                         }
 
@@ -548,9 +548,12 @@ enum CompanionOnboardingSettingsStore {
         .path
 
     static func load() -> CompanionOnboardingSettings {
-        sanitize(
-            hermesConfigFolderPath: UserDefaults.standard.string(forKey: hermesConfigFolderPathKey) ?? defaultConfigFolderPath,
-            apiGatewayAPIKey: loadKeychainString(service: apiGatewayAPIKeyService, account: apiGatewayAPIKeyAccount)
+        let hermesConfigFolderPath = UserDefaults.standard.string(forKey: hermesConfigFolderPathKey) ?? defaultConfigFolderPath
+        let savedAPIKey = loadKeychainString(service: apiGatewayAPIKeyService, account: apiGatewayAPIKeyAccount)
+        let effectiveAPIKey = savedAPIKey.isEmpty ? loadAPIKeyFromEnv(hermesConfigFolderPath: hermesConfigFolderPath) : savedAPIKey
+        return sanitize(
+            hermesConfigFolderPath: hermesConfigFolderPath,
+            apiGatewayAPIKey: effectiveAPIKey
         )
     }
 
@@ -570,8 +573,32 @@ enum CompanionOnboardingSettingsStore {
     static func sanitize(hermesConfigFolderPath: String, apiGatewayAPIKey: String) -> CompanionOnboardingSettings {
         CompanionOnboardingSettings(
             hermesConfigFolderPath: hermesConfigFolderPath.trimmingCharacters(in: .whitespacesAndNewlines),
-            apiGatewayAPIKey: apiGatewayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            apiGatewayAPIKey: normalizeAPIKey(apiGatewayAPIKey)
         )
+    }
+
+    private static func normalizeAPIKey(_ value: String) -> String {
+        var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while token.range(of: "Bearer ", options: [.caseInsensitive, .anchored]) != nil {
+            token = String(token.dropFirst("Bearer ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return token
+    }
+
+    private static func loadAPIKeyFromEnv(hermesConfigFolderPath: String) -> String {
+        let folder = hermesConfigFolderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !folder.isEmpty else { return "" }
+        let envURL = URL(fileURLWithPath: folder, isDirectory: true).appendingPathComponent(".env")
+        guard let content = try? String(contentsOf: envURL, encoding: .utf8) else { return "" }
+        for line in content.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("API_SERVER_KEY=") else { continue }
+            let rawValue = String(trimmed.dropFirst("API_SERVER_KEY=".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            return normalizeAPIKey(rawValue)
+        }
+        return ""
     }
 
     private static func loadKeychainString(service: String, account: String) -> String {

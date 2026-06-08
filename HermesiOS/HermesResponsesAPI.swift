@@ -372,6 +372,13 @@ enum HermesNetworkSessionFactory {
 
         return URLSession(configuration: configuration)
     }
+
+    static func validate(response: URLResponse) throws {
+        guard let httpResponse = response as? HTTPURLResponse else { throw HermesResponsesError.invalidResponse }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw HermesResponsesError.httpError(httpResponse.statusCode)
+        }
+    }
 }
 
 enum HermesRequestFailureClassifier {
@@ -863,8 +870,8 @@ final class HermesResponsesSession {
             request.setValue(trimmedHermesSessionID, forHTTPHeaderField: "x-openclaw-session-key")
         }
 
-        if !apiSettings.apiKey.isEmpty {
-            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        if apiSettings.hasAuthorizationToken {
+            request.setHermesAuthorization(from: apiSettings)
         }
 
         request.httpBody = try JSONEncoder().encode(payload)
@@ -972,6 +979,28 @@ struct HermesAPISettings: Codable, Equatable {
     var apiKey = ""
     var allowSelfSignedCertificates = false
 
+    var normalizedAPIKey: String {
+        Self.normalizedAPIKey(apiKey)
+    }
+
+    var hasAuthorizationToken: Bool {
+        !normalizedAPIKey.isEmpty
+    }
+
+    var authorizationHeaderValue: String? {
+        let token = normalizedAPIKey
+        guard !token.isEmpty else { return nil }
+        return "Bearer \(token)"
+    }
+
+    static func normalizedAPIKey(_ value: String) -> String {
+        var token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while token.range(of: "Bearer ", options: [.caseInsensitive, .anchored]) != nil {
+            token = String(token.dropFirst("Bearer ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return token
+    }
+
     static func responseURL(from baseURL: String) -> URL? {
         endpointURL(from: baseURL, suffix: "responses")
     }
@@ -988,6 +1017,64 @@ struct HermesAPISettings: Codable, Equatable {
         endpointURL(from: baseURL, suffix: "profiles")
     }
 
+    static func approvalsURL(from baseURL: String) -> URL? {
+        endpointURL(from: baseURL, suffix: "approvals")
+    }
+
+    static func approvalResolveURL(from baseURL: String) -> URL? {
+        endpointURL(from: baseURL, suffix: "approvals/resolve")
+    }
+
+    static func runsURL(from baseURL: String) -> URL? {
+        endpointURL(from: baseURL, suffix: "runs")
+    }
+
+    static func runStatusURL(from baseURL: String, runID: String) -> URL? {
+        guard let runID = encodedPathComponent(runID) else { return nil }
+        return endpointURL(from: baseURL, suffix: "runs/\(runID)")
+    }
+
+    static func runEventsURL(from baseURL: String, runID: String) -> URL? {
+        guard let runID = encodedPathComponent(runID) else { return nil }
+        return endpointURL(from: baseURL, suffix: "runs/\(runID)/events")
+    }
+
+    static func runStopURL(from baseURL: String, runID: String) -> URL? {
+        guard let runID = encodedPathComponent(runID) else { return nil }
+        return endpointURL(from: baseURL, suffix: "runs/\(runID)/stop")
+    }
+
+    static func requestCancelURL(from baseURL: String, requestID: String) -> URL? {
+        guard let requestID = encodedPathComponent(requestID) else { return nil }
+        return endpointURL(from: baseURL, suffix: "requests/\(requestID)/cancel")
+    }
+
+    static func healthDetailedURL(from baseURL: String) -> URL? {
+        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var components = URLComponents(string: trimmed) else { return nil }
+        components.path = "/health/detailed"
+        components.query = nil
+        components.fragment = nil
+        guard let url = components.url else { return nil }
+        return HermesEndpointSecurity.isPlaintextTransportAllowed(for: url) ? url : nil
+    }
+
+    private static func encodedPathComponent(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#[]@!$&'()*+,;=")))
+    }
+
+}
+
+extension URLRequest {
+    mutating func setHermesAuthorization(from apiSettings: HermesAPISettings) {
+        guard let authorizationHeaderValue = apiSettings.authorizationHeaderValue else { return }
+        setValue(authorizationHeaderValue, forHTTPHeaderField: "Authorization")
+    }
+}
+
+extension HermesAPISettings {
     private static func endpointURL(from baseURL: String, suffix: String) -> URL? {
         let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -1005,6 +1092,22 @@ struct HermesAPISettings: Codable, Equatable {
         // `/responses`, which the API server correctly reports as 404.  Treat a bare
         // origin as the Hermes API root and add `/v1` before the endpoint suffix.
         if normalizedPath.isEmpty {
+            components.path = "/v1/\(suffix)"
+            guard let url = components.url else { return nil }
+            return HermesEndpointSecurity.isPlaintextTransportAllowed(for: url) ? url : nil
+        }
+
+        let knownEndpointPaths = [
+            "v1/responses",
+            "v1/chat/completions",
+            "v1/models",
+            "v1/profiles",
+            "v1/approvals",
+            "v1/approvals/resolve",
+            "v1/runs",
+            "v1/requests"
+        ]
+        if knownEndpointPaths.contains(normalizedPath) {
             components.path = "/v1/\(suffix)"
             guard let url = components.url else { return nil }
             return HermesEndpointSecurity.isPlaintextTransportAllowed(for: url) ? url : nil
@@ -1127,8 +1230,8 @@ enum HermesAPIProfilesClient {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if !apiSettings.apiKey.isEmpty {
-            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        if apiSettings.hasAuthorizationToken {
+            request.setHermesAuthorization(from: apiSettings)
         }
 
         let session = HermesNetworkSessionFactory.session(for: apiSettings)

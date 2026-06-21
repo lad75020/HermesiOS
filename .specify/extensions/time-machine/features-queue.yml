@@ -1,7 +1,7 @@
 analyzed_at: '2026-06-21T02:02:54Z'
 project_root: /Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS
 total_features: 11
-completed: 7
+completed: 8
 features:
 - id: app-shell-design
   name: App Shell and Design System
@@ -158,12 +158,12 @@ features:
   - HermesHostCompanion/CompanionGitRegistry.swift
   - scripts/deploy-hermesios.mjs
   - scripts/deploy_hermesios_stack.py
-  status: pending
+  status: done
   current_phase: null
-  branch: null
-  pushed: null
-  started_at: null
-  completed_at: null
+  branch: feature/time-machine-host-services-installation
+  pushed: true
+  started_at: '2026-06-21T02:31:37Z'
+  completed_at: '2026-06-21T02:31:37Z'
 - id: terminal-web-office
   name: Terminal, Web, and Office Workspaces
   description: Provides SSH terminal access, multi-workspace WebKit browsing, and

@@ -1,7 +1,7 @@
 analyzed_at: '2026-06-21T02:02:54Z'
 project_root: /Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS
 total_features: 11
-completed: 1
+completed: 2
 features:
 - id: app-shell-design
   name: App Shell and Design System
@@ -40,12 +40,12 @@ features:
   - HermesiOS/HermesSettingsPersistence.swift
   - HermesiOS/HermesHostEndpoints.swift
   - HermesiOS/HermesStatusBand.swift
-  status: pending
+  status: done
   current_phase: null
-  branch: null
-  pushed: null
-  started_at: null
-  completed_at: null
+  branch: feature/time-machine-secure-settings-reachability
+  pushed: true
+  started_at: '2026-06-21T02:23:20Z'
+  completed_at: '2026-06-21T02:28:04Z'
 - id: companion-pairing-bridge
   name: Host Companion Pairing Bridge
   description: Connects iOS devices to the macOS Host Companion through authenticated

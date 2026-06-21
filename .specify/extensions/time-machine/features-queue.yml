@@ -1,7 +1,7 @@
 analyzed_at: '2026-06-21T02:02:54Z'
 project_root: /Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS
 total_features: 11
-completed: 4
+completed: 5
 features:
 - id: app-shell-design
   name: App Shell and Design System
@@ -92,12 +92,12 @@ features:
   - HermesiOS/HermesTUIGatewayView.swift
   - HermesiOS/HermesCommandCenterView.swift
   - HermesiOS/HermesDashboardGatewayRestart.swift
-  status: pending
+  status: done
   current_phase: null
-  branch: null
-  pushed: null
-  started_at: null
-  completed_at: null
+  branch: feature/time-machine-tui-gateway-command-center
+  pushed: true
+  started_at: '2026-06-21T02:31:34Z'
+  completed_at: '2026-06-21T02:31:34Z'
 - id: dashboard-history
   name: Dashboard History Search
   description: Lets users search dashboard conversations, inspect matched messages,

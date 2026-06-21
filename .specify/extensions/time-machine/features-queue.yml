@@ -1,7 +1,7 @@
 analyzed_at: '2026-06-21T02:02:54Z'
 project_root: /Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS
 total_features: 11
-completed: 5
+completed: 6
 features:
 - id: app-shell-design
   name: App Shell and Design System
@@ -105,12 +105,12 @@ features:
   files:
   - HermesiOS/HermesDashboardHistorySearch.swift
   - HermesiOS/HermesHistoryView.swift
-  status: pending
+  status: done
   current_phase: null
-  branch: null
-  pushed: null
-  started_at: null
-  completed_at: null
+  branch: feature/time-machine-dashboard-history
+  pushed: true
+  started_at: '2026-06-21T02:31:35Z'
+  completed_at: '2026-06-21T02:31:35Z'
 - id: runtime-configuration
   name: Agent Runtime Configuration
   description: Exposes Hermes Agent runtime management for memory, providers, models,

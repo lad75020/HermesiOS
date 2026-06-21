@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "extensions": {
+    "agent-context": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:9a1dc02d2d0139bb03860392ecacef79183be2c442feda2f9ccaa4e5907b1e47",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "hermes": [
+          "speckit.agent-context.update"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-06-21T01:55:18.961374+00:00"
+    },
+    "time-machine": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:8ad282a27149aa67765dbebd4031a0175394de5eb1578649f563e651c9eb5a92",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "hermes": [
+          "speckit.time-machine.analyze",
+          "speckit.time-machine.next",
+          "speckit.time-machine.status"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-06-21T01:56:18.823089+00:00"
+    },
+    "refine": {
+      "version": "1.0.0",
+      "source": "local",
+      "manifest_hash": "sha256:f81d942a057a69e00d223e0c2154de0e1040b33f80f9acfc1a15a6e3762ae22b",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "hermes": [
+          "speckit.refine.update",
+          "speckit.refine.propagate",
+          "speckit.refine.diff",
+          "speckit.refine.status"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-06-21T01:56:45.420299+00:00"
+    }
+  }
+}

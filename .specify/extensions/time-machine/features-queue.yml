@@ -1,0 +1,206 @@
+analyzed_at: '2026-06-21T02:02:54Z'
+project_root: /Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS
+total_features: 11
+completed: 1
+features:
+- id: app-shell-design
+  name: App Shell and Design System
+  description: Provides the HermesiOS application entry point, workspace navigation,
+    shared visual components, themed branding, localization, fonts, and launch experience.
+  files:
+  - HermesiOS/HermesiOSApp.swift
+  - HermesiOS/ContentView.swift
+  - HermesiOS/HermesWorkspaceNavigation.swift
+  - HermesiOS/HermesSharedViews.swift
+  - HermesiOS/HermesDesignSystem.swift
+  - HermesiOS/HermesAppTheme.swift
+  - HermesiOS/HermesWebsiteTypography.swift
+  - HermesiOS/HermesSplashView.swift
+  - HermesiOS/HermesBackgroundActivity.swift
+  - HermesiOS/Assets.xcassets/
+  - HermesiOS/Resources/
+  - HermesiOS/Fonts/
+  - HermesiOS/Localizable.xcstrings
+  - HermesiOS/*/InfoPlist.strings
+  - HermesiOS/Info.plist
+  - HermesiOS/HermesiOS.entitlements
+  - HermesiOS/HermesiOSRelease.entitlements
+  status: done
+  current_phase: null
+  branch: feature/time-machine-app-shell-design
+  pushed: true
+  started_at: '2026-06-21T02:09:25Z'
+  completed_at: '2026-06-21T02:22:20Z'
+- id: secure-settings-reachability
+  name: Secure Settings and Reachability
+  description: Lets users configure API credentials, trusted host endpoints, service
+    ports, QR onboarding data, and live connectivity state securely on device.
+  files:
+  - HermesiOS/HermesSettingsView.swift
+  - HermesiOS/HermesSettingsPersistence.swift
+  - HermesiOS/HermesHostEndpoints.swift
+  - HermesiOS/HermesStatusBand.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: companion-pairing-bridge
+  name: Host Companion Pairing Bridge
+  description: Connects iOS devices to the macOS Host Companion through authenticated
+    pairing, approval, WebSocket envelopes, and shared companion protocol models.
+  files:
+  - HermesiOS/HermesCompanionClient.swift
+  - HermesiOS/HermesCompanionPanel.swift
+  - HermesHostCompanion/HermesHostCompanionApp.swift
+  - HermesHostCompanion/CompanionServer.swift
+  - HermesHostCompanion/CompanionProtocol.swift
+  - HermesHostCompanion/Assets.xcassets/
+  - HermesHostCompanion/AppIcon.icns
+  - HermesHostCompanion/Info.plist
+  - HermesHostCompanion/Localizable.xcstrings
+  - HermesHostCompanion/*/InfoPlist.strings
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: ask-chat-workspaces
+  name: Ask and Chat Workspaces
+  description: Enables Ask Hermes responses, chat completions, streaming console UI,
+    attachments, speech input, prompt history, workspace attention, and approvals.
+  files:
+  - HermesiOS/HermesResponsesAPI.swift
+  - HermesiOS/HermesChatCompletionsAPI.swift
+  - HermesiOS/HermesConsoleViews.swift
+  - HermesiOS/HermesResponsesWorkspace.swift
+  - HermesiOS/HermesPromptHistoryStore.swift
+  - HermesiOS/HermesApprovalsInboxView.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: tui-gateway-command-center
+  name: TUI Gateway and Command Center
+  description: Provides dashboard-backed TUI workspaces, live event streaming, attachments,
+    clarifications, secret and sudo prompts, command runs, and gateway restart controls.
+  files:
+  - HermesiOS/HermesTUIGatewayView.swift
+  - HermesiOS/HermesCommandCenterView.swift
+  - HermesiOS/HermesDashboardGatewayRestart.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: dashboard-history
+  name: Dashboard History Search
+  description: Lets users search dashboard conversations, inspect matched messages,
+    filter by profile, and resume historical Hermes sessions.
+  files:
+  - HermesiOS/HermesDashboardHistorySearch.swift
+  - HermesiOS/HermesHistoryView.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: runtime-configuration
+  name: Agent Runtime Configuration
+  description: Exposes Hermes Agent runtime management for memory, providers, models,
+    profiles, gateway platforms, tools, MCP servers, skills, schedules, observability,
+    targets, downloads, and knowledge erasure.
+  files:
+  - HermesiOS/HermesRuntimeComponents.swift
+  - HermesiOS/HermesAgentConfigView.swift
+  - HermesiOS/HermesMemoryPanel.swift
+  - HermesiOS/HermesProvidersPanel.swift
+  - HermesiOS/HermesModelsPanel.swift
+  - HermesiOS/HermesProfilesPanel.swift
+  - HermesiOS/HermesGatewayPanel.swift
+  - HermesiOS/HermesToolsPanel.swift
+  - HermesiOS/HermesMCPServersPanel.swift
+  - HermesiOS/HermesSkillsPanel.swift
+  - HermesiOS/HermesSchedulesPanel.swift
+  - HermesiOS/HermesObservabilityPanel.swift
+  - HermesiOS/HermesKnowledgeEraserPanel.swift
+  - HermesHostCompanion/CompanionMemoryRegistry.swift
+  - HermesHostCompanion/CompanionProviderRegistry.swift
+  - HermesHostCompanion/CompanionModelRegistry.swift
+  - HermesHostCompanion/CompanionProfileRegistry.swift
+  - HermesHostCompanion/CompanionGatewayRegistry.swift
+  - HermesHostCompanion/CompanionToolsetRegistry.swift
+  - HermesHostCompanion/CompanionMCPRegistry.swift
+  - HermesHostCompanion/CompanionScheduleRegistry.swift
+  - HermesHostCompanion/CompanionTargetRegistry.swift
+  - HermesHostCompanion/CompanionKnowledgeEraserRegistry.swift
+  - HermesHostCompanion/CompanionFileDownloadRegistry.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: host-services-installation
+  name: Host Services and Installation
+  description: Manages macOS service records, logs, Tailscale Serve exposure, Hermes
+    Agent update operations, deployment scripts, and service-oriented host actions.
+  files:
+  - HermesHostCompanion/CompanionServiceRegistry.swift
+  - HermesHostCompanion/CompanionLogRegistry.swift
+  - HermesHostCompanion/CompanionTailscaleServeRegistry.swift
+  - HermesHostCompanion/CompanionGitRegistry.swift
+  - scripts/deploy-hermesios.mjs
+  - scripts/deploy_hermesios_stack.py
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: terminal-web-office
+  name: Terminal, Web, and Office Workspaces
+  description: Provides SSH terminal access, multi-workspace WebKit browsing, and
+    the persisted Hermes Office or Claw3D web experience.
+  files:
+  - HermesiOS/HermesTerminalView.swift
+  - HermesiOS/HermesWebBrowserView.swift
+  - HermesiOS/HermesOfficeView.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: utilities-history-downloads
+  name: Utilities, History, and Downloads
+  description: Offers on-device utility panels for clipboard history, messages history,
+    file downloads, protected local storage, and saved response or prompt records.
+  files:
+  - HermesiOS/HermesUtilitiesView.swift
+  - HermesiOS/Item.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: developer-debug-bridge
+  name: Developer Debug Bridge
+  description: Runs the GStack debug state server and UI mutation, element inspection,
+    and screenshot bridges used for automated app QA.
+  files:
+  - HermesiOS/GstackDebugBridges.swift
+  - HermesiOS/GstackDebugStateServer.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null

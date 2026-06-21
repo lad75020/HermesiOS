@@ -1,7 +1,7 @@
 analyzed_at: '2026-06-21T02:02:54Z'
 project_root: /Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS
 total_features: 11
-completed: 6
+completed: 7
 features:
 - id: app-shell-design
   name: App Shell and Design System
@@ -141,12 +141,12 @@ features:
   - HermesHostCompanion/CompanionTargetRegistry.swift
   - HermesHostCompanion/CompanionKnowledgeEraserRegistry.swift
   - HermesHostCompanion/CompanionFileDownloadRegistry.swift
-  status: pending
+  status: done
   current_phase: null
-  branch: null
-  pushed: null
-  started_at: null
-  completed_at: null
+  branch: feature/time-machine-runtime-configuration
+  pushed: true
+  started_at: '2026-06-21T02:31:36Z'
+  completed_at: '2026-06-21T02:31:36Z'
 - id: host-services-installation
   name: Host Services and Installation
   description: Manages macOS service records, logs, Tailscale Serve exposure, Hermes

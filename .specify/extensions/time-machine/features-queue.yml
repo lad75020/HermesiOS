@@ -1,0 +1,159 @@
+---
+analyzed_at: '2026-08-16T04:24:29Z'
+project_root: "/Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS"
+total_features: 11
+completed: 2
+features:
+- id: auth
+  name: Authentication & Pairing
+  description: QR-based device onboarding and companion enrollment for the iOS app.
+  files:
+  - HermesiOS/HermesCompanionClient.swift
+  - HermesiOS/HermesCompanionPanel.swift
+  status: completed
+  current_phase: implement
+  branch: feature/time-machine-auth
+  pushed:
+  started_at: '2026-08-16T04:31:19Z'
+  completed_at: '2026-08-16T04:33:58Z'
+- id: api-client
+  name: Hermes API Client
+  description: OpenAI-compatible responses and chat completions client with bearer
+    auth.
+  files:
+  - HermesiOS/HermesResponsesAPI.swift
+  - HermesiOS/HermesChatCompletionsAPI.swift
+  status: completed
+  current_phase: implement
+  branch: feature/time-machine-api-client
+  pushed:
+  started_at: '2026-08-16T04:33:58Z'
+  completed_at: '2026-08-16T04:35:56Z'
+- id: tui-gateway
+  name: TUI Gateway
+  description: WebSocket dashboard sessions with workspace streaming and attention
+    states.
+  files:
+  - HermesiOS/HermesTUIGatewayView.swift
+  - HermesiOS/HermesResponsesWorkspace.swift
+  status: done
+  started_at: '2026-08-16T04:44:14Z'
+  current_phase:
+  branch: feature/time-machine-tui-gateway
+  pushed: true
+  completed_at: '2026-08-16T04:47:28Z'
+- id: history-search
+  name: History & Search
+  description: Dashboard-backed history search and session resume.
+  files:
+  - HermesiOS/HermesHistoryView.swift
+  - HermesiOS/HermesDashboardHistorySearch.swift
+  status: in-progress
+  current_phase: implement
+  branch: feature/time-machine-history-search
+  pushed:
+  started_at: '2026-08-16T04:48:01Z'
+  completed_at:
+- id: runtime-panels
+  name: Agent Runtime Panels
+  description: Memory, providers, models, profiles, tools, MCP, schedules, observability,
+    skills.
+  files:
+  - HermesiOS/HermesMemoryPanel.swift
+  - HermesiOS/HermesModelsPanel.swift
+  - HermesiOS/HermesProvidersPanel.swift
+  - HermesiOS/HermesProfilesPanel.swift
+  - HermesiOS/HermesToolsPanel.swift
+  - HermesiOS/HermesMCPServersPanel.swift
+  - HermesiOS/HermesSchedulesPanel.swift
+  - HermesiOS/HermesObservabilityPanel.swift
+  - HermesiOS/HermesSkillsPanel.swift
+  status: pending
+  current_phase:
+  branch:
+  pushed:
+  started_at:
+  completed_at:
+- id: settings
+  name: Settings & Configuration
+  description: API, companion, service ports, workspace, theme and persistence.
+  files:
+  - HermesiOS/HermesSettingsView.swift
+  - HermesiOS/HermesSettingsPersistence.swift
+  - HermesiOS/HermesHostEndpoints.swift
+  - HermesiOS/HermesAppTheme.swift
+  status: pending
+  current_phase:
+  branch:
+  pushed:
+  started_at:
+  completed_at:
+- id: status-band
+  name: Status Band
+  description: Top status indicators for API, companion, dashboard, active work and
+    unread states.
+  files:
+  - HermesiOS/HermesStatusBand.swift
+  status: pending
+  current_phase:
+  branch:
+  pushed:
+  started_at:
+  completed_at:
+- id: office
+  name: Office & Claw3D
+  description: Web view for Hermes Office and Claw3D bridge integration.
+  files:
+  - HermesiOS/HermesOfficeView.swift
+  - HermesiOS/HermesWebBrowserView.swift
+  status: pending
+  current_phase:
+  branch:
+  pushed:
+  started_at:
+  completed_at:
+- id: host-companion
+  name: Host Companion Service
+  description: macOS WebSocket service handling secure host operations for the iOS
+    client.
+  files:
+  - HermesHostCompanion/CompanionServer.swift
+  - HermesHostCompanion/CompanionProtocol.swift
+  status: pending
+  current_phase:
+  branch:
+  pushed:
+  started_at:
+  completed_at:
+- id: host-registries
+  name: Host Registries
+  description: Provider, memory, model, profile, schedule, service and file registries
+    on macOS.
+  files:
+  - HermesHostCompanion/CompanionProviderRegistry.swift
+  - HermesHostCompanion/CompanionMemoryRegistry.swift
+  - HermesHostCompanion/CompanionModelRegistry.swift
+  - HermesHostCompanion/CompanionProfileRegistry.swift
+  - HermesHostCompanion/CompanionScheduleRegistry.swift
+  - HermesHostCompanion/CompanionServiceRegistry.swift
+  - HermesHostCompanion/CompanionFileDownloadRegistry.swift
+  status: pending
+  current_phase:
+  branch:
+  pushed:
+  started_at:
+  completed_at:
+- id: ui-design
+  name: UI Design System
+  description: Shared SwiftUI components, typography, splash, design tokens.
+  files:
+  - HermesiOS/HermesDesignSystem.swift
+  - HermesiOS/HermesRuntimeComponents.swift
+  - HermesiOS/HermesWebsiteTypography.swift
+  - HermesiOS/HermesSplashView.swift
+  status: pending
+  current_phase:
+  branch:
+  pushed:
+  started_at:
+  completed_at:

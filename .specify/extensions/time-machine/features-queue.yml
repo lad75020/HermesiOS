@@ -2,7 +2,7 @@
 analyzed_at: '2026-08-16T04:24:29Z'
 project_root: "/Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS"
 total_features: 11
-completed: 8
+completed: 9
 features:
 - id: auth
   name: Authentication & Pairing
@@ -137,12 +137,12 @@ features:
   - HermesHostCompanion/CompanionScheduleRegistry.swift
   - HermesHostCompanion/CompanionServiceRegistry.swift
   - HermesHostCompanion/CompanionFileDownloadRegistry.swift
-  status: pending
+  status: skipped
   current_phase:
-  branch:
-  pushed:
-  started_at:
-  completed_at:
+  branch: feature/time-machine-host-registries
+  pushed: null
+  started_at: '2026-08-16T06:27:45Z'
+  completed_at: '2026-08-16T06:29:36Z'
 - id: ui-design
   name: UI Design System
   description: Shared SwiftUI components, typography, splash, design tokens.
@@ -151,9 +151,9 @@ features:
   - HermesiOS/HermesRuntimeComponents.swift
   - HermesiOS/HermesWebsiteTypography.swift
   - HermesiOS/HermesSplashView.swift
-  status: pending
+  status: done
   current_phase:
-  branch:
-  pushed:
-  started_at:
-  completed_at:
+  branch: feature/time-machine-ui-design
+  pushed: false
+  started_at: '2026-08-16T06:29:40Z'
+  completed_at: '2026-08-16T07:03:12Z'

@@ -2,7 +2,7 @@
 analyzed_at: '2026-08-16T04:24:29Z'
 project_root: "/Volumes/WDBlack4TB/Code/HermesiOS/HermesiOS"
 total_features: 11
-completed: 2
+completed: 4
 features:
 - id: auth
   name: Authentication & Pairing
@@ -48,12 +48,12 @@ features:
   files:
   - HermesiOS/HermesHistoryView.swift
   - HermesiOS/HermesDashboardHistorySearch.swift
-  status: in-progress
-  current_phase: implement
+  status: done
+  current_phase:
   branch: feature/time-machine-history-search
-  pushed:
+  pushed: true
   started_at: '2026-08-16T04:48:01Z'
-  completed_at:
+  completed_at: '2026-08-16T04:54:23Z'
 - id: runtime-panels
   name: Agent Runtime Panels
   description: Memory, providers, models, profiles, tools, MCP, schedules, observability,
@@ -68,12 +68,12 @@ features:
   - HermesiOS/HermesSchedulesPanel.swift
   - HermesiOS/HermesObservabilityPanel.swift
   - HermesiOS/HermesSkillsPanel.swift
-  status: pending
+  status: done
   current_phase:
-  branch:
-  pushed:
-  started_at:
-  completed_at:
+  branch: feature/time-machine-runtime-panels
+  pushed: false
+  started_at: '2026-08-16T04:54:50Z'
+  completed_at: '2026-08-16T04:56:33Z'
 - id: settings
   name: Settings & Configuration
   description: API, companion, service ports, workspace, theme and persistence.

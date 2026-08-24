@@ -14,6 +14,23 @@
 		5A9D10052FB5000100000005 /* Crypto in Frameworks */ = {isa = PBXBuildFile; productRef = 5A9D10142FB5000100000005 /* Crypto */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		A1B2C3D4E5F6000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4D4AAD262FA93A6D00AEE3FB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D4AAD2D2FA93A6D00AEE3FB;
+			remoteInfo = HermesiOS;
+		};
+		A1B2C3D4E5F6000000000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4D4AAD262FA93A6D00AEE3FB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5A8C00072FAB000100000001;
+			remoteInfo = HermesHostCompanion;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		4D4AAD2E2FA93A6D00AEE3FB /* HermesiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A8C00012FAB000100000001 /* HermesHostCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesHostCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -128,23 +145,6 @@
 		};
 /* End PBXGroup section */
 
-/* Begin PBXContainerItemProxy section */
-		A1B2C3D4E5F6000000000007 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 4D4AAD262FA93A6D00AEE3FB /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 4D4AAD2D2FA93A6D00AEE3FB;
-			remoteInfo = HermesiOS;
-		};
-		A1B2C3D4E5F6000000000008 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 4D4AAD262FA93A6D00AEE3FB /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 5A8C00072FAB000100000001;
-			remoteInfo = HermesHostCompanion;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXNativeTarget section */
 		4D4AAD2D2FA93A6D00AEE3FB /* HermesiOS */ = {
 			isa = PBXNativeTarget;
@@ -247,7 +247,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2640;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					4D4AAD2D2FA93A6D00AEE3FB = {
 						CreatedOnToolsVersion = 26.4.1;
@@ -373,6 +373,7 @@
 				INFOPLIST_FILE = HermesiOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hermes on iOS";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "HermesiOS uses the camera to scan the HermesHostCompanion onboarding QR code.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "HermesiOS uses Face ID to unlock encrypted clipboard history and your stored SSH private key.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HermesiOS uses the microphone to dictate prompts with Apple speech recognition.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "HermesiOS uses Apple speech recognition to transcribe dictated prompts live.";
@@ -381,7 +382,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -418,6 +419,7 @@
 				INFOPLIST_FILE = HermesiOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Hermes on iOS";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "HermesiOS uses the camera to scan the HermesHostCompanion onboarding QR code.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "HermesiOS uses Face ID to unlock encrypted clipboard history and your stored SSH private key.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HermesiOS uses the microphone to dictate prompts with Apple speech recognition.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "HermesiOS uses Apple speech recognition to transcribe dictated prompts live.";
@@ -426,7 +428,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -454,6 +456,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -508,6 +511,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -518,6 +522,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -565,6 +570,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -576,6 +582,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = RJYVGK9S3F;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -607,6 +614,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = RJYVGK9S3F;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -675,6 +683,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesHostCompanionTests;
@@ -693,6 +702,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesHostCompanionTests;

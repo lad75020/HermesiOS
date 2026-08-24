@@ -184,9 +184,19 @@ struct HermesTUIModelOption: Identifiable, Equatable {
     var id: String { "\(provider)::\(model)" }
 }
 
+struct HermesTUIProfileOption: Identifiable, Equatable {
+    let name: String
+    let displayName: String
+    let provider: String
+    let model: String
+
+    var id: String { name }
+}
+
 struct HermesTUIInferenceSelection: Equatable {
     static let reasoningEfforts = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
 
+    var profile = "default"
     var provider = ""
     var model = ""
     var reasoningEffort = "medium"
@@ -206,6 +216,7 @@ final class HermesTUIWorkspace: Identifiable {
     let number: Int
     let store = HermesTUIGatewayStore()
     var promptText = ""
+    var profileOptions: [HermesTUIProfileOption] = []
     var modelOptions: [HermesTUIModelOption] = []
     var inference = HermesTUIInferenceSelection()
     var requestResponses: [UUID: String] = [:]
@@ -302,23 +313,62 @@ final class HermesTUIGatewayStore {
         Task { await submit(text, attachment: attachment, inference: inference) }
     }
 
-    func loadModelOptions(into workspace: HermesTUIWorkspace) {
+    func loadProfileOptions(into workspace: HermesTUIWorkspace) {
         guard isConnected else { return }
         Task {
             do {
-                let result = try await request("model.options", params: [:], timeoutSeconds: 45)
-                let options = Self.decodeModelOptions(result)
-                workspace.modelOptions = options
-                if workspace.inference.model.isEmpty,
-                   let defaultOption = options.first {
-                    workspace.inference.provider = defaultOption.provider
-                    workspace.inference.model = defaultOption.model
-                    workspace.inference.fast = false
+                let result = try await request("profiles.list", params: ["include_sessions": .bool(false)], timeoutSeconds: 45)
+                workspace.profileOptions = Self.decodeProfileOptions(result)
+                if !workspace.profileOptions.contains(where: { $0.name == workspace.inference.profile }) {
+                    workspace.inference.profile = workspace.profileOptions.first?.name ?? "default"
                 }
-                workspace.inference = Self.normalizedInference(workspace.inference, options: options)
+                await loadModelOptions(into: workspace, selectProfileDefault: workspace.inference.model.isEmpty)
             } catch {
                 lastErrorMessage = error.localizedDescription
             }
+        }
+    }
+
+    func selectProfile(_ profile: HermesTUIProfileOption, in workspace: HermesTUIWorkspace) {
+        guard !isStreaming, workspace.inference.profile != profile.name else { return }
+        workspace.inference.profile = profile.name
+        workspace.inference.provider = profile.provider
+        workspace.inference.model = profile.model
+        workspace.inference.reasoningEffort = "medium"
+        workspace.inference.fast = false
+        Task {
+            await loadModelOptions(into: workspace, selectProfileDefault: true)
+            guard isConnected else { return }
+            await createGatewaySession(inference: workspace.inference)
+        }
+    }
+
+    private func loadModelOptions(into workspace: HermesTUIWorkspace, selectProfileDefault: Bool) async {
+        do {
+            var params: [String: JSONValue] = [:]
+            let profile = workspace.inference.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !profile.isEmpty { params["profile"] = .string(profile) }
+            let result = try await request("model.options", params: params, timeoutSeconds: 45)
+            let options = Self.decodeModelOptions(result)
+            workspace.modelOptions = options
+            if selectProfileDefault, let profileOption = workspace.profileOptions.first(where: { $0.name == profile }) {
+                let defaultOption = options.first { $0.provider == profileOption.provider && $0.model == profileOption.model }
+                    ?? options.first { $0.model == profileOption.model }
+                if let defaultOption {
+                    workspace.inference.provider = defaultOption.provider
+                    workspace.inference.model = defaultOption.model
+                } else {
+                    workspace.inference.provider = profileOption.provider
+                    workspace.inference.model = profileOption.model
+                }
+            } else if workspace.inference.model.isEmpty, let defaultOption = options.first {
+                workspace.inference.provider = defaultOption.provider
+                workspace.inference.model = defaultOption.model
+                workspace.inference.fast = false
+            }
+            workspace.inference = Self.normalizedInference(workspace.inference, options: options)
+        } catch {
+            lastErrorMessage = error.localizedDescription
         }
     }
 
@@ -727,12 +777,13 @@ final class HermesTUIGatewayStore {
 
     private func inferenceParams(_ inference: HermesTUIInferenceSelection) -> [String: JSONValue] {
         let model = inference.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !model.isEmpty else { return [:] }
-        var params: [String: JSONValue] = [
-            "model": .string(model),
-            "reasoning_effort": .string(inference.reasoningEffort),
-            "fast": .bool(inference.fast)
-        ]
+        var params: [String: JSONValue] = [:]
+        let profile = inference.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !profile.isEmpty { params["profile"] = .string(profile) }
+        guard !model.isEmpty else { return params }
+        params["model"] = .string(model)
+        params["reasoning_effort"] = .string(inference.reasoningEffort)
+        params["fast"] = .bool(inference.fast)
         let provider = inference.provider.trimmingCharacters(in: .whitespacesAndNewlines)
         if !provider.isEmpty { params["provider"] = .string(provider) }
         return params
@@ -765,6 +816,26 @@ final class HermesTUIGatewayStore {
                 || ($0.providerName.caseInsensitiveCompare($1.providerName) == .orderedSame
                     && $0.model.localizedCaseInsensitiveCompare($1.model) == .orderedAscending)
         }
+    }
+
+    private static func decodeProfileOptions(_ result: JSONValue) -> [HermesTUIProfileOption] {
+        var seen = Set<String>()
+        let options = (result.objectValue["profiles"]?.arrayValue ?? []).compactMap { value -> HermesTUIProfileOption? in
+            let row = value.objectValue
+            let name = row["name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !name.isEmpty, seen.insert(name).inserted else { return nil }
+            let displayName = row["display_name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return HermesTUIProfileOption(
+                name: name,
+                displayName: displayName?.isEmpty == false ? displayName! : name,
+                provider: row["provider"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                model: row["model"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            )
+        }
+        if options.isEmpty {
+            return [HermesTUIProfileOption(name: "default", displayName: "default", provider: "", model: "")]
+        }
+        return options.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
     private static func normalizedInference(_ inference: HermesTUIInferenceSelection, options: [HermesTUIModelOption]) -> HermesTUIInferenceSelection {
@@ -1181,7 +1252,7 @@ private struct HermesTUIGatewayView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: workspace.promptText) { _, _ in handlePromptSkillQueryChange() }
         .onChange(of: store.isConnected) { _, isConnected in
-            if isConnected { store.loadModelOptions(into: workspace) }
+            if isConnected { store.loadProfileOptions(into: workspace) }
         }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
@@ -1447,6 +1518,16 @@ private struct HermesTUIGatewayView: View {
     @ViewBuilder
     private var inferenceControls: some View {
         Menu {
+            ForEach(profileOptions) { profile in
+                Button(profile.displayName) { store.selectProfile(profile, in: workspace) }
+            }
+        } label: {
+            inferenceControlLabel(title: "PROFILE", value: selectedProfile?.displayName ?? workspace.inference.profile)
+        }
+        .disabled(!store.isConnected || store.isStreaming || profileOptions.isEmpty)
+        .accessibilityLabel("Choose Hermes profile")
+
+        Menu {
             if workspace.modelOptions.isEmpty {
                 Text(verbatim: "No models available")
             } else {
@@ -1492,6 +1573,16 @@ private struct HermesTUIGatewayView: View {
         workspace.modelOptions.first { $0.provider == workspace.inference.provider && $0.model == workspace.inference.model }
     }
 
+    private var selectedProfile: HermesTUIProfileOption? {
+        profileOptions.first { $0.name == workspace.inference.profile }
+    }
+
+    private var profileOptions: [HermesTUIProfileOption] {
+        workspace.profileOptions.isEmpty
+            ? [HermesTUIProfileOption(name: "default", displayName: "default", provider: "", model: "")]
+            : workspace.profileOptions
+    }
+
     private var modelProviderGroups: [(provider: String, name: String, options: [HermesTUIModelOption])] {
         Dictionary(grouping: workspace.modelOptions, by: \.provider)
             .compactMap { provider, options in
@@ -1524,10 +1615,14 @@ private struct HermesTUIGatewayView: View {
     }
 
     private func selectModel(_ option: HermesTUIModelOption) {
+        guard workspace.inference.provider != option.provider || workspace.inference.model != option.model else { return }
         workspace.inference.provider = option.provider
         workspace.inference.model = option.model
         if !option.supportsReasoning { workspace.inference.reasoningEffort = "none" }
         if !option.supportsFast { workspace.inference.fast = false }
+        if store.isConnected && !store.isStreaming {
+            store.createSession(inference: workspace.inference)
+        }
     }
 
     private func reasoningLabel(for effort: String) -> String {

@@ -18,3 +18,5 @@
 - [x] T011 [US5] Group and sort the model menu by provider and model name in `HermesiOS/HermesTUIGatewayView.swift`.
 - [x] T012 [US5] Add workspace-scoped model, reasoning-effort, and speed selection with capability-gated controls in `HermesiOS/HermesTUIGatewayView.swift`.
 - [x] T013 [US5] Pass model/provider, reasoning effort, and applicable Fast state through `session.create` and `prompt.submit` requests in `HermesiOS/HermesTUIGatewayView.swift`.
+- [x] T014 [US5] Load `profiles.list`, add a profile picker before the model picker, and request profile-scoped model options in `HermesiOS/HermesTUIGatewayView.swift`.
+- [x] T015 [US5] Select the chosen profile's configured default model, create a new profile-scoped TUI session, and preserve model override capability in `HermesiOS/HermesTUIGatewayView.swift`.

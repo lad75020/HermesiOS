@@ -255,6 +255,26 @@ final class HermesTUIWorkspace: Identifiable {
 }
 
 @MainActor
+enum HermesTUIHistoryResumeCoordinator {
+    static func destination(
+        in workspaces: inout [HermesTUIWorkspace],
+        selectedWorkspaceID: HermesTUIWorkspace.ID,
+        isBusy: (HermesTUIWorkspace) -> Bool,
+        makeWorkspace: () -> HermesTUIWorkspace
+    ) -> HermesTUIWorkspace {
+        if let inactiveWorkspace = workspaces.first(where: {
+            $0.id != selectedWorkspaceID && !isBusy($0)
+        }) {
+            return inactiveWorkspace
+        }
+
+        let workspace = makeWorkspace()
+        workspaces.append(workspace)
+        return workspace
+    }
+}
+
+@MainActor
 @Observable
 final class HermesTUIGatewayStore {
     var messages: [HermesTUIGatewayMessage] = []

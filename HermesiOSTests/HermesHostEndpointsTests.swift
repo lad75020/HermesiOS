@@ -55,3 +55,97 @@ final class HermesPhonePrimaryTabTests: XCTestCase {
         XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .history), .more)
     }
 }
+
+@MainActor
+final class HermesTUIHistoryResumeCoordinatorTests: XCTestCase {
+    func testUsesAvailableInactiveWorkspaceWithoutSelectingActiveWorkspace() {
+        let selected = HermesTUIWorkspace(number: 1)
+        let inactive = HermesTUIWorkspace(number: 2)
+        var workspaces = [selected, inactive]
+
+        let destination = HermesTUIHistoryResumeCoordinator.destination(
+            in: &workspaces,
+            selectedWorkspaceID: selected.id,
+            isBusy: { _ in false },
+            makeWorkspace: { HermesTUIWorkspace(number: 3) }
+        )
+
+        XCTAssertEqual(destination.id, inactive.id)
+        XCTAssertNotEqual(destination.id, selected.id)
+        XCTAssertEqual(workspaces.count, 2)
+    }
+
+    func testCreatesInactiveWorkspaceWhenNoAvailableInactiveWorkspaceExists() {
+        let selected = HermesTUIWorkspace(number: 1)
+        var workspaces = [selected]
+
+        let destination = HermesTUIHistoryResumeCoordinator.destination(
+            in: &workspaces,
+            selectedWorkspaceID: selected.id,
+            isBusy: { _ in false },
+            makeWorkspace: { HermesTUIWorkspace(number: 2) }
+        )
+
+        XCTAssertNotEqual(destination.id, selected.id)
+        XCTAssertEqual(workspaces.map(\.number), [1, 2])
+    }
+}
+
+final class HermesHistorySearchFocusPolicyTests: XCTestCase {
+    func testDismissesKeyboardAfterSuccessfulSearchWithResults() {
+        XCTAssertTrue(
+            HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
+                wasSearching: true,
+                isSearching: false,
+                isCompactWidth: true,
+                status: "Found 3 conversations",
+                lastErrorMessage: ""
+            )
+        )
+    }
+
+    func testDismissesKeyboardAfterSuccessfulSearchWithoutResults() {
+        XCTAssertTrue(
+            HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
+                wasSearching: true,
+                isSearching: false,
+                isCompactWidth: true,
+                status: "No matching conversations",
+                lastErrorMessage: ""
+            )
+        )
+    }
+
+    func testKeepsKeyboardStateForCancellationAndFailure() {
+        XCTAssertFalse(
+            HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
+                wasSearching: true,
+                isSearching: false,
+                isCompactWidth: true,
+                status: "Cancelled",
+                lastErrorMessage: ""
+            )
+        )
+        XCTAssertFalse(
+            HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
+                wasSearching: true,
+                isSearching: false,
+                isCompactWidth: true,
+                status: "Search failed",
+                lastErrorMessage: "Network unavailable"
+            )
+        )
+    }
+
+    func testKeepsKeyboardStateOutsideCompactWidth() {
+        XCTAssertFalse(
+            HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
+                wasSearching: true,
+                isSearching: false,
+                isCompactWidth: false,
+                status: "Found 3 conversations",
+                lastErrorMessage: ""
+            )
+        )
+    }
+}

@@ -7,11 +7,11 @@ import Observation
 import SwiftUI
 
 struct HermesHistoryView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Binding var apiSettings: HermesAPISettings
     @Bindable var searchSession: HermesDashboardHistorySearchSession
     let isResponsesStreaming: Bool
     let isChatStreaming: Bool
-    let isTUIGatewayBusy: Bool
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
     let onResumeChat: (HermesDashboardConversationResult) -> Void
     let onResumeTUI: (HermesDashboardConversationResult) -> Void
@@ -21,6 +21,7 @@ struct HermesHistoryView: View {
     @State private var expandedConversationIDs: Set<String> = []
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedProfileFilter = "all"
+    @FocusState private var isSearchFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,12 +49,24 @@ struct HermesHistoryView: View {
         .task(id: apiSettings.baseURL) {
             await refreshProfileOptions()
         }
+        .onChange(of: searchSession.isSearching) { wasSearching, isSearching in
+            if HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
+                wasSearching: wasSearching,
+                isSearching: isSearching,
+                isCompactWidth: horizontalSizeClass == .compact,
+                status: searchSession.status,
+                lastErrorMessage: searchSession.lastErrorMessage
+            ) {
+                isSearchFieldFocused = false
+            }
+        }
     }
 
     private var dashboardSearchSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
                 TextField("Search all Hermes conversations", text: $searchSession.query, axis: .vertical)
+                    .focused($isSearchFieldFocused)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .lineLimit(1...3)
@@ -158,7 +171,6 @@ struct HermesHistoryView: View {
                         isExpanded: bindingForConversation(result.id),
                         isResumeResponsesDisabled: isResponsesStreaming,
                         isResumeChatDisabled: isChatStreaming,
-                        isResumeTUIDisabled: isTUIGatewayBusy,
                         onResumeResponses: onResumeResponses,
                         onResumeChat: onResumeChat,
                         onResumeTUI: onResumeTUI
@@ -234,6 +246,20 @@ struct HermesHistoryView: View {
     }
 }
 
+enum HermesHistorySearchFocusPolicy {
+    static func shouldDismissKeyboard(
+        wasSearching: Bool,
+        isSearching: Bool,
+        isCompactWidth: Bool,
+        status: String,
+        lastErrorMessage: String
+    ) -> Bool {
+        guard wasSearching, !isSearching, isCompactWidth else { return false }
+        guard lastErrorMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return status.hasPrefix("Found ") || status.hasPrefix("No matching conversations")
+    }
+}
+
 private struct HermesHistoryProfileFilterOption: Hashable {
     let title: String
     let value: String
@@ -250,7 +276,6 @@ private struct HermesDashboardConversationDisclosure: View {
     @Binding var isExpanded: Bool
     let isResumeResponsesDisabled: Bool
     let isResumeChatDisabled: Bool
-    let isResumeTUIDisabled: Bool
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
     let onResumeChat: (HermesDashboardConversationResult) -> Void
     let onResumeTUI: (HermesDashboardConversationResult) -> Void
@@ -276,6 +301,14 @@ private struct HermesDashboardConversationDisclosure: View {
                     .hermesGlassButton()
                     .disabled(isResumeChatDisabled)
                     .help(isResumeChatDisabled ? "Chat with Hermes is streaming a response" : "Resume this conversation in Chat with Hermes")
+
+                    Button {
+                        onResumeTUI(result)
+                    } label: {
+                        Label("Resume in TUI", systemImage: "terminal.fill")
+                    }
+                    .hermesGlassButton()
+                    .help("Restore this conversation in an inactive TUI Gateway workspace")
                 }
 
                 ForEach(result.displayMessages) { message in
@@ -306,9 +339,8 @@ private struct HermesDashboardConversationDisclosure: View {
                     Button {
                         onResumeTUI(result)
                     } label: {
-                        Label("Resume to TUI Gateway", systemImage: "terminal.fill")
+                        Label("Resume in TUI", systemImage: "terminal.fill")
                     }
-                    .disabled(isResumeTUIDisabled)
                 } label: {
                     Label("Resume", systemImage: "arrow.uturn.forward")
                         .labelStyle(.titleAndIcon)

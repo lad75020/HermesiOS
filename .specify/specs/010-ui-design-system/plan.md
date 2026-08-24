@@ -1,5 +1,7 @@
 # Plan: UI Design System
 
+**Propagated**: 2026-08-24 — Updated from the spec.md refinement to curate primary iPhone navigation.
+
 ## Technical Context
 
 - Design system foundations are defined in `HermesiOS/HermesDesignSystem.swift`:
@@ -38,6 +40,7 @@
     - calls `HermesAppearance.configureGlobalAppearance()` in `init()`
     - uses `HermesLiquidGlassCanvas` as global background
     - hosts splash transition logic
+    - owns compact-layout `PhoneTab` selection, supported tab presentation, and routing fallback behavior.
   - The design system is already adopted broadly across other screens (settings, runtime panels, web browser, status, console, gateway, etc.).
 
 - Asset baseline under `HermesiOS/Fonts/*` and `HermesiOS/Resources/HermesSplash.mp4` exists and is part of current design-system behavior.
@@ -54,6 +57,14 @@
    - local font registration with safe defaults
 4. Keep runtime panels and shared controls consistent with this feature by documenting entity/state transitions in `data-model.md`.
 5. Produce deterministic validation instructions in `quickstart.md` that can be executed before implementation starts.
+6. Curate compact iPhone navigation by removing the Ask Hermes and Chat with Hermes tab entries and their corresponding symbols, while preserving a valid selection and the underlying non-navigation capabilities.
+
+## Refinement — Curated primary iPhone navigation
+
+- Update `HermesiOS/ContentView.swift` as the single compact-navigation integration point.
+- Remove the primary Ask Hermes and Chat with Hermes tab entries, including the `dot.radiowaves.left.and.right` and `text.bubble` symbols.
+- Ensure initial, restored, and programmatic navigation resolves to a remaining supported destination rather than a removed response/chat tab.
+- Keep response and chat clients, settings controls, and console implementations out of scope; this refinement changes presentation and routing only.
 
 ## Phase 0 — Research and decision capture
 
@@ -94,7 +105,8 @@
 - Keep changes constrained to:
   - shared component and style definitions,
   - typography registration and usage patterns,
-  - splash media fallback behavior.
+  - splash media fallback behavior,
+  - compact primary-navigation presentation and selection fallback in `HermesiOS/ContentView.swift`.
 - Do not add runtime business logic outside UI styling and media/font display support.
 
 ## Phase 2 — Readiness and consistency checks
@@ -132,6 +144,7 @@
 - Build/readiness: planning artifacts completed before implementation for this feature branch.
 - Performance: glass-layer and video initialization usage should not introduce avoidable startup jank in splash-to-main transitions.
 - Scope control: no API, onboarding, or storage protocol changes.
+- Navigation curation: removed tab destinations and icons must not remain visible or selectable in compact primary navigation, and stale selections must fall back safely.
 
 ## Planned Gates (default gates; no project constitution file found)
 

@@ -14,14 +14,46 @@ import Vision
 import VisionKit
 
 
-struct ContentView: View {
-    private enum PhoneTab: Hashable {
-        case responses
-        case chat
-        case tuiGateway
-        case approvals
-        case more
+enum HermesPhonePrimaryTab: CaseIterable, Hashable {
+    case tuiGateway
+    case approvals
+    case more
+
+    var title: String {
+        switch self {
+        case .tuiGateway: "TUI"
+        case .approvals: "Approvals"
+        case .more: "More"
+        }
     }
+
+    var systemImage: String {
+        switch self {
+        case .tuiGateway: "terminal.fill"
+        case .approvals: WorkspaceSection.approvals.systemImage
+        case .more: "ellipsis.circle"
+        }
+    }
+
+    var selectedSection: WorkspaceSection? {
+        switch self {
+        case .tuiGateway: .tuiGateway
+        case .approvals: .approvals
+        case .more: nil
+        }
+    }
+
+    static func resolve(for section: WorkspaceSection) -> Self {
+        switch section {
+        case .tuiGateway: .tuiGateway
+        case .approvals: .approvals
+        case .responses, .chat: .tuiGateway
+        case .history, .web, .terminal, .utilities, .settings, .runtime: .more
+        }
+    }
+}
+
+struct ContentView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
@@ -33,8 +65,8 @@ struct ContentView: View {
     @AppStorage("hermes.utilities.clipboardHistoryMonitoringEnabled") private var isClipboardHistoryMonitoringEnabled = false
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
-    @State private var selectedPhoneSection: WorkspaceSection = .responses
-    @State private var selectedPhoneTab: PhoneTab = .responses
+    @State private var selectedPhoneSection: WorkspaceSection = .tuiGateway
+    @State private var selectedPhoneTab: HermesPhonePrimaryTab = .tuiGateway
     @State private var phoneMorePath: [WorkspaceSection] = []
     @State private var apiSettings: HermesAPISettings
     @State private var companionSettings: HermesCompanionSettings
@@ -239,25 +271,13 @@ struct ContentView: View {
                 selectedWorkspace = .responses
             }
             if selectedPhoneSection == .runtime {
-                openPhoneWorkspace(.responses)
+                openPhoneWorkspace(.tuiGateway)
             }
         }
         .onChange(of: selectedPhoneTab) { _, tab in
-            switch tab {
-            case .responses:
-                selectedPhoneSection = .responses
-                phoneMorePath = []
-            case .chat:
-                selectedPhoneSection = .chat
-                phoneMorePath = []
-            case .tuiGateway:
-                selectedPhoneSection = .tuiGateway
-                phoneMorePath = []
-            case .approvals:
-                selectedPhoneSection = .approvals
-                phoneMorePath = []
-            case .more: break
-            }
+            guard let section = tab.selectedSection else { return }
+            selectedPhoneSection = section
+            phoneMorePath = []
         }
         .onChange(of: shouldShowPhoneConnectionIssueOverlay) { _, isPresented in
             guard isPresented else { return }
@@ -489,29 +509,11 @@ struct ContentView: View {
 
     private var iPhoneLayout: some View {
         TabView(selection: $selectedPhoneTab) {
-            Tab("Ask", systemImage: "dot.radiowaves.left.and.right", value: PhoneTab.responses) {
-                NavigationStack {
-                    responsesConsoleView(isPhoneLayout: true)
-                }
-            }
-
-            Tab("Chat", systemImage: "text.bubble", value: PhoneTab.chat) {
-                NavigationStack {
-                    HermesChatConsoleView(
-                        apiSettings: $apiSettings,
-                        chatDraft: $chatDraft,
-                        dashboardURLString: dashboardURLString,
-                        companionSettings: companionSettings,
-                        companionEnrollment: companionEnrollment,
-                        companionRuntime: companionRuntime,
-                        chatSession: chatSession,
-                        promptHistory: promptHistory,
-                        isPhoneLayout: true
-                    )
-                }
-            }
-
-            Tab("TUI", systemImage: "terminal.fill", value: PhoneTab.tuiGateway) {
+            Tab(
+                HermesPhonePrimaryTab.tuiGateway.title,
+                systemImage: HermesPhonePrimaryTab.tuiGateway.systemImage,
+                value: .tuiGateway
+            ) {
                 NavigationStack {
                     HermesTUIGatewayWorkspacesView(
                         apiSettings: $apiSettings,
@@ -525,7 +527,11 @@ struct ContentView: View {
                 }
             }
 
-            Tab("Approvals", systemImage: WorkspaceSection.approvals.systemImage, value: PhoneTab.approvals) {
+            Tab(
+                HermesPhonePrimaryTab.approvals.title,
+                systemImage: HermesPhonePrimaryTab.approvals.systemImage,
+                value: .approvals
+            ) {
                 NavigationStack {
                     HermesApprovalsInboxView(
                         store: approvalsInbox,
@@ -536,7 +542,11 @@ struct ContentView: View {
             }
             .badge(approvalsInbox.pendingCount)
 
-            Tab("More", systemImage: "ellipsis.circle", value: PhoneTab.more) {
+            Tab(
+                HermesPhonePrimaryTab.more.title,
+                systemImage: HermesPhonePrimaryTab.more.systemImage,
+                value: .more
+            ) {
                 NavigationStack(path: $phoneMorePath) {
                     List(phoneSecondarySections) { section in
                         NavigationLink(value: section) {
@@ -561,17 +571,14 @@ struct ContentView: View {
     }
 
     private func openPhoneWorkspace(_ section: WorkspaceSection) {
-        selectedPhoneSection = section
-        switch section {
-        case .responses:
-            selectedPhoneTab = .responses
-        case .chat:
-            selectedPhoneTab = .chat
-        case .tuiGateway:
-            selectedPhoneTab = .tuiGateway
-        case .approvals:
-            selectedPhoneTab = .approvals
-        case .history, .web, .terminal, .utilities, .settings, .runtime:
+        let tab = HermesPhonePrimaryTab.resolve(for: section)
+        selectedPhoneTab = tab
+
+        if let primarySection = tab.selectedSection {
+            selectedPhoneSection = primarySection
+            phoneMorePath = []
+        } else {
+            selectedPhoneSection = section
             selectedPhoneTab = .more
             phoneMorePath = [section]
         }

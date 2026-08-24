@@ -1,2 +1,9 @@
 /HermesiOS.xcodeproj/xcuserdata/laurent.xcuserdatad
 /scripts
+
+# Swift/Xcode build artifacts
+.build/
+DerivedData/
+*.swiftpm/
+Packages/
+.DS_Store

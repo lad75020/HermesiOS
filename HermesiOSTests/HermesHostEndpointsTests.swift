@@ -41,3 +41,17 @@ final class HermesHostEndpointsTests: XCTestCase {
         XCTAssertNoThrow(try HermesEndpointSecurity.validateSensitiveURL(tailnet))
     }
 }
+
+final class HermesPhonePrimaryTabTests: XCTestCase {
+    func testPrimaryTabsExcludeAskAndChatDestinations() {
+        XCTAssertEqual(HermesPhonePrimaryTab.allCases.map(\.title), ["TUI", "Approvals", "More"])
+        XCTAssertFalse(HermesPhonePrimaryTab.allCases.map(\.systemImage).contains("dot.radiowaves.left.and.right"))
+        XCTAssertFalse(HermesPhonePrimaryTab.allCases.map(\.systemImage).contains("text.bubble"))
+    }
+
+    func testRemovedConsoleSectionsResolveToTUIGateway() {
+        XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .responses), .tuiGateway)
+        XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .chat), .tuiGateway)
+        XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .history), .more)
+    }
+}

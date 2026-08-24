@@ -1,5 +1,7 @@
 # Tasks: UI Design System
 
+**Propagated**: 2026-08-24 — Updated from the spec.md refinement to curate primary iPhone navigation.
+
 ## Phase 1: Setup
 - [X] T001 Validate `.specify/feature.json` points to `./.specify/specs/010-ui-design-system` and confirm `git branch --show-current` is `feature/time-machine-ui-design`.
 - [X] T002 [P] Confirm required artifacts exist: `./.specify/specs/010-ui-design-system/spec.md`, `./.specify/specs/010-ui-design-system/plan.md`, `./.specify/specs/010-ui-design-system/research.md`, `./.specify/specs/010-ui-design-system/data-model.md`, and `./.specify/specs/010-ui-design-system/quickstart.md`.
@@ -56,6 +58,12 @@
 - [X] T039 Run a clean app-target build gate from project root and report results in `./.specify/specs/010-ui-design-system/quickstart.md`.
 - [X] T040 Update `./.specify/specs/010-ui-design-system/quickstart.md` with final launch, typography, interaction, and compatibility observations.
 
+## Phase 9: User Story 6 — Curated primary iPhone navigation
+- [X] T041 [US6] Remove the Ask Hermes and Chat with Hermes `Tab` entries and their `dot.radiowaves.left.and.right` / `text.bubble` symbols from the compact `TabView` in `./HermesiOS/ContentView.swift`.
+- [X] T042 [US6] Update compact `PhoneTab` state, initial selection, `openPhoneWorkspace(_:)`, and automatic routing in `./HermesiOS/ContentView.swift` so requests for removed response/chat destinations resolve to a remaining supported destination.
+- [X] T043 [P] [US6] Add deterministic regression coverage in `./HermesiOSTests/` for the supported compact-navigation destination set and removed-destination fallback behavior.
+- [X] T044 [US6] Perform an iPhone accessibility/navigation smoke check confirming that Ask Hermes, Chat with Hermes, and their former menu icons are absent while all displayed primary destinations remain selectable.
+
 ## Dependencies
 - T001, T002, T003, and T004 are required before moving into foundational and story work.
 - T006 through T010 gate all user stories.
@@ -65,6 +73,7 @@
 - US4 (T026-T030) follows US1-US3 stabilization.
 - US5 (T031-T035) depends on US1-US4 completion.
 - Polish tasks T036-T040 are completed after all story tasks.
+- US6 (T041-T044) depends on the existing compact-navigation integration in `./HermesiOS/ContentView.swift`; T043 can run after the fallback behavior is defined, and T044 follows T041-T043.
 
 ## Independent test criteria
 - US1: launch transitions from `./HermesiOS/HermesiOS/ContentView.swift` and `./HermesiOS/HermesiOS/HermesSplashView.swift` are smooth and always complete, including missing media.
@@ -72,6 +81,7 @@
 - US3: `./HermesiOS/HermesiOS/HermesWebsiteTypography.swift` and key callers in `./HermesiOS/HermesiOS/HermesSettingsView.swift` use branded helpers with safe fallback behavior.
 - US4: `./HermesiOS/HermesiOS/HermesDesignSystem.swift` and `./HermesiOS/HermesiOS/HermesRuntimeComponents.swift` surface deterministic press/loading states and clear on/off semantics.
 - US5: `./HermesiOS/HermesiOS/HermesDesignSystem.swift` and `./HermesiOS/HermesiOS/HermesiOSApp.swift` remain readable and stable across light/dark and OS-capability branches.
+- US6: `./HermesiOS/HermesiOS/ContentView.swift` shows no Ask Hermes or Chat with Hermes primary tabs or their former icons, always selects a supported destination, and has regression coverage in `./HermesiOSTests/`.
 
 ## Parallel execution examples
 - T002 and T003 can run in parallel.
@@ -80,9 +90,10 @@
 - T021 and T023 can run in parallel.
 - T029 and T024 can run independently as non-functional acceptance tasks.
 - T038 runs after all checklist edits are complete.
+- T041 and T043 can proceed in parallel once the supported destination/fallback contract is agreed; T042 depends on T041 and T044 follows T041-T043.
 
 ## Implementation strategy
 - Complete setup and foundational tasks first.
-- Execute user stories in order: US1 → US2 → US3 → US4 → US5.
+- Execute user stories in order: US1 → US2 → US3 → US4 → US5 → US6.
 - Keep changes incremental, preserving existing behavior while introducing shared reusable helpers.
 - Finish with validation and final verification in `./.specify/specs/010-ui-design-system/quickstart.md` and `./.specify/specs/010-ui-design-system/checklists/requirements.md`.

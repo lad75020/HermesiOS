@@ -2,9 +2,13 @@
 
 Feature ID: `ui-design-system`
 
+**Status**: Refined
+
+**Refined**: 2026-08-24 — Removed the Ask Hermes and Chat with Hermes entries and their menu icons from primary iPhone navigation.
+
 ## Summary
 
-The UI Design System feature defines a shared visual foundation for the iOS app, including consistent tokenized colors, typography, glass surfaces, reusable component primitives, and startup branding. The goal is to make every target screen use a common language for appearance, spacing, and interaction behavior while preserving graceful fallback behavior on older OS versions.
+The UI Design System feature defines a shared visual foundation for the iOS app, including consistent tokenized colors, typography, glass surfaces, reusable component primitives, startup branding, and intentional primary-navigation presentation. The goal is to make every target screen use a common language for appearance, spacing, and interaction behavior while preserving graceful fallback behavior on older OS versions.
 
 ## User Stories
 
@@ -13,6 +17,7 @@ The UI Design System feature defines a shared visual foundation for the iOS app,
 - As a user, I can read key labels and controls clearly in both light and dark appearances.
 - As a user, I can sense when controls are available and when they are in-progress state during busy interactions.
 - As a user, I can access the app on older iOS versions without losing core visual structure.
+- As a user, I do not see Ask Hermes or Chat with Hermes as primary iPhone tabs or as their associated menu icons.
 
 ## User Scenarios & Testing
 
@@ -42,6 +47,12 @@ The UI Design System feature defines a shared visual foundation for the iOS app,
 2. Surfaces and contrast remain usable in light and dark appearance modes.
 3. On unsupported OS/device capability for the advanced glass API, the app remains stable and readable using an equivalent material-based fallback.
 
+### Scenario 6: Curated primary iPhone navigation
+1. User opens the app on an iPhone-sized layout.
+2. The primary tab bar does not display Ask Hermes or Chat with Hermes entries.
+3. The dot-radiowaves and text-bubble icons formerly associated with those entries are not displayed in primary navigation.
+4. The selected navigation state always resolves to a remaining supported destination.
+
 ## Functional Requirements
 
 - The design system shall define reusable color tokens for canvas, surfaces, dividers, secondary text, links, status, and brand accents.
@@ -56,6 +67,10 @@ The UI Design System feature defines a shared visual foundation for the iOS app,
 - The design system shall expose reusable methods to standardize button prominence hierarchy, input fields, and list surfaces.
 - Design tokens and styles shall be designed to preserve visual clarity at multiple sizes and text scales.
 - All style changes required for this feature shall be scoped to the shared UI asset files and consumed across existing affected screens rather than duplicating styling logic.
+- The primary iPhone tab bar shall not present Ask Hermes or Chat with Hermes destinations.
+- The primary iPhone navigation shall not present the dot-radiowaves or text-bubble icons that identified the removed Ask Hermes and Chat with Hermes destinations.
+- Navigation actions, restoration, and automatic transitions that previously selected a removed destination shall resolve to a remaining supported destination without a blank or invalid tab state.
+- This refinement shall not remove the underlying response or chat client capabilities, configuration controls, or non-navigation UI components unless separately specified.
 
 ## Success Criteria
 
@@ -65,6 +80,7 @@ The UI Design System feature defines a shared visual foundation for the iOS app,
 - New or updated UI interactions using shared components show consistent press/loading behavior with no visible regressions in repeated toggles.
 - On unsupported system versions, the app remains usable and visually coherent without crashes or blank states for splash, surfaces, and major controls.
 - At least 90% of tested screens pass manual accessibility smoke checks for labels, role clarity, and focus feedback on interactive elements using shared controls.
+- iPhone navigation smoke tests show no Ask Hermes or Chat with Hermes tab labels and no associated dot-radiowaves or text-bubble tab icons, while all displayed destinations remain selectable.
 
 ## Files in Scope
 
@@ -72,6 +88,7 @@ The UI Design System feature defines a shared visual foundation for the iOS app,
 - `HermesiOS/HermesRuntimeComponents.swift`
 - `HermesiOS/HermesWebsiteTypography.swift`
 - `HermesiOS/HermesSplashView.swift`
+- `HermesiOS/ContentView.swift`
 
 ## Assumptions
 
@@ -79,6 +96,7 @@ The UI Design System feature defines a shared visual foundation for the iOS app,
 - The app primarily targets modern iOS versions while still supporting an older fallback behavior for visual effects.
 - Shared components defined here are used as the baseline for new UI work in runtime, settings, and status flows.
 - Users expect the splash sequence to be short and non-blocking.
+- The change is limited to primary iPhone navigation presentation; response and chat capabilities remain available to code and non-navigation surfaces unless a future requirement removes them.
 
 ## Edge Cases
 
@@ -90,6 +108,7 @@ The UI Design System feature defines a shared visual foundation for the iOS app,
 - Temporary rendering pressure during app warm-up and route transitions.
 - Duplicate font registration attempts during repeated app launches.
 - In-flight launch path interrupted by backgrounding or app interruption.
+- A persisted, restored, or programmatically requested navigation selection that references Ask Hermes or Chat with Hermes after their tabs are removed.
 
 ## Key Entities
 
@@ -99,3 +118,4 @@ The UI Design System feature defines a shared visual foundation for the iOS app,
 - `Typography set`: registered custom fonts with role-based helper styles.
 - `Runtime component shell`: reusable accordions and rows used by runtime settings workflows.
 - `Splash screen`: branded app entry route with safe fallback when media cannot be played.
+- `Primary iPhone navigation`: the supported tab destinations and their visible labels/icons for compact layouts.

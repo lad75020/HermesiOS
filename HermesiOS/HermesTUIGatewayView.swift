@@ -1876,11 +1876,13 @@ private struct HermesTUIGatewayView: View {
     private var filteredSkillSuggestions: [HermesDashboardSkill] {
         guard let query = activeSkillQuery else { return [] }
         if query.isEmpty { return dashboardSkills.skills }
-        return dashboardSkills.skills.filter { $0.name.range(of: query, options: [.caseInsensitive, .anchored]) != nil }
+        return dashboardSkills.skills.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+        }
     }
 
     private var shouldShowSkillPicker: Bool {
-        activeSkillQuery != nil && (dashboardSkills.isLoading || (!dashboardSkills.lastErrorMessage.isEmpty && dashboardSkills.skills.isEmpty) || !filteredSkillSuggestions.isEmpty)
+        activeSkillQuery != nil
     }
 
     private func handlePromptSkillQueryChange() {

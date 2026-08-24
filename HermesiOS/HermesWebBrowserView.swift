@@ -24,68 +24,7 @@ struct HermesWebBrowserView: View {
                 .padding(.horizontal)
                 .padding(.top)
 
-            HStack(spacing: 10) {
-                Button {
-                    activeWorkspace.store.goBack()
-                } label: {
-                    Image(systemName: "chevron.backward")
-                        .font(.headline.weight(.semibold))
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-                .hermesLiquidGlass(cornerRadius: 12, tint: activeWorkspace.store.canGoBack ? .igActionBlue.opacity(0.14) : .hermesSurfaceInput.opacity(0.45), interactive: activeWorkspace.store.canGoBack)
-                .disabled(!activeWorkspace.store.canGoBack)
-                .accessibilityLabel("Back")
-
-                Button {
-                    activeWorkspace.store.reload()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.headline.weight(.semibold))
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-                .hermesLiquidGlass(cornerRadius: 12, tint: activeWorkspace.store.currentURL == nil ? .hermesSurfaceInput.opacity(0.45) : .igActionBlue.opacity(0.14), interactive: activeWorkspace.store.currentURL != nil)
-                .disabled(activeWorkspace.store.currentURL == nil)
-                .accessibilityLabel("Refresh")
-
-                Button {
-                    deckStore.createWorkspace()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.headline.weight(.bold))
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-                .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
-                .accessibilityLabel("Open another web view")
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        TextField("https://example.com", text: activeURLString)
-                            .keyboardType(.URL)
-                            .textContentType(.URL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.go)
-                            .focused($isURLFieldFocused)
-                            .hermesRuntimeInput()
-                            .onSubmit(loadEnteredURL)
-                            .accessibilityLabel("Web URL")
-
-                        if activeWorkspace.store.isLoading {
-                            ProgressView()
-                                .controlSize(.regular)
-                                .frame(width: 28, height: 28)
-                                .accessibilityLabel("Page loading")
-                        }
-                    }
-
-                    if isURLFieldFocused, activeHistorySuggestions.isEmpty == false {
-                        historySuggestions
-                    }
-                }
-            }
+            browserToolbar
             .padding(.horizontal)
             .padding(.top, 10)
             .padding(.bottom, 8)
@@ -110,6 +49,13 @@ struct HermesWebBrowserView: View {
     }
 
     private var webHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            expandedWebHeader
+            compactWebHeader
+        }
+    }
+
+    private var expandedWebHeader: some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "globe")
                 .font(.system(size: 42, weight: .semibold))
@@ -118,7 +64,7 @@ struct HermesWebBrowserView: View {
                 .accessibilityHidden(true)
 
             Text("Web")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.largeTitle.bold())
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.72)
@@ -128,7 +74,7 @@ struct HermesWebBrowserView: View {
             } label: {
                 Image(systemName: "chart.bar.xaxis")
                     .font(.headline.weight(.bold))
-                    .frame(width: 34, height: 34)
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .buttonStyle(.plain)
             .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
@@ -139,7 +85,7 @@ struct HermesWebBrowserView: View {
             } label: {
                 Image(systemName: "building.2.crop.circle")
                     .font(.headline.weight(.bold))
-                    .frame(width: 34, height: 34)
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .buttonStyle(.plain)
             .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
@@ -152,22 +98,7 @@ struct HermesWebBrowserView: View {
                     .padding(.horizontal, 2)
                     .accessibilityHidden(true)
 
-                ForEach(deckStore.workspaces) { workspace in
-                    Button {
-                        deckStore.selectWorkspace(id: workspace.id)
-                    } label: {
-                        HermesWebWorkspaceIcon(workspace: workspace)
-                            .frame(width: 32, height: 32)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(deckStore.selectedWorkspaceID == workspace.id ? .white : .primary)
-                    .hermesLiquidGlass(
-                        cornerRadius: 12,
-                        tint: deckStore.selectedWorkspaceID == workspace.id ? .igActionBlue.opacity(0.9) : .white.opacity(0.06),
-                        interactive: true
-                    )
-                    .accessibilityLabel("Web view \(workspace.number)")
-                }
+                workspaceButtons
             }
 
             Spacer(minLength: 0)
@@ -176,6 +107,144 @@ struct HermesWebBrowserView: View {
         .padding(.horizontal, 4)
         .padding(.top, 4)
         .padding(.bottom, 2)
+    }
+
+    private var compactWebHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Label("Web", systemImage: "globe")
+                    .font(.title2.bold())
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 0)
+
+                Menu {
+                    Button("Hermes Dashboard", systemImage: "chart.bar.xaxis", action: loadDashboardURL)
+                    Button("Hermes Office", systemImage: "building.2.crop.circle", action: loadOfficeURL)
+                } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                        .font(.headline.weight(.semibold))
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .hermesLiquidGlass(cornerRadius: 12, tint: .igActionBlue.opacity(0.16), interactive: true)
+                .accessibilityLabel("Open Hermes service")
+            }
+
+            if deckStore.workspaces.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) { workspaceButtons }
+                }
+                .accessibilityLabel("Web views")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var workspaceButtons: some View {
+        ForEach(deckStore.workspaces) { workspace in
+            Button {
+                deckStore.selectWorkspace(id: workspace.id)
+            } label: {
+                HermesWebWorkspaceIcon(workspace: workspace)
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(deckStore.selectedWorkspaceID == workspace.id ? .white : .primary)
+            .hermesLiquidGlass(
+                cornerRadius: 12,
+                tint: deckStore.selectedWorkspaceID == workspace.id ? .igActionBlue.opacity(0.9) : .white.opacity(0.06),
+                interactive: true
+            )
+            .accessibilityLabel("Web view \(workspace.number)")
+            .accessibilityAddTraits(deckStore.selectedWorkspaceID == workspace.id ? .isSelected : [])
+        }
+    }
+
+    private var browserToolbar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    browserNavigationButtons
+                    urlField
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) { browserNavigationButtons }
+                    urlField
+                }
+            }
+
+            if isURLFieldFocused, activeHistorySuggestions.isEmpty == false {
+                historySuggestions
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var browserNavigationButtons: some View {
+        browserButton(
+            systemImage: "chevron.backward",
+            accessibilityLabel: "Back",
+            isEnabled: activeWorkspace.store.canGoBack,
+            action: activeWorkspace.store.goBack
+        )
+        browserButton(
+            systemImage: "arrow.clockwise",
+            accessibilityLabel: "Refresh",
+            isEnabled: activeWorkspace.store.currentURL != nil,
+            action: activeWorkspace.store.reload
+        )
+        browserButton(
+            systemImage: "plus",
+            accessibilityLabel: "Open another web view",
+            isEnabled: true,
+            action: { deckStore.createWorkspace() }
+        )
+    }
+
+    private var urlField: some View {
+        HStack(spacing: 8) {
+            TextField("https://example.com", text: activeURLString)
+                .keyboardType(.URL)
+                .textContentType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.go)
+                .focused($isURLFieldFocused)
+                .hermesRuntimeInput()
+                .onSubmit(loadEnteredURL)
+                .accessibilityLabel("Web URL")
+
+            if activeWorkspace.store.isLoading {
+                ProgressView()
+                    .controlSize(.regular)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel("Page loading")
+            }
+        }
+    }
+
+    private func browserButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.headline.weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .hermesLiquidGlass(
+            cornerRadius: 12,
+            tint: isEnabled ? .igActionBlue.opacity(0.14) : .hermesSurfaceInput.opacity(0.45),
+            interactive: isEnabled
+        )
+        .disabled(!isEnabled)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var activeURLString: Binding<String> {

@@ -33,8 +33,16 @@ struct HermesHostCompanionApp: App {
 
         Settings {
             HermesHostCompanionRootView(controller: serverController)
-                .frame(width: 760, height: 560)
+                .frame(
+                    minWidth: 520,
+                    idealWidth: 760,
+                    maxWidth: .infinity,
+                    minHeight: 460,
+                    idealHeight: 560,
+                    maxHeight: .infinity
+                )
         }
+        .windowResizability(.contentSize)
     }
 }
 
@@ -74,15 +82,10 @@ private struct HermesHostCompanionRootView: View {
 
                         TextField("API port", text: $controller.apiPort)
 
-                        HStack {
-                            Button("Apply Network Target") {
-                                controller.applyNetworkConfiguration()
-                            }
-                            .buttonStyle(.borderedProminent)
-
+                        adaptiveAction("Apply Network Target") {
+                            controller.applyNetworkConfiguration()
+                        } description: {
                             Text("The listener binds to local loopback. Tailscale's IPN extension forwards the tailnet port to this local listener; only non-Tailscale remote hosts need an HTTPS/WSS reverse proxy.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
 
                         Text(controller.server.state == .running ? "Applying host or port changes will restart the running companion server automatically." : "Apply the network target before copying the endpoint to iOS.")
@@ -99,36 +102,19 @@ private struct HermesHostCompanionRootView: View {
                         Text("These service ports are the source of truth for HermesiOS. The iOS app fetches them from this companion after device approval and derives API, Dashboard, and Office URLs from its configured Mac host.")
                             .foregroundStyle(.secondary)
 
-                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
-                            GridRow {
-                                Text("API gateway")
-                                    .fontWeight(.semibold)
-                                TextField("8642", text: $controller.apiGatewayPort)
-                                    .frame(width: 120)
-                            }
-                            GridRow {
-                                Text("Hermes Dashboard")
-                                    .fontWeight(.semibold)
-                                TextField("9120", text: $controller.dashboardPort)
-                                    .frame(width: 120)
-                            }
-                            GridRow {
-                                Text("Hermes Office")
-                                    .fontWeight(.semibold)
-                                TextField("9116", text: $controller.officePort)
-                                    .frame(width: 120)
+                        ViewThatFits(in: .horizontal) {
+                            servicePortsGrid
+                            VStack(alignment: .leading, spacing: 10) {
+                                servicePortField("API gateway", placeholder: "8642", text: $controller.apiGatewayPort)
+                                servicePortField("Hermes Dashboard", placeholder: "9120", text: $controller.dashboardPort)
+                                servicePortField("Hermes Office", placeholder: "9116", text: $controller.officePort)
                             }
                         }
 
-                        HStack {
-                            Button("Save Service Ports") {
-                                controller.applyServicePorts()
-                            }
-                            .buttonStyle(.borderedProminent)
-
+                        adaptiveAction("Save Service Ports") {
+                            controller.applyServicePorts()
+                        } description: {
                             Text("Saving is immediate; restart HermesiOS or check device approval again to refresh cached ports on iOS.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -157,15 +143,10 @@ private struct HermesHostCompanionRootView: View {
                                 .textFieldStyle(.roundedBorder)
                         }
 
-                        HStack {
-                            Button("Save QR Settings") {
-                                controller.applyOnboardingSettings()
-                            }
-                            .buttonStyle(.borderedProminent)
-
+                        adaptiveAction("Save QR Settings") {
+                            controller.applyOnboardingSettings()
+                        } description: {
                             Text(controller.apiGatewayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "QR contains no API key until one is set." : "API key is stored in Keychain and only shown through the QR code.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -182,39 +163,14 @@ private struct HermesHostCompanionRootView: View {
 
                         statusRow("API URL", controller.apiURL)
 
-                        HStack(alignment: .top, spacing: 18) {
-                            if let qrImage = controller.onboardingQRCodeImage {
-                                Image(nsImage: qrImage)
-                                    .interpolation(.none)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 180, height: 180)
-                                    .padding(10)
-                                    .background(.white, in: RoundedRectangle(cornerRadius: 12))
-                                    .accessibilityLabel("HermesiOS onboarding QR code")
-                            } else {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(.quaternary)
-                                    .frame(width: 180, height: 180)
-                                    .overlay(Text("QR unavailable"))
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .top, spacing: 18) {
+                                onboardingQRCode
+                                onboardingCodeDetails
                             }
-
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Current code")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                Text(controller.onboardingCodePreview)
-                                    .font(.caption.monospaced())
-                                    .textSelection(.enabled)
-                                Button {
-                                    controller.rotateOnboardingCode()
-                                } label: {
-                                    Label("Rotate QR Code", systemImage: "qrcode")
-                                }
-                                .buttonStyle(.bordered)
-                                Text("Rotating expires the displayed QR code. Already approved devices keep working until revoked.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 14) {
+                                onboardingQRCode
+                                onboardingCodeDetails
                             }
                         }
 
@@ -282,16 +238,86 @@ private struct HermesHostCompanionRootView: View {
     }
 
     private func statusRow(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top) {
-            Text(label)
-                .fontWeight(.semibold)
-            Spacer()
-            Text(value)
-                .multilineTextAlignment(.trailing)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top) {
+                Text(label).fontWeight(.semibold)
+                Spacer()
+                Text(value)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).fontWeight(.semibold)
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
         }
         .font(.subheadline)
+    }
+
+    private var servicePortsGrid: some View {
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
+            GridRow { Text("API gateway").fontWeight(.semibold); TextField("8642", text: $controller.apiGatewayPort).frame(width: 120) }
+            GridRow { Text("Hermes Dashboard").fontWeight(.semibold); TextField("9120", text: $controller.dashboardPort).frame(width: 120) }
+            GridRow { Text("Hermes Office").fontWeight(.semibold); TextField("9116", text: $controller.officePort).frame(width: 120) }
+        }
+    }
+
+    private func servicePortField(_ label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).fontWeight(.semibold)
+            TextField(placeholder, text: text)
+        }
+    }
+
+    private func adaptiveAction<Description: View>(
+        _ title: String,
+        action: @escaping () -> Void,
+        @ViewBuilder description: () -> Description
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Button(title, action: action).buttonStyle(.borderedProminent)
+                description().font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Button(title, action: action).buttonStyle(.borderedProminent)
+                description().font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var onboardingQRCode: some View {
+        if let qrImage = controller.onboardingQRCodeImage {
+            Image(nsImage: qrImage)
+                .interpolation(.none)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 180, height: 180)
+                .padding(10)
+                .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityLabel("HermesiOS onboarding QR code")
+        } else {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.quaternary)
+                .frame(width: 180, height: 180)
+                .overlay(Text("QR unavailable"))
+        }
+    }
+
+    private var onboardingCodeDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Current code").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(controller.onboardingCodePreview).font(.caption.monospaced()).textSelection(.enabled)
+            Button("Rotate QR Code", systemImage: "qrcode", action: controller.rotateOnboardingCode)
+                .buttonStyle(.bordered)
+            Text("Rotating expires the displayed QR code. Already approved devices keep working until revoked.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -303,6 +329,22 @@ private struct CompanionDeviceRow: View {
     let forget: () -> Void
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 12) {
+                deviceSummary
+                Spacer()
+                deviceActions
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                deviceSummary
+                deviceActions
+            }
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var deviceSummary: some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: statusIcon)
                 .foregroundStyle(statusColor)
@@ -319,9 +361,12 @@ private struct CompanionDeviceRow: View {
                     .font(.caption)
                     .foregroundStyle(statusColor)
             }
+        }
+    }
 
-            Spacer()
-
+    @ViewBuilder
+    private var deviceActions: some View {
+        HStack(spacing: 8) {
             if device.approvedAt == nil && device.revokedAt == nil {
                 Button("Approve", action: approve)
                     .buttonStyle(.borderedProminent)
@@ -335,8 +380,6 @@ private struct CompanionDeviceRow: View {
                     .buttonStyle(.bordered)
             }
         }
-        .padding(10)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var statusIcon: String {

@@ -1005,7 +1005,7 @@ struct HermesTUIGatewayWorkspacesView: View {
                 Button(action: onAddWorkspace) {
                     Image(systemName: "plus")
                         .font(.headline)
-                        .frame(width: 34, height: 34)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .hermesGlassButton()
                 .accessibilityLabel("Open a new TUI Gateway workspace")
@@ -1046,7 +1046,7 @@ private struct HermesTUIWorkspaceButtonLabel: View {
             .font(.caption.weight(.bold))
             .monospacedDigit()
             .foregroundStyle((attention != nil || isSelected) ? .white : .primary)
-            .frame(width: 34, height: 34)
+            .frame(minWidth: 44, minHeight: 44)
             .background(backgroundColor, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 1))
     }
@@ -1065,9 +1065,16 @@ private struct HermesTUICompactStatusRow: View {
     let items: [HermesStatusItem]
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(items) { item in
-                HermesTUICompactStatusPill(item: item)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
+                ForEach(items) { item in
+                    HermesTUICompactStatusPill(item: item)
+                }
+            }
+            VStack(spacing: 4) {
+                ForEach(items) { item in
+                    HermesTUICompactStatusPill(item: item)
+                }
             }
         }
     }
@@ -1084,12 +1091,12 @@ private struct HermesTUICompactStatusPill: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(item.title.uppercased())
-                    .font(.system(size: 6, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .tracking(0.35)
                     .foregroundStyle(.hermesSecondaryText)
                     .lineLimit(1)
                 Text(item.value)
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .font(.caption2.weight(.semibold).monospaced())
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -1102,11 +1109,13 @@ private struct HermesTUICompactStatusPill: View {
         .hermesLiquidGlass(cornerRadius: 8, tint: item.accent.opacity(0.08), interactive: false)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.title): \(item.value)")
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }
 
 private struct HermesTUIGatewayView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var apiSettings: HermesAPISettings
     let dashboardURLString: String
     @Bindable var workspace: HermesTUIWorkspace
@@ -1291,7 +1300,7 @@ private struct HermesTUIGatewayView: View {
         Image(systemName: systemImage)
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(prominent ? Color.white : tint)
-            .frame(width: 34, height: 34)
+            .frame(minWidth: 44, minHeight: 44)
             .background {
                 Circle()
                     .fill(prominent ? Color.igActionBlue.opacity(0.92) : Color.hermesSurfaceInput.opacity(0.54))
@@ -1378,7 +1387,7 @@ private struct HermesTUIGatewayView: View {
 
                     TextEditor(text: $workspace.promptText)
                         .scrollContentBackground(.hidden)
-                        .frame(minHeight: isPhoneLayout ? 56 : 78, maxHeight: isPhoneLayout ? 90 : 150)
+                        .frame(minHeight: composerMinHeight, maxHeight: composerMaxHeight)
                         .igFieldBackground()
                         .disabled(!store.isConnected || store.isStreaming)
                         .overlay(alignment: .topLeading) {
@@ -1404,8 +1413,8 @@ private struct HermesTUIGatewayView: View {
         if isPhoneLayout {
             if isPhoneComposerActionsExpanded {
                 HStack(spacing: 8) {
-                    attachButton(frame: 42)
-                    sendButton(frame: 42)
+                    attachButton(frame: 44)
+                    sendButton(frame: 44)
                 }
                 .transition(.scale(scale: 0.82, anchor: .trailing).combined(with: .opacity))
             } else {
@@ -1416,7 +1425,7 @@ private struct HermesTUIGatewayView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.headline)
-                        .frame(width: 42, height: 42)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .hermesGlassProminentButton()
                 .disabled(!store.isConnected || store.isStreaming)
@@ -1424,8 +1433,8 @@ private struct HermesTUIGatewayView: View {
             }
         } else {
             VStack(spacing: 8) {
-                attachButton(frame: 42)
-                sendButton(frame: 42)
+                attachButton(frame: 44)
+                sendButton(frame: 44)
             }
         }
     }
@@ -1460,6 +1469,16 @@ private struct HermesTUIGatewayView: View {
         .hermesGlassProminentButton()
         .disabled(!store.canSendPrompt || (workspace.promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && workspace.selectedAttachment == nil))
         .accessibilityLabel("Send through TUI Gateway")
+    }
+
+    private var composerMinHeight: CGFloat {
+        if dynamicTypeSize >= .accessibility1 { return isPhoneLayout ? 92 : 112 }
+        return isPhoneLayout ? 60 : 78
+    }
+
+    private var composerMaxHeight: CGFloat {
+        if dynamicTypeSize >= .accessibility1 { return isPhoneLayout ? 190 : 230 }
+        return isPhoneLayout ? 120 : 160
     }
 
     private var activeSkillQuery: String? { workspace.promptText.hermesActiveSlashSkillQuery }
@@ -1644,6 +1663,7 @@ private struct HermesTUICopyableBubbleContent: View {
                         .font(.caption2.weight(.bold))
                         .padding(6)
                         .background(.thinMaterial, in: Circle())
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(isUser ? .white : .primary)
@@ -1673,6 +1693,7 @@ private struct HermesTUIAttachmentChip: View {
             }
             Button(action: remove) {
                 Image(systemName: "xmark.circle.fill")
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove attachment")

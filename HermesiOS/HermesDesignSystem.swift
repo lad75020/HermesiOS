@@ -240,23 +240,23 @@ struct HermesGlassEffectContainer<Content: View>: View {
 // MARK: - Typography
 
 extension Font {
-    static let igScreenTitle    = Font.hermesWebsiteSectionTitle(size: 16)
-    static let igUsernameLarge  = Font.hermesWebsiteTitle(size: 18)
-    static let igUsername       = Font.hermesWebsiteLabel(size: 16)
-    static let igBio            = Font.system(size: 14, weight: .regular,  design: .default)
-    static let igCaption        = Font.system(size: 14, weight: .regular,  design: .default)
-    static let igComment        = Font.system(size: 14, weight: .regular,  design: .default)
-    static let igSecondaryMeta  = Font.system(size: 12, weight: .regular,  design: .default)
-    static let igButtonPrimary  = Font.hermesWebsiteLabel(size: 16)
-    static let igButtonSmall    = Font.hermesWebsiteLabel(size: 13)
-    static let igCounterLarge   = Font.hermesWebsiteMono(size: 16, weight: .bold).monospacedDigit()
-    static let igDMBubble       = Font.system(size: 16, weight: .regular,  design: .default)
-    static let igBadge          = Font.hermesWebsiteLabel(size: 12).monospacedDigit()
-    static let igTimestamp      = Font.hermesWebsiteMono(size: 11)
+    static let igScreenTitle    = Font.hermesWebsiteSectionTitle(size: 16, relativeTo: .headline)
+    static let igUsernameLarge  = Font.hermesWebsiteTitle(size: 18, relativeTo: .title3)
+    static let igUsername       = Font.hermesWebsiteLabel(size: 16, relativeTo: .body)
+    static let igBio            = Font.callout
+    static let igCaption        = Font.callout
+    static let igComment        = Font.callout
+    static let igSecondaryMeta  = Font.caption
+    static let igButtonPrimary  = Font.hermesWebsiteLabel(size: 16, relativeTo: .body)
+    static let igButtonSmall    = Font.hermesWebsiteLabel(size: 13, relativeTo: .caption)
+    static let igCounterLarge   = Font.hermesWebsiteMono(size: 16, weight: .bold, relativeTo: .body).monospacedDigit()
+    static let igDMBubble       = Font.body
+    static let igBadge          = Font.hermesWebsiteLabel(size: 12, relativeTo: .caption).monospacedDigit()
+    static let igTimestamp      = Font.hermesWebsiteMono(size: 11, relativeTo: .caption2)
 
     /// Logotype — falls back to a tightly tracked italic serif when Billabong is unavailable.
-    static let igLogotype       = Font.custom("Billabong", size: 30).weight(.regular)
-    static let hermesLogotype   = Font.system(size: 26, weight: .semibold, design: .serif).italic()
+    static let igLogotype       = Font.custom("Billabong", size: 30, relativeTo: .title).weight(.regular)
+    static let hermesLogotype   = Font.title.weight(.semibold).italic()
 }
 
 // MARK: - Button styles
@@ -560,7 +560,7 @@ struct IGIconButton: View {
             Image(systemName: systemImage)
                 .font(.system(size: size, weight: .regular))
                 .foregroundStyle(tint)
-                .frame(width: 36, height: 36)
+                .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(IGPressableStyle())

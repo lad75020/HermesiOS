@@ -8,12 +8,21 @@
 import Observation
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import Vision
 import VisionKit
 
 
 struct ContentView: View {
+    private enum PhoneTab: Hashable {
+        case responses
+        case chat
+        case tuiGateway
+        case approvals
+        case more
+    }
+
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
@@ -25,6 +34,8 @@ struct ContentView: View {
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
     @State private var selectedPhoneSection: WorkspaceSection = .responses
+    @State private var selectedPhoneTab: PhoneTab = .responses
+    @State private var phoneMorePath: [WorkspaceSection] = []
     @State private var apiSettings: HermesAPISettings
     @State private var companionSettings: HermesCompanionSettings
     @State private var agentConfiguration = HermesAgentConfiguration()
@@ -205,6 +216,7 @@ struct ContentView: View {
                 isResponsesCompletionUnread = false
                 isResponsesFailureUnread = activeResponseSession.lastErrorWasTimeoutOrNetworkLoss
             }
+            announceCriticalStatus("Ask Hermes", status: newValue)
         }
         .onChange(of: chatSession.connectionStatus) { _, newValue in
             if newValue == "Completed" {
@@ -214,6 +226,7 @@ struct ContentView: View {
                 isChatCompletionUnread = false
                 isChatFailureUnread = chatSession.lastErrorWasTimeoutOrNetworkLoss
             }
+            announceCriticalStatus("Chat with Hermes", status: newValue)
         }
         .onChange(of: dashboardHistorySearchSession.isSearching) { oldValue, newValue in
             guard oldValue, !newValue, dashboardHistorySearchSession.status != "Cancelled" else { return }
@@ -226,8 +239,29 @@ struct ContentView: View {
                 selectedWorkspace = .responses
             }
             if selectedPhoneSection == .runtime {
-                selectedPhoneSection = .responses
+                openPhoneWorkspace(.responses)
             }
+        }
+        .onChange(of: selectedPhoneTab) { _, tab in
+            switch tab {
+            case .responses:
+                selectedPhoneSection = .responses
+                phoneMorePath = []
+            case .chat:
+                selectedPhoneSection = .chat
+                phoneMorePath = []
+            case .tuiGateway:
+                selectedPhoneSection = .tuiGateway
+                phoneMorePath = []
+            case .approvals:
+                selectedPhoneSection = .approvals
+                phoneMorePath = []
+            case .more: break
+            }
+        }
+        .onChange(of: shouldShowPhoneConnectionIssueOverlay) { _, isPresented in
+            guard isPresented else { return }
+            announce("Connection issue. Check Settings.")
         }
     }
 
@@ -454,16 +488,14 @@ struct ContentView: View {
     }
 
     private var iPhoneLayout: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $selectedPhoneSection) {
+        TabView(selection: $selectedPhoneTab) {
+            Tab("Ask", systemImage: "dot.radiowaves.left.and.right", value: PhoneTab.responses) {
                 NavigationStack {
                     responsesConsoleView(isPhoneLayout: true)
                 }
-                .tabItem {
-                    Image(systemName: "dot.radiowaves.left.and.right")
-                }
-                .tag(WorkspaceSection.responses)
+            }
 
+            Tab("Chat", systemImage: "text.bubble", value: PhoneTab.chat) {
                 NavigationStack {
                     HermesChatConsoleView(
                         apiSettings: $apiSettings,
@@ -477,11 +509,9 @@ struct ContentView: View {
                         isPhoneLayout: true
                     )
                 }
-                .tabItem {
-                    Image(systemName: "text.bubble")
-                }
-                .tag(WorkspaceSection.chat)
+            }
 
+            Tab("TUI", systemImage: "terminal.fill", value: PhoneTab.tuiGateway) {
                 NavigationStack {
                     HermesTUIGatewayWorkspacesView(
                         apiSettings: $apiSettings,
@@ -493,11 +523,9 @@ struct ContentView: View {
                         onDeleteWorkspace: deleteTUIWorkspace
                     )
                 }
-                .tabItem {
-                    Image(systemName: "terminal.fill")
-                }
-                .tag(WorkspaceSection.tuiGateway)
+            }
 
+            Tab("Approvals", systemImage: WorkspaceSection.approvals.systemImage, value: PhoneTab.approvals) {
                 NavigationStack {
                     HermesApprovalsInboxView(
                         store: approvalsInbox,
@@ -505,99 +533,47 @@ struct ContentView: View {
                         connectedHostName: HermesHostEndpoints.displayHost(from: apiSettings.baseURL)
                     )
                 }
-                .tabItem {
-                    Image(systemName: WorkspaceSection.approvals.systemImage)
-                }
-                .badge(approvalsInbox.pendingCount)
-                .tag(WorkspaceSection.approvals)
+            }
+            .badge(approvalsInbox.pendingCount)
 
-                NavigationStack {
-                    HermesHistoryView(
-                        apiSettings: $apiSettings,
-                        searchSession: dashboardHistorySearchSession,
-                        isResponsesStreaming: !responseWorkspaces.contains { !$0.session.isSending },
-                        isChatStreaming: chatSession.isSending,
-                        isTUIGatewayBusy: areAllTUIWorkspacesBusy,
-                        onResumeResponses: resumeConversationInResponses,
-                        onResumeChat: resumeConversationInChat,
-                        onResumeTUI: resumeConversationInTUIGateway
-                    )
-                }
-                .tabItem {
-                    Image(systemName: "clock.arrow.circlepath")
-                }
-                .tag(WorkspaceSection.history)
-
-                NavigationStack {
-                    HermesWebBrowserView(deckStore: webBrowserStore, dashboardURLString: dashboardURLString, officeURLString: officeURLString)
-                }
-                .tabItem {
-                    Image(systemName: "globe")
-                }
-                .tag(WorkspaceSection.web)
-
-                NavigationStack {
-                    HermesTerminalView(
-                        host: macHost,
-                        terminalSettings: $terminalSettings,
-                        isAuthenticating: $isTerminalAuthenticationInProgress
-                    )
-                }
-                .tabItem {
-                    Image(systemName: "terminal")
-                }
-                .tag(WorkspaceSection.terminal)
-
-                NavigationStack {
-                    HermesUtilitiesView(
-                        clipboardHistory: clipboardHistory,
-                        promptHistory: promptHistory,
-                        responseSession: activeResponseSession,
-                        chatSession: chatSession,
-                        apiSettings: apiSettings,
-                        companionSettings: companionSettings,
-                        companionEnrollment: companionEnrollment,
-                        companionRuntime: companionRuntime
-                    )
-                }
-                .tabItem {
-                    Image(systemName: "wrench.and.screwdriver")
-                }
-                .tag(WorkspaceSection.utilities)
-
-                NavigationStack {
-                    HermesSettingsView(
-                        apiSettings: $apiSettings,
-                        companionSettings: $companionSettings,
-                        responsesDraft: $responsesDraft,
-                        chatDraft: $chatDraft,
-                        terminalSettings: $terminalSettings,
-                        appTheme: $appTheme,
-                        companionEnrollment: companionEnrollment,
-                        companionRuntime: companionRuntime,
-                        canSwitchHosts: !isAnyHermesStreamActive
-                    )
-                }
-                .tabItem {
-                    Image(systemName: "slider.horizontal.3")
-                }
-                .tag(WorkspaceSection.settings)
-
-                if isRuntimeTabEnabled {
-                    NavigationStack {
-                        HermesAgentConfigView(
-                            agentConfiguration: $agentConfiguration,
-                            companionSettings: companionSettings,
-                            companionEnrollment: companionEnrollment,
-                            companionRuntime: companionRuntime
-                        )
+            Tab("More", systemImage: "ellipsis.circle", value: PhoneTab.more) {
+                NavigationStack(path: $phoneMorePath) {
+                    List(phoneSecondarySections) { section in
+                        NavigationLink(value: section) {
+                            Label(section.title, systemImage: section.systemImage)
+                        }
+                        .accessibilityHint(section.subtitle)
                     }
-                    .tabItem {
-                        Image(systemName: "server.rack")
+                    .navigationTitle("More")
+                    .navigationDestination(for: WorkspaceSection.self) { section in
+                        workspaceDetail(for: section)
+                            .onAppear { selectedPhoneSection = section }
                     }
-                    .tag(WorkspaceSection.runtime)
                 }
             }
+        }
+    }
+
+    private var phoneSecondarySections: [WorkspaceSection] {
+        [.history, .web, .terminal, .utilities]
+            + (isRuntimeTabEnabled ? [.runtime] : [])
+            + [.settings]
+    }
+
+    private func openPhoneWorkspace(_ section: WorkspaceSection) {
+        selectedPhoneSection = section
+        switch section {
+        case .responses:
+            selectedPhoneTab = .responses
+        case .chat:
+            selectedPhoneTab = .chat
+        case .tuiGateway:
+            selectedPhoneTab = .tuiGateway
+        case .approvals:
+            selectedPhoneTab = .approvals
+        case .history, .web, .terminal, .utilities, .settings, .runtime:
+            selectedPhoneTab = .more
+            phoneMorePath = [section]
         }
     }
 
@@ -789,7 +765,7 @@ struct ContentView: View {
         selectedResponseWorkspaceID = workspace.id
         responsesDraft = workspace.draft
         selectedWorkspace = .responses
-        selectedPhoneSection = .responses
+        openPhoneWorkspace(.responses)
     }
 
     private func showAskHermesBusyToast() {
@@ -797,6 +773,7 @@ struct ContentView: View {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
             askHermesBusyToastID = toastID
         }
+        announce("Ask Hermes is busy")
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(3))
             guard askHermesBusyToastID == toastID else { return }
@@ -811,6 +788,7 @@ struct ContentView: View {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
             busyStreamingCloseToastID = toastID
         }
+        announce("Busy streaming. Stop is available.")
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))
             guard busyStreamingCloseToastID == toastID else { return }
@@ -851,12 +829,21 @@ struct ContentView: View {
             apiSettings: apiSettings
         )
         selectedWorkspace = .tuiGateway
-        selectedPhoneSection = .tuiGateway
+        openPhoneWorkspace(.tuiGateway)
     }
 
     private func openChatWorkspace() {
         selectedWorkspace = .chat
-        selectedPhoneSection = .chat
+        openPhoneWorkspace(.chat)
+    }
+
+    private func announceCriticalStatus(_ workspace: String, status: String) {
+        guard status == "Completed" || status == "Failed" else { return }
+        announce("\(workspace) \(status.lowercased()).")
+    }
+
+    private func announce(_ message: String) {
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     #if DEBUG
@@ -871,7 +858,7 @@ struct ContentView: View {
             }
 
             if let raw = keys["ui.selected_phone_section"] as? String, let section = WorkspaceSection(rawValue: raw) {
-                selectedPhoneSection = section
+                openPhoneWorkspace(section)
             } else if keys["ui.selected_phone_section"] != nil {
                 return .typeMismatch("ui.selected_phone_section")
             }
@@ -904,7 +891,7 @@ struct ContentView: View {
             write: { value in
                 guard let raw = value as? String, let section = WorkspaceSection(rawValue: raw) else { return false }
                 selectedWorkspace = section
-                selectedPhoneSection = section
+                openPhoneWorkspace(section)
                 return true
             }
         )
@@ -914,7 +901,7 @@ struct ContentView: View {
             read: { selectedPhoneSection.rawValue },
             write: { value in
                 guard let raw = value as? String, let section = WorkspaceSection(rawValue: raw) else { return false }
-                selectedPhoneSection = section
+                openPhoneWorkspace(section)
                 selectedWorkspace = section
                 return true
             }
@@ -1006,6 +993,7 @@ private struct HermesTransientToast: View {
             Text(message)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
+                .accessibilityAddTraits(.updatesFrequently)
 
             if let buttonTitle, let action {
                 Button(buttonTitle, action: action)
@@ -1026,7 +1014,7 @@ private struct HermesTransientToast: View {
                 .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.22), radius: 16, x: 0, y: 8)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(message)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Notification")
     }
 }

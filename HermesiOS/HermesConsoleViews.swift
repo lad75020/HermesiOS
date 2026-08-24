@@ -398,7 +398,7 @@ private struct HermesMicrophoneButton: View {
         Button(action: action) {
             Image(systemName: speechSession.isRecording ? "mic.fill" : "mic")
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
                 .foregroundStyle(speechSession.isRecording ? Color.igDestructive : Color.primary)
         }
         .hermesGlassButton()
@@ -408,6 +408,7 @@ private struct HermesMicrophoneButton: View {
 }
 
 struct HermesResponsesConsoleView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var apiSettings: HermesAPISettings
     @Binding var requestDraft: HermesRequestDraft
     let dashboardURLString: String
@@ -524,7 +525,7 @@ struct HermesResponsesConsoleView: View {
             Button(action: onCreateWorkspace) {
                 Image(systemName: "plus")
                     .font(.headline.weight(.semibold))
-                    .frame(width: 34, height: 34)
+                    .frame(minWidth: 44, minHeight: 44)
             }
             .hermesGlassButton()
             .disabled(!canCreateWorkspace)
@@ -536,7 +537,7 @@ struct HermesResponsesConsoleView: View {
                 } label: {
                     Text("\(workspace.number)")
                         .font(.subheadline.weight(.bold))
-                        .frame(width: 34, height: 34)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(workspaceButtonForeground(for: workspace))
@@ -708,7 +709,7 @@ struct HermesResponsesConsoleView: View {
 
                     TextEditor(text: $promptText)
                         .scrollContentBackground(.hidden)
-                        .frame(minHeight: isPhoneLayout ? 52 : 72, maxHeight: isPhoneLayout ? 52 : 130)
+                        .frame(minHeight: responseComposerMinHeight, maxHeight: responseComposerMaxHeight)
                         .igFieldBackground()
                         .overlay(alignment: .topLeading) {
                             if promptText.isEmpty {
@@ -757,7 +758,7 @@ struct HermesResponsesConsoleView: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.headline)
-                        .frame(width: 42, height: 42)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .hermesGlassButton()
                 .accessibilityLabel("Show prompt actions")
@@ -772,7 +773,7 @@ struct HermesResponsesConsoleView: View {
         } label: {
             Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
         }
         .hermesGlassButton()
         .disabled(responseSession.isSending)
@@ -799,7 +800,7 @@ struct HermesResponsesConsoleView: View {
         } label: {
             Image(systemName: "paperplane.fill")
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
         }
         .hermesGlassProminentButton()
         .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
@@ -820,6 +821,16 @@ struct HermesResponsesConsoleView: View {
         promptText = ""
         requestDraft.userPrompt = ""
         selectedAttachment = nil
+    }
+
+    private var responseComposerMinHeight: CGFloat {
+        if dynamicTypeSize >= .accessibility1 { return isPhoneLayout ? 88 : 110 }
+        return isPhoneLayout ? 56 : 72
+    }
+
+    private var responseComposerMaxHeight: CGFloat {
+        if dynamicTypeSize >= .accessibility1 { return isPhoneLayout ? 180 : 220 }
+        return isPhoneLayout ? 110 : 150
     }
 
     private func collapseComposerActionsIfNeeded() {
@@ -1730,14 +1741,15 @@ private struct HermesBubbleCopyButton: View {
             Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
                 .font(.system(size: 10, weight: .semibold))
                 .frame(width: 18, height: 18)
+                .background(
+                    Circle()
+                        .fill(isUserBubble ? Color.white.opacity(0.16) : Color.hermesCanvas.opacity(0.72))
+                )
+                .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(isUserBubble ? Color.white.opacity(0.82) : Color.hermesSecondaryText)
-        .background(
-            Circle()
-                .fill(isUserBubble ? Color.white.opacity(0.16) : Color.hermesCanvas.opacity(0.72))
-        )
         .accessibilityLabel(didCopy ? "Copied" : "Copy message")
         .disabled(text.isEmpty)
         .opacity(text.isEmpty ? 0.45 : 1)
@@ -1769,6 +1781,7 @@ private func copyImageToClipboard(_ data: Data) {
 }
 
 struct HermesChatConsoleView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var apiSettings: HermesAPISettings
     @Binding var chatDraft: HermesChatDraft
     let dashboardURLString: String
@@ -1980,7 +1993,7 @@ struct HermesChatConsoleView: View {
 
                     TextEditor(text: $promptText)
                         .scrollContentBackground(.hidden)
-                        .frame(minHeight: isPhoneLayout ? 52 : 72, maxHeight: isPhoneLayout ? 52 : 130)
+                        .frame(minHeight: chatComposerMinHeight, maxHeight: chatComposerMaxHeight)
                         .igFieldBackground()
                         .overlay(alignment: .topLeading) {
                             if promptText.isEmpty {
@@ -2029,7 +2042,7 @@ struct HermesChatConsoleView: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.headline)
-                        .frame(width: 42, height: 42)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .hermesGlassButton()
                 .accessibilityLabel("Show prompt actions")
@@ -2044,7 +2057,7 @@ struct HermesChatConsoleView: View {
         } label: {
             Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
         }
         .hermesGlassButton()
         .disabled(chatSession.isSending)
@@ -2071,7 +2084,7 @@ struct HermesChatConsoleView: View {
         } label: {
             Image(systemName: "paperplane.fill")
                 .font(.headline)
-                .frame(width: 42, height: 42)
+                .frame(minWidth: 44, minHeight: 44)
         }
         .hermesGlassProminentButton()
         .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
@@ -2092,6 +2105,16 @@ struct HermesChatConsoleView: View {
         promptText = ""
         chatDraft.userPrompt = ""
         selectedAttachment = nil
+    }
+
+    private var chatComposerMinHeight: CGFloat {
+        if dynamicTypeSize >= .accessibility1 { return isPhoneLayout ? 88 : 110 }
+        return isPhoneLayout ? 56 : 72
+    }
+
+    private var chatComposerMaxHeight: CGFloat {
+        if dynamicTypeSize >= .accessibility1 { return isPhoneLayout ? 180 : 220 }
+        return isPhoneLayout ? 110 : 150
     }
 
     private func collapseComposerActionsIfNeeded() {

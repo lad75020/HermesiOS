@@ -20,3 +20,4 @@
 - [x] T013 [US5] Pass model/provider, reasoning effort, and applicable Fast state through `session.create` and `prompt.submit` requests in `HermesiOS/HermesTUIGatewayView.swift`.
 - [x] T014 [US5] Load `profiles.list`, add a profile picker before the model picker, and request profile-scoped model options in `HermesiOS/HermesTUIGatewayView.swift`.
 - [x] T015 [US5] Select the chosen profile's configured default model, create a new profile-scoped TUI session, and preserve model override capability in `HermesiOS/HermesTUIGatewayView.swift`.
+- [x] T016 [US5] Replace compact-width inline inference controls with an accessible icon-triggered draft popover and validation action, while preserving the iPad layout in `HermesiOS/HermesTUIGatewayView.swift`.

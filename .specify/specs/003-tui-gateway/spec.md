@@ -4,7 +4,7 @@ Feature ID: `tui-gateway`
 
 **Status**: Refined
 
-**Refined**: 2026-08-24 — Replaced header status pills with composer inference controls for profile, model, reasoning effort, and speed.
+**Refined**: 2026-08-24 — Replaced header status pills with composer inference controls for profile, model, reasoning effort, and speed; condensed iPhone controls into a confirmed popover.
 
 ## Summary
 
@@ -37,6 +37,8 @@ Provide a robust terminal-style workspace that connects to the Hermes dashboard 
 - The composer SHALL expose Normal and Fast speed choices only when the selected model advertises fast-inference capability, and pass the selected speed through the gateway session and prompt requests.
 - Model, reasoning-effort, and speed selections SHALL remain workspace-scoped while the workspace is active.
 - Profile selection SHALL remain workspace-scoped and be included in profile-scoped TUI session requests.
+- On iPhone compact-width layouts only, the four inference controls SHALL be hidden behind one accessible inference icon that presents a popover with draft controls and a validation action.
+- The iPhone validation action SHALL close the popover and apply all draft inference selections together before the next inference; iPad layouts SHALL retain their inline inference controls.
 
 ## Success Criteria
 
@@ -48,6 +50,7 @@ Provide a robust terminal-style workspace that connects to the Hermes dashboard 
 - Models are grouped by provider and displayed in provider/name order, while unsupported reasoning and speed controls remain unavailable.
 - A prompt submitted after changing any inference control reaches the gateway with the selected model/provider, reasoning effort, and applicable fast flag.
 - A profile change switches subsequent TUI work to a fresh session configured for that profile and its default model.
+- On iPhone, the inference icon opens a popover, and its validation control applies the selected profile/model/reasoning/speed values without changing the iPad composer layout.
 
 ## Files in Scope
 

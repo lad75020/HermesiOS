@@ -343,13 +343,23 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func loadModelOptions(into workspace: HermesTUIWorkspace, selectProfileDefault: Bool) async {
+    func modelOptions(for profile: String) async -> [HermesTUIModelOption]? {
+        guard isConnected else { return nil }
         do {
             var params: [String: JSONValue] = [:]
-            let profile = workspace.inference.profile.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !profile.isEmpty { params["profile"] = .string(profile) }
+            let trimmedProfile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedProfile.isEmpty { params["profile"] = .string(trimmedProfile) }
             let result = try await request("model.options", params: params, timeoutSeconds: 45)
-            let options = Self.decodeModelOptions(result)
+            return Self.decodeModelOptions(result)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    private func loadModelOptions(into workspace: HermesTUIWorkspace, selectProfileDefault: Bool) async {
+        let profile = workspace.inference.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let options = await modelOptions(for: profile) {
             workspace.modelOptions = options
             if selectProfileDefault, let profileOption = workspace.profileOptions.first(where: { $0.name == profile }) {
                 let defaultOption = options.first { $0.provider == profileOption.provider && $0.model == profileOption.model }
@@ -367,8 +377,6 @@ final class HermesTUIGatewayStore {
                 workspace.inference.fast = false
             }
             workspace.inference = Self.normalizedInference(workspace.inference, options: options)
-        } catch {
-            lastErrorMessage = error.localizedDescription
         }
     }
 
@@ -1237,6 +1245,9 @@ private struct HermesTUIGatewayView: View {
     @State private var isImportingAttachment = false
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var isPhoneComposerActionsExpanded = false
+    @State private var isPhoneInferencePopoverPresented = false
+    @State private var phoneInferenceDraft = HermesTUIInferenceSelection()
+    @State private var phoneModelOptions: [HermesTUIModelOption] = []
 
     private var store: HermesTUIGatewayStore { workspace.store }
     private var isPhoneLayout: Bool { horizontalSizeClass == .compact }
@@ -1476,9 +1487,13 @@ private struct HermesTUIGatewayView: View {
                 .disabled(store.isStreaming)
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { inferenceControls }
-                VStack(alignment: .leading, spacing: 8) { inferenceControls }
+            if isPhoneLayout {
+                phoneInferenceButton
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { inferenceControls }
+                    VStack(alignment: .leading, spacing: 8) { inferenceControls }
+                }
             }
 
             HStack(alignment: .bottom, spacing: 12) {
@@ -1513,6 +1528,106 @@ private struct HermesTUIGatewayView: View {
         }
         .padding(14)
         .background(.ultraThinMaterial)
+    }
+
+    private var phoneInferenceButton: some View {
+        Button {
+            phoneInferenceDraft = workspace.inference
+            phoneModelOptions = workspace.modelOptions
+            isPhoneInferencePopoverPresented = true
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.headline)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .hermesGlassButton()
+        .disabled(!store.isConnected || store.isStreaming)
+        .accessibilityLabel("Configure TUI Gateway inference")
+        .accessibilityHint("Choose profile, model, reasoning effort, and inference speed")
+        .popover(isPresented: $isPhoneInferencePopoverPresented, arrowEdge: .bottom) {
+            phoneInferencePopover
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private var phoneInferencePopover: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Inference")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    applyPhoneInferenceDraft()
+                } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.igActionBlue)
+                .accessibilityLabel("Save inference settings")
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                phoneInferenceControls
+            }
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var phoneInferenceControls: some View {
+        Menu {
+            ForEach(profileOptions) { profile in
+                Button(profile.displayName) { selectPhoneProfile(profile) }
+            }
+        } label: {
+            inferenceControlLabel(title: "PROFILE", value: phoneSelectedProfile?.displayName ?? phoneInferenceDraft.profile)
+        }
+        .disabled(store.isStreaming || profileOptions.isEmpty)
+        .accessibilityLabel("Choose Hermes profile")
+
+        Menu {
+            if phoneModelOptions.isEmpty {
+                Text(verbatim: "No models available")
+            } else {
+                ForEach(phoneModelProviderGroups, id: \.provider) { group in
+                    Section(group.name) {
+                        ForEach(group.options) { option in
+                            Button(option.model) { selectPhoneModel(option) }
+                        }
+                    }
+                }
+            }
+        } label: {
+            inferenceControlLabel(title: "MODEL", value: phoneSelectedModel?.model ?? "Loading models…")
+        }
+        .disabled(store.isStreaming || phoneModelOptions.isEmpty)
+        .accessibilityLabel("Choose Hermes Agent model")
+
+        if phoneSelectedModel?.supportsReasoning == true {
+            Menu {
+                ForEach(HermesTUIInferenceSelection.reasoningEfforts, id: \.self) { effort in
+                    Button(reasoningLabel(for: effort)) { phoneInferenceDraft.reasoningEffort = effort }
+                }
+            } label: {
+                inferenceControlLabel(title: "REASONING", value: reasoningLabel(for: phoneInferenceDraft.reasoningEffort))
+            }
+            .disabled(store.isStreaming)
+            .accessibilityLabel("Choose model reasoning effort")
+        }
+
+        if phoneSelectedModel?.supportsFast == true {
+            Menu {
+                Button { phoneInferenceDraft.fast = false } label: { Text(verbatim: "Normal") }
+                Button { phoneInferenceDraft.fast = true } label: { Text(verbatim: "Fast") }
+            } label: {
+                inferenceControlLabel(title: "SPEED", value: phoneInferenceDraft.fast ? "Fast" : "Normal")
+            }
+            .disabled(store.isStreaming)
+            .accessibilityLabel("Choose model inference speed")
+        }
     }
 
     @ViewBuilder
@@ -1573,8 +1688,16 @@ private struct HermesTUIGatewayView: View {
         workspace.modelOptions.first { $0.provider == workspace.inference.provider && $0.model == workspace.inference.model }
     }
 
+    private var phoneSelectedModel: HermesTUIModelOption? {
+        phoneModelOptions.first { $0.provider == phoneInferenceDraft.provider && $0.model == phoneInferenceDraft.model }
+    }
+
     private var selectedProfile: HermesTUIProfileOption? {
         profileOptions.first { $0.name == workspace.inference.profile }
+    }
+
+    private var phoneSelectedProfile: HermesTUIProfileOption? {
+        profileOptions.first { $0.name == phoneInferenceDraft.profile }
     }
 
     private var profileOptions: [HermesTUIProfileOption] {
@@ -1584,7 +1707,15 @@ private struct HermesTUIGatewayView: View {
     }
 
     private var modelProviderGroups: [(provider: String, name: String, options: [HermesTUIModelOption])] {
-        Dictionary(grouping: workspace.modelOptions, by: \.provider)
+        modelProviderGroups(for: workspace.modelOptions)
+    }
+
+    private var phoneModelProviderGroups: [(provider: String, name: String, options: [HermesTUIModelOption])] {
+        modelProviderGroups(for: phoneModelOptions)
+    }
+
+    private func modelProviderGroups(for options: [HermesTUIModelOption]) -> [(provider: String, name: String, options: [HermesTUIModelOption])] {
+        Dictionary(grouping: options, by: \.provider)
             .compactMap { provider, options in
                 guard let first = options.first else { return nil }
                 return (provider, first.providerName, options.sorted { $0.model.localizedCaseInsensitiveCompare($1.model) == .orderedAscending })
@@ -1612,6 +1743,44 @@ private struct HermesTUIGatewayView: View {
         .padding(.vertical, 7)
         .frame(minWidth: 112, alignment: .leading)
         .hermesLiquidGlass(cornerRadius: 14, tint: Color.igActionBlue.opacity(0.08), interactive: true)
+    }
+
+    private func selectPhoneProfile(_ profile: HermesTUIProfileOption) {
+        guard phoneInferenceDraft.profile != profile.name else { return }
+        phoneInferenceDraft.profile = profile.name
+        phoneInferenceDraft.provider = profile.provider
+        phoneInferenceDraft.model = profile.model
+        phoneInferenceDraft.reasoningEffort = "medium"
+        phoneInferenceDraft.fast = false
+
+        Task {
+            guard let options = await store.modelOptions(for: profile.name) else { return }
+            phoneModelOptions = options
+            let defaultOption = options.first { $0.provider == profile.provider && $0.model == profile.model }
+                ?? options.first { $0.model == profile.model }
+                ?? options.first
+            if let defaultOption {
+                phoneInferenceDraft.provider = defaultOption.provider
+                phoneInferenceDraft.model = defaultOption.model
+            }
+        }
+    }
+
+    private func selectPhoneModel(_ option: HermesTUIModelOption) {
+        phoneInferenceDraft.provider = option.provider
+        phoneInferenceDraft.model = option.model
+        if !option.supportsReasoning { phoneInferenceDraft.reasoningEffort = "none" }
+        if !option.supportsFast { phoneInferenceDraft.fast = false }
+    }
+
+    private func applyPhoneInferenceDraft() {
+        let didChange = workspace.inference != phoneInferenceDraft
+        workspace.inference = phoneInferenceDraft
+        workspace.modelOptions = phoneModelOptions
+        isPhoneInferencePopoverPresented = false
+        if didChange && store.isConnected && !store.isStreaming {
+            store.createSession(inference: workspace.inference)
+        }
     }
 
     private func selectModel(_ option: HermesTUIModelOption) {

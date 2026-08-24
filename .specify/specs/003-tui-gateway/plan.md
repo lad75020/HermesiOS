@@ -1,5 +1,7 @@
 # Plan: TUI Gateway
 
+> ⚠️ **STALE**: spec.md was refined on 2026-08-24. Run `/speckit.refine.propagate` to update this plan.
+
 ## Technical Context
 
 - UI/workflow entrypoint uses `HermesTUIGatewayView.swift` for sessions and message rendering.

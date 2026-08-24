@@ -174,6 +174,25 @@ struct HermesTUILiveSession: Identifiable, Equatable {
     let isCurrent: Bool
 }
 
+struct HermesTUIModelOption: Identifiable, Equatable {
+    let provider: String
+    let providerName: String
+    let model: String
+    let supportsReasoning: Bool
+    let supportsFast: Bool
+
+    var id: String { "\(provider)::\(model)" }
+}
+
+struct HermesTUIInferenceSelection: Equatable {
+    static let reasoningEfforts = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+
+    var provider = ""
+    var model = ""
+    var reasoningEffort = "medium"
+    var fast = false
+}
+
 enum HermesTUIWorkspaceAttention {
     case streaming
     case completed
@@ -187,6 +206,8 @@ final class HermesTUIWorkspace: Identifiable {
     let number: Int
     let store = HermesTUIGatewayStore()
     var promptText = ""
+    var modelOptions: [HermesTUIModelOption] = []
+    var inference = HermesTUIInferenceSelection()
     var requestResponses: [UUID: String] = [:]
     var selectedAttachment: HermesPromptAttachment?
     private var acknowledgedCompletionToken = ""
@@ -253,9 +274,9 @@ final class HermesTUIGatewayStore {
         isConnected && !isStreaming && !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
+    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, inference: HermesTUIInferenceSelection) {
         guard !isConnecting else { return }
-        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true) }
+        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, inference: inference) }
     }
 
     func disconnect() {
@@ -271,14 +292,34 @@ final class HermesTUIGatewayStore {
         failPending(HermesTUIGatewayError.notConnected)
     }
 
-    func createSession() {
-        Task { await createGatewaySession() }
+    func createSession(inference: HermesTUIInferenceSelection) {
+        Task { await createGatewaySession(inference: inference) }
     }
 
-    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil) {
+    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, inference: HermesTUIInferenceSelection) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || attachment != nil else { return }
-        Task { await submit(text, attachment: attachment) }
+        Task { await submit(text, attachment: attachment, inference: inference) }
+    }
+
+    func loadModelOptions(into workspace: HermesTUIWorkspace) {
+        guard isConnected else { return }
+        Task {
+            do {
+                let result = try await request("model.options", params: [:], timeoutSeconds: 45)
+                let options = Self.decodeModelOptions(result)
+                workspace.modelOptions = options
+                if workspace.inference.model.isEmpty,
+                   let defaultOption = options.first {
+                    workspace.inference.provider = defaultOption.provider
+                    workspace.inference.model = defaultOption.model
+                    workspace.inference.fast = false
+                }
+                workspace.inference = Self.normalizedInference(workspace.inference, options: options)
+            } catch {
+                lastErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     func interruptSession() {
@@ -369,7 +410,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool) async {
+    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, inference: HermesTUIInferenceSelection = .init()) async {
         guard !isConnecting else { return }
         isConnecting = true
         lastErrorMessage = ""
@@ -391,7 +432,7 @@ final class HermesTUIGatewayStore {
                     receiveTask?.cancel()
                     receiveTask = Task { await receiveLoop(task) }
                     if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        try await createGatewaySessionThrowing()
+                        try await createGatewaySessionThrowing(inference: inference)
                     }
                     await refreshActiveSessions()
                     return
@@ -445,17 +486,17 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func createGatewaySession() async {
+    private func createGatewaySession(inference: HermesTUIInferenceSelection) async {
         do {
-            try await createGatewaySessionThrowing()
+            try await createGatewaySessionThrowing(inference: inference)
         } catch {
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Session create failed"
         }
     }
 
-    private func createGatewaySessionThrowing() async throws {
-        let result = try await request("session.create", params: [:], timeoutSeconds: 120)
+    private func createGatewaySessionThrowing(inference: HermesTUIInferenceSelection) async throws {
+        let result = try await request("session.create", params: inferenceParams(inference), timeoutSeconds: 120)
         let object = result.objectValue
         sessionID = object["session_id"]?.stringValue ?? ""
         storedSessionID = object["stored_session_id"]?.stringValue ?? ""
@@ -468,7 +509,7 @@ final class HermesTUIGatewayStore {
         await refreshActiveSessions()
     }
 
-    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil) async {
+    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, inference: HermesTUIInferenceSelection) async {
         guard canSendPrompt else {
             lastErrorMessage = HermesTUIGatewayError.missingSession.localizedDescription
             return
@@ -493,7 +534,10 @@ final class HermesTUIGatewayStore {
         isStreaming = true
         connectionStatus = "Sending prompt"
         do {
-            _ = try await request("prompt.submit", params: ["session_id": .string(sessionID), "text": .string(finalText)], timeoutSeconds: 60)
+            var params = inferenceParams(inference)
+            params["session_id"] = .string(sessionID)
+            params["text"] = .string(finalText)
+            _ = try await request("prompt.submit", params: params, timeoutSeconds: 60)
             connectionStatus = "Streaming"
         } catch {
             isStreaming = false
@@ -679,6 +723,56 @@ final class HermesTUIGatewayStore {
             connectionStatus = shortStatus(event.type)
             appendEvent(title: event.type, content: eventSummary(payload: payload), eventType: event.type)
         }
+    }
+
+    private func inferenceParams(_ inference: HermesTUIInferenceSelection) -> [String: JSONValue] {
+        let model = inference.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else { return [:] }
+        var params: [String: JSONValue] = [
+            "model": .string(model),
+            "reasoning_effort": .string(inference.reasoningEffort),
+            "fast": .bool(inference.fast)
+        ]
+        let provider = inference.provider.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !provider.isEmpty { params["provider"] = .string(provider) }
+        return params
+    }
+
+    private static func decodeModelOptions(_ result: JSONValue) -> [HermesTUIModelOption] {
+        let providerRows = result.objectValue["providers"]?.arrayValue ?? []
+        var options: [HermesTUIModelOption] = []
+        for provider in providerRows {
+            let row = provider.objectValue
+            let slug = row["slug"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !slug.isEmpty else { continue }
+            let name = row["name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let providerName = (name?.isEmpty == false ? name! : slug)
+            let capabilities = row["capabilities"]?.objectValue ?? [:]
+            for value in row["models"]?.arrayValue ?? [] {
+                guard let model = value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else { continue }
+                let modelCapabilities = capabilities[model]?.objectValue ?? [:]
+                options.append(HermesTUIModelOption(
+                    provider: slug,
+                    providerName: providerName,
+                    model: model,
+                    supportsReasoning: modelCapabilities["reasoning"]?.boolValue ?? false,
+                    supportsFast: modelCapabilities["fast"]?.boolValue ?? false
+                ))
+            }
+        }
+        return options.sorted {
+            $0.providerName.localizedCaseInsensitiveCompare($1.providerName) == .orderedAscending
+                || ($0.providerName.caseInsensitiveCompare($1.providerName) == .orderedSame
+                    && $0.model.localizedCaseInsensitiveCompare($1.model) == .orderedAscending)
+        }
+    }
+
+    private static func normalizedInference(_ inference: HermesTUIInferenceSelection, options: [HermesTUIModelOption]) -> HermesTUIInferenceSelection {
+        var normalized = inference
+        let selected = options.first { $0.provider == inference.provider && $0.model == inference.model }
+        if selected?.supportsReasoning != true { normalized.reasoningEffort = "none" }
+        if selected?.supportsFast != true { normalized.fast = false }
+        return normalized
     }
 
     private func request(_ method: String, params: [String: JSONValue], timeoutSeconds: UInt64) async throws -> JSONValue {
@@ -1061,58 +1155,6 @@ private struct HermesTUIWorkspaceButtonLabel: View {
     }
 }
 
-private struct HermesTUICompactStatusRow: View {
-    let items: [HermesStatusItem]
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) {
-                ForEach(items) { item in
-                    HermesTUICompactStatusPill(item: item)
-                }
-            }
-            VStack(spacing: 4) {
-                ForEach(items) { item in
-                    HermesTUICompactStatusPill(item: item)
-                }
-            }
-        }
-    }
-}
-
-private struct HermesTUICompactStatusPill: View {
-    let item: HermesStatusItem
-
-    var body: some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(item.accent)
-                .frame(width: 2, height: 12)
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text(item.title.uppercased())
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.35)
-                    .foregroundStyle(.hermesSecondaryText)
-                    .lineLimit(1)
-                Text(item.value)
-                    .font(.caption2.weight(.semibold).monospaced())
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .hermesLiquidGlass(cornerRadius: 8, tint: item.accent.opacity(0.08), interactive: false)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.title): \(item.value)")
-        .accessibilityAddTraits(.updatesFrequently)
-    }
-}
-
 private struct HermesTUIGatewayView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -1138,6 +1180,9 @@ private struct HermesTUIGatewayView: View {
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: workspace.promptText) { _, _ in handlePromptSkillQueryChange() }
+        .onChange(of: store.isConnected) { _, isConnected in
+            if isConnected { store.loadModelOptions(into: workspace) }
+        }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
         }
@@ -1164,12 +1209,6 @@ private struct HermesTUIGatewayView: View {
                 if isPhoneLayout { Spacer(minLength: 0) }
             }
 
-            statusRow(items: [
-                HermesStatusItem(title: "Session", value: store.sessionTitle, accent: .igActionBlue, marqueeCharacterLimit: 28),
-                HermesStatusItem(title: "Status", value: store.connectionStatus, accent: .igGradOrange, marqueeCharacterLimit: 24),
-                HermesStatusItem(title: "Events", value: "\(store.eventCount)", accent: .igGradPurple)
-            ])
-
             if isPhoneLayout {
                 HStack(spacing: 8) { controls }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1191,21 +1230,13 @@ private struct HermesTUIGatewayView: View {
         .padding(.bottom, 12)
     }
 
-    @ViewBuilder
-    private func statusRow(items: [HermesStatusItem]) -> some View {
-        if isPhoneLayout {
-            HermesTUICompactStatusRow(items: items)
-        } else {
-            HermesStatusRow(items: items)
-        }
-    }
 
     @ViewBuilder
     private var controls: some View {
         if isPhoneLayout {
             Button {
                 store.disconnect()
-                store.connect(dashboardBaseURL: dashboardURLString, apiSettings: apiSettings)
+                store.connect(dashboardBaseURL: dashboardURLString, apiSettings: apiSettings, inference: workspace.inference)
             } label: {
                 phoneControlIcon(
                     store.isConnected ? "arrow.triangle.2.circlepath" : "antenna.radiowaves.left.and.right",
@@ -1217,7 +1248,7 @@ private struct HermesTUIGatewayView: View {
             .disabled(store.isConnecting)
             .accessibilityLabel(store.isConnected ? "Reconnect TUI Gateway" : "Connect TUI Gateway")
 
-            Button { store.createSession() } label: {
+            Button { store.createSession(inference: workspace.inference) } label: {
                 phoneControlIcon("plus.bubble")
             }
             .buttonStyle(.plain)
@@ -1240,12 +1271,12 @@ private struct HermesTUIGatewayView: View {
         } else {
             Button(store.isConnected ? "Reconnect" : "Connect") {
                 store.disconnect()
-                store.connect(dashboardBaseURL: dashboardURLString, apiSettings: apiSettings)
+                store.connect(dashboardBaseURL: dashboardURLString, apiSettings: apiSettings, inference: workspace.inference)
             }
             .hermesGlassProminentButton()
             .disabled(store.isConnecting)
 
-            Button("New session") { store.createSession() }
+            Button("New session") { store.createSession(inference: workspace.inference) }
                 .hermesGlassButton()
                 .disabled(!store.isConnected || store.isStreaming || store.isResumingSession)
 
@@ -1374,6 +1405,11 @@ private struct HermesTUIGatewayView: View {
                 .disabled(store.isStreaming)
             }
 
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { inferenceControls }
+                VStack(alignment: .leading, spacing: 8) { inferenceControls }
+            }
+
             HStack(alignment: .bottom, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
                     if shouldShowSkillPicker {
@@ -1406,6 +1442,96 @@ private struct HermesTUIGatewayView: View {
         }
         .padding(14)
         .background(.ultraThinMaterial)
+    }
+
+    @ViewBuilder
+    private var inferenceControls: some View {
+        Menu {
+            if workspace.modelOptions.isEmpty {
+                Text(verbatim: "No models available")
+            } else {
+                ForEach(modelProviderGroups, id: \.provider) { group in
+                    Section(group.name) {
+                        ForEach(group.options) { option in
+                            Button(option.model) { selectModel(option) }
+                        }
+                    }
+                }
+            }
+        } label: {
+            inferenceControlLabel(title: "MODEL", value: selectedModel?.model ?? "Loading models…")
+        }
+        .disabled(!store.isConnected || store.isStreaming || workspace.modelOptions.isEmpty)
+        .accessibilityLabel(Text(verbatim: "Choose Hermes Agent model"))
+
+        if selectedModel?.supportsReasoning == true {
+            Menu {
+                ForEach(HermesTUIInferenceSelection.reasoningEfforts, id: \.self) { effort in
+                    Button(reasoningLabel(for: effort)) { workspace.inference.reasoningEffort = effort }
+                }
+            } label: {
+                inferenceControlLabel(title: "REASONING", value: reasoningLabel(for: workspace.inference.reasoningEffort))
+            }
+            .disabled(store.isStreaming)
+            .accessibilityLabel("Choose model reasoning effort")
+        }
+
+        if selectedModel?.supportsFast == true {
+            Menu {
+                Button { workspace.inference.fast = false } label: { Text(verbatim: "Normal") }
+                Button { workspace.inference.fast = true } label: { Text(verbatim: "Fast") }
+            } label: {
+                inferenceControlLabel(title: "SPEED", value: workspace.inference.fast ? "Fast" : "Normal")
+            }
+            .disabled(store.isStreaming)
+            .accessibilityLabel(Text(verbatim: "Choose model inference speed"))
+        }
+    }
+
+    private var selectedModel: HermesTUIModelOption? {
+        workspace.modelOptions.first { $0.provider == workspace.inference.provider && $0.model == workspace.inference.model }
+    }
+
+    private var modelProviderGroups: [(provider: String, name: String, options: [HermesTUIModelOption])] {
+        Dictionary(grouping: workspace.modelOptions, by: \.provider)
+            .compactMap { provider, options in
+                guard let first = options.first else { return nil }
+                return (provider, first.providerName, options.sorted { $0.model.localizedCaseInsensitiveCompare($1.model) == .orderedAscending })
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func inferenceControlLabel(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: title)
+                .font(.hermesWebsiteLabel(size: 11))
+                .tracking(0.7)
+                .foregroundStyle(.hermesSecondaryText)
+            HStack(spacing: 5) {
+                Text(verbatim: value)
+                    .font(.hermesWebsiteMono(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(minWidth: 112, alignment: .leading)
+        .hermesLiquidGlass(cornerRadius: 14, tint: Color.igActionBlue.opacity(0.08), interactive: true)
+    }
+
+    private func selectModel(_ option: HermesTUIModelOption) {
+        workspace.inference.provider = option.provider
+        workspace.inference.model = option.model
+        if !option.supportsReasoning { workspace.inference.reasoningEffort = "none" }
+        if !option.supportsFast { workspace.inference.fast = false }
+    }
+
+    private func reasoningLabel(for effort: String) -> String {
+        effort == "none" ? "Off" : effort.capitalized
     }
 
     @ViewBuilder
@@ -1504,7 +1630,7 @@ private struct HermesTUIGatewayView: View {
 
     private func submitPrompt() {
         let text = workspace.promptText
-        store.submitPrompt(text, attachment: workspace.selectedAttachment)
+        store.submitPrompt(text, attachment: workspace.selectedAttachment, inference: workspace.inference)
         workspace.promptText = ""
         workspace.selectedAttachment = nil
     }

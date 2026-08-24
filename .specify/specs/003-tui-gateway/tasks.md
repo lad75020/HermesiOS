@@ -1,5 +1,7 @@
 # Tasks: TUI Gateway
 
+> ⚠️ **STALE**: spec.md was refined on 2026-08-24. Run `/speckit.refine.propagate` to update these tasks.
+
 - [x] T001 Verify session create and connect behavior in `HermesiOS/HermesTUIGatewayView.swift`.
 - [x] T002 [US1] [US2] Validate WebSocket resume path and message streaming continuity in `HermesiOS/HermesTUIGatewayView.swift`.
 - [x] T003 [US1] [US2] Verify workspace state resets, attention states, and completion/failure visibility in `HermesiOS/HermesResponsesWorkspace.swift`.

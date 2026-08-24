@@ -2,6 +2,10 @@
 
 Feature ID: `tui-gateway`
 
+**Status**: Refined
+
+**Refined**: 2026-08-24 — Replaced header status pills with composer inference controls for model, reasoning effort, and speed.
+
 ## Summary
 
 Provide a robust terminal-style workspace that connects to the Hermes dashboard WebSocket gateway, lets users create and switch sessions, stream progress, and continue prior TUI sessions from dashboard history.
@@ -12,6 +16,7 @@ Provide a robust terminal-style workspace that connects to the Hermes dashboard 
 - As a user, I can submit prompts and see assistant response streaming with clear attention cues.
 - As a user, I can interrupt, close, and resume specific TUI sessions.
 - As a user, I can resume a previously run TUI workflow from the dashboard search results.
+- As a user, I can choose the Hermes Agent model, supported reasoning effort, and available inference speed for each TUI Gateway workspace before sending a prompt.
 
 ## Functional Requirements
 
@@ -22,6 +27,12 @@ Provide a robust terminal-style workspace that connects to the Hermes dashboard 
 - The app SHALL support attachment-assisted prompts when the input is file-backed and maintain request continuity.
 - The app SHALL validate that sensitive content is not sent as plain text in logs when plaintext transport is blocked.
 - The app SHALL keep dashboard search integration functional for resuming TUI sessions by session ID.
+- The TUI Gateway header SHALL not render the Session, Status, or Events status pills.
+- The TUI Gateway composer SHALL load all selectable Hermes Agent models from the gateway `model.options` JSON-RPC method and present them grouped and sorted by provider.
+- The selected model and provider SHALL be passed in `session.create` and `prompt.submit` requests so both new and existing sessions use the selection.
+- The composer SHALL show only reasoning-effort choices supported by the selected model and pass the selected effort in `session.create` and `prompt.submit` requests.
+- The composer SHALL expose Normal and Fast speed choices only when the selected model advertises fast-inference capability, and pass the selected speed through the gateway session and prompt requests.
+- Model, reasoning-effort, and speed selections SHALL remain workspace-scoped while the workspace is active.
 
 ## Success Criteria
 
@@ -30,6 +41,8 @@ Provide a robust terminal-style workspace that connects to the Hermes dashboard 
 - Session resume from history opens the expected prior context in under 2 seconds for normal network latency.
 - Attention indicators switch correctly at least for streaming/completion/failure states during normal operation.
 - No crashes occur on malformed websocket payloads or token refresh retries.
+- Models are grouped by provider and displayed in provider/name order, while unsupported reasoning and speed controls remain unavailable.
+- A prompt submitted after changing any inference control reaches the gateway with the selected model/provider, reasoning effort, and applicable fast flag.
 
 ## Files in Scope
 

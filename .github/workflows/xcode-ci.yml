@@ -1,0 +1,57 @@
+name: Xcode CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-companion:
+    name: Host Companion macOS build and tests
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project HermesiOS.xcodeproj
+      - name: Build HermesHostCompanion
+        run: >-
+          xcodebuild build
+          -project HermesiOS.xcodeproj
+          -scheme HermesHostCompanion
+          -destination 'platform=macOS,arch=arm64'
+          CODE_SIGNING_ALLOWED=NO
+      - name: Run Host Companion unit tests
+        run: >-
+          xcodebuild test
+          -project HermesiOS.xcodeproj
+          -scheme HermesHostCompanion
+          -destination 'platform=macOS,arch=arm64'
+          CODE_SIGNING_ALLOWED=NO
+
+  ios-app:
+    name: HermesiOS simulator build and tests
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project HermesiOS.xcodeproj
+      - name: Build HermesiOS for iOS Simulator
+        run: >-
+          xcodebuild build
+          -project HermesiOS.xcodeproj
+          -scheme HermesiOS
+          -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest'
+          CODE_SIGNING_ALLOWED=NO
+      - name: Run HermesiOS unit tests
+        run: >-
+          xcodebuild test
+          -project HermesiOS.xcodeproj
+          -scheme HermesiOS
+          -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest'
+          CODE_SIGNING_ALLOWED=NO

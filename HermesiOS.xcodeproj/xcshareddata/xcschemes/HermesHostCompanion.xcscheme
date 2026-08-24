@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "4D4AAD2D2FA93A6D00AEE3FB"
-               BuildableName = "HermesiOS.app"
-               BlueprintName = "HermesiOS"
+               BlueprintIdentifier = "5A8C00072FAB000100000001"
+               BuildableName = "HermesHostCompanion.app"
+               BlueprintName = "HermesHostCompanion"
                ReferencedContainer = "container:HermesiOS.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -35,32 +35,31 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A1B2C3D4E5F6000000000009"
-               BuildableName = "HermesiOSTests.xctest"
-               BlueprintName = "HermesiOSTests"
+               BlueprintIdentifier = "A1B2C3D4E5F600000000000A"
+               BuildableName = "HermesHostCompanionTests.xctest"
+               BlueprintName = "HermesHostCompanionTests"
                ReferencedContainer = "container:HermesiOS.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Release"
-      selectedDebuggerIdentifier = ""
-      selectedLauncherIdentifier = "Xcode.IDEFoundation.Launcher.PosixSpawn"
+      buildConfiguration = "Debug"
+      selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
+      selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
-      allowLocationSimulation = "YES"
-      queueDebuggingEnableBacktraceRecording = "Yes">
+      allowLocationSimulation = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4D4AAD2D2FA93A6D00AEE3FB"
-            BuildableName = "HermesiOS.app"
-            BlueprintName = "HermesiOS"
+            BlueprintIdentifier = "5A8C00072FAB000100000001"
+            BuildableName = "HermesHostCompanion.app"
+            BlueprintName = "HermesHostCompanion"
             ReferencedContainer = "container:HermesiOS.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -75,9 +74,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4D4AAD2D2FA93A6D00AEE3FB"
-            BuildableName = "HermesiOS.app"
-            BlueprintName = "HermesiOS"
+            BlueprintIdentifier = "5A8C00072FAB000100000001"
+            BuildableName = "HermesHostCompanion.app"
+            BlueprintName = "HermesHostCompanion"
             ReferencedContainer = "container:HermesiOS.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

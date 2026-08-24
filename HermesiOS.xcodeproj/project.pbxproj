@@ -17,6 +17,8 @@
 /* Begin PBXFileReference section */
 		4D4AAD2E2FA93A6D00AEE3FB /* HermesiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A8C00012FAB000100000001 /* HermesHostCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesHostCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F6000000000001 /* HermesiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HermesiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F6000000000002 /* HermesHostCompanionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HermesHostCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -53,6 +55,16 @@
 			path = HermesHostCompanion;
 			sourceTree = "<group>";
 		};
+		A1B2C3D4E5F6000000000003 /* HermesiOSTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HermesiOSTests;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6000000000004 /* HermesHostCompanionTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HermesHostCompanionTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +87,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1B2C3D4E5F6000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -83,6 +109,8 @@
 			children = (
 				4D4AAD302FA93A6D00AEE3FB /* HermesiOS */,
 				5A8C00032FAB000100000001 /* HermesHostCompanion */,
+				A1B2C3D4E5F6000000000003 /* HermesiOSTests */,
+				A1B2C3D4E5F6000000000004 /* HermesHostCompanionTests */,
 				4D4AAD2F2FA93A6D00AEE3FB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -92,11 +120,30 @@
 			children = (
 				4D4AAD2E2FA93A6D00AEE3FB /* HermesiOS.app */,
 				5A8C00012FAB000100000001 /* HermesHostCompanion.app */,
+				A1B2C3D4E5F6000000000001 /* HermesiOSTests.xctest */,
+				A1B2C3D4E5F6000000000002 /* HermesHostCompanionTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
+/* Begin PBXContainerItemProxy section */
+		A1B2C3D4E5F6000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4D4AAD262FA93A6D00AEE3FB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D4AAD2D2FA93A6D00AEE3FB;
+			remoteInfo = HermesiOS;
+		};
+		A1B2C3D4E5F6000000000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4D4AAD262FA93A6D00AEE3FB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5A8C00072FAB000100000001;
+			remoteInfo = HermesHostCompanion;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXNativeTarget section */
 		4D4AAD2D2FA93A6D00AEE3FB /* HermesiOS */ = {
@@ -148,6 +195,50 @@
 			productReference = 5A8C00012FAB000100000001 /* HermesHostCompanion.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A1B2C3D4E5F6000000000009 /* HermesiOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D4E5F6000000000013 /* Build configuration list for PBXNativeTarget "HermesiOSTests" */;
+			buildPhases = (
+				A1B2C3D4E5F600000000000D /* Sources */,
+				A1B2C3D4E5F6000000000005 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1B2C3D4E5F600000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1B2C3D4E5F6000000000003 /* HermesiOSTests */,
+			);
+			name = HermesiOSTests;
+			packageProductDependencies = (
+			);
+			productName = HermesiOSTests;
+			productReference = A1B2C3D4E5F6000000000001 /* HermesiOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A1B2C3D4E5F600000000000A /* HermesHostCompanionTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D4E5F6000000000014 /* Build configuration list for PBXNativeTarget "HermesHostCompanionTests" */;
+			buildPhases = (
+				A1B2C3D4E5F600000000000E /* Sources */,
+				A1B2C3D4E5F6000000000006 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1B2C3D4E5F600000000000C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1B2C3D4E5F6000000000004 /* HermesHostCompanionTests */,
+			);
+			name = HermesHostCompanionTests;
+			packageProductDependencies = (
+			);
+			productName = HermesHostCompanionTests;
+			productReference = A1B2C3D4E5F6000000000002 /* HermesHostCompanionTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -163,6 +254,14 @@
 					};
 					5A8C00072FAB000100000001 = {
 						CreatedOnToolsVersion = 26.4.1;
+					};
+					A1B2C3D4E5F6000000000009 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = 4D4AAD2D2FA93A6D00AEE3FB;
+					};
+					A1B2C3D4E5F600000000000A = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = 5A8C00072FAB000100000001;
 					};
 				};
 			};
@@ -192,6 +291,8 @@
 			targets = (
 				4D4AAD2D2FA93A6D00AEE3FB /* HermesiOS */,
 				5A8C00072FAB000100000001 /* HermesHostCompanion */,
+				A1B2C3D4E5F6000000000009 /* HermesiOSTests */,
+				A1B2C3D4E5F600000000000A /* HermesHostCompanionTests */,
 			);
 		};
 /* End PBXProject section */
@@ -228,7 +329,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1B2C3D4E5F600000000000D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F600000000000E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A1B2C3D4E5F600000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D4AAD2D2FA93A6D00AEE3FB /* HermesiOS */;
+			targetProxy = A1B2C3D4E5F6000000000007 /* PBXContainerItemProxy */;
+		};
+		A1B2C3D4E5F600000000000C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5A8C00072FAB000100000001 /* HermesHostCompanion */;
+			targetProxy = A1B2C3D4E5F6000000000008 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4D4AAD3D2FA93A6E00AEE3FB /* Debug */ = {
@@ -504,6 +632,80 @@
 			};
 			name = Release;
 		};
+		A1B2C3D4E5F600000000000F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesiOSTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HermesiOS.app/HermesiOS";
+				TEST_TARGET_NAME = HermesiOS;
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F6000000000010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesiOSTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HermesiOS.app/HermesiOS";
+				TEST_TARGET_NAME = HermesiOS;
+			};
+			name = Release;
+		};
+		A1B2C3D4E5F6000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesHostCompanionTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HermesHostCompanion.app/Contents/MacOS/HermesHostCompanion";
+				TEST_TARGET_NAME = HermesHostCompanion;
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F6000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesHostCompanionTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HermesHostCompanion.app/Contents/MacOS/HermesHostCompanion";
+				TEST_TARGET_NAME = HermesHostCompanion;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -530,6 +732,24 @@
 			buildConfigurations = (
 				5A8C000C2FAB000100000001 /* Debug */,
 				5A8C000D2FAB000100000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D4E5F6000000000013 /* Build configuration list for PBXNativeTarget "HermesiOSTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F600000000000F /* Debug */,
+				A1B2C3D4E5F6000000000010 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D4E5F6000000000014 /* Build configuration list for PBXNativeTarget "HermesHostCompanionTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F6000000000011 /* Debug */,
+				A1B2C3D4E5F6000000000012 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

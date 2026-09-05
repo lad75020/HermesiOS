@@ -125,7 +125,7 @@ struct ContentView: View {
             } else {
                 Group {
                     if horizontalSizeClass == .compact {
-                        iPhoneLayout
+                        phoneRootLayout
                     } else {
                         iPadLayout
                     }
@@ -150,13 +150,6 @@ struct ContentView: View {
                     .padding(.top, 18)
                     .padding(.horizontal, 20)
                     .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(2)
-            }
-        }
-        .overlay {
-            if shouldShowPhoneConnectionIssueOverlay {
-                phoneConnectionIssueOverlay
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .zIndex(2)
             }
         }
@@ -362,26 +355,30 @@ struct ContentView: View {
     private var shouldShowPhoneConnectionIssueOverlay: Bool {
         !isShowingSplash
             && horizontalSizeClass == .compact
+            && selectedPhoneSection != .settings
             && (statusMonitor.apiServerStatus == .down
                 || statusMonitor.companionStatus == .down
                 || statusMonitor.dashboardStatus == .down)
     }
 
     private var phoneConnectionIssueOverlay: some View {
-        Text("Connection issue : Check settings")
-            .font(.title2.weight(.heavy))
-            .multilineTextAlignment(.center)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.igDestructive.opacity(0.94))
-                    .shadow(color: Color.igDestructive.opacity(0.42), radius: 24, y: 12)
-            )
-            .padding(.horizontal, 28)
-            .allowsHitTesting(false)
-            .accessibilityLabel("Connection issue. Check settings")
+        Button {
+            openPhoneWorkspace(.settings)
+        } label: {
+            Label("Connection issue. Open Settings", systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.igDestructive.opacity(0.94))
+                        .shadow(color: Color.igDestructive.opacity(0.34), radius: 12, y: 6)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Connection issue. Open Settings")
+        .accessibilityHint("Opens Settings so you can fix the server connection.")
     }
 
     private var visibleWorkspaceSections: [WorkspaceSection] {
@@ -501,6 +498,19 @@ struct ContentView: View {
             workspaceDetail(for: selectedWorkspace ?? .responses)
         }
         .navigationSplitViewStyle(.balanced)
+    }
+
+    private var phoneRootLayout: some View {
+        VStack(spacing: 0) {
+            if shouldShowPhoneConnectionIssueOverlay {
+                phoneConnectionIssueOverlay
+                    .padding(.top, 12)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+            }
+
+            iPhoneLayout
+        }
     }
 
     private var iPhoneLayout: some View {

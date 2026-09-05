@@ -105,6 +105,9 @@ private final class DebugBridgeElementRegistry {
 private struct ElementSnapshotBuilder {
     private weak var window: UIWindow?
     private var nextID = 0
+    // UIKit view hierarchies can contain cycles through hosting views.
+    // Visit each view once so a debug snapshot cannot block the main actor.
+    private var visitedViewIDs: Set<ObjectIdentifier> = []
     var elements: [JSONDict] = []
     var registryEntries: [DebugBridgeElementRegistry.Entry] = []
 
@@ -114,6 +117,7 @@ private struct ElementSnapshotBuilder {
 
     mutating func collect(view: UIView, parentPath: String, depth: Int) {
         guard let window else { return }
+        guard visitedViewIDs.insert(ObjectIdentifier(view)).inserted else { return }
         guard !view.isHidden, view.alpha >= 0.01 else { return }
 
         let frame = view.convert(view.bounds, to: window)
@@ -133,43 +137,16 @@ private struct ElementSnapshotBuilder {
             append(target: view, frame: frame, path: path, depth: depth, isUserInteractionEnabled: view.isUserInteractionEnabled)
         }
 
-        _ = view.accessibilityElementCount()
-        if let axElements = view.accessibilityElements, !axElements.isEmpty {
-            for (index, rawElement) in axElements.enumerated() {
-                if let childView = rawElement as? UIView {
-                    collect(view: childView, parentPath: path, depth: depth + 1)
-                } else if let object = rawElement as? NSObject {
-                    append(accessibilityObject: object, parentPath: path, index: index, depth: depth + 1)
-                }
-            }
-        } else {
-            let count = view.accessibilityElementCount()
-            if count > 0 {
-                for index in 0..<count {
-                    guard let object = view.accessibilityElement(at: index) as? NSObject else { continue }
-                    if let childView = object as? UIView {
-                        collect(view: childView, parentPath: path, depth: depth + 1)
-                    } else {
-                        append(accessibilityObject: object, parentPath: path, index: index, depth: depth + 1)
-                    }
-                }
-            }
-        }
-
+        // SwiftUI may lazily synthesize its accessibility container while the
+        // main actor is already servicing the debug HTTP request. Traversing
+        // that container can deadlock the app. UIKit's view tree covers the
+        // controls the bridge can physically activate, so keep snapshots on
+        // that bounded tree instead.
         for subview in view.subviews {
             collect(view: subview, parentPath: path, depth: depth + 1)
         }
     }
 
-    private mutating func append(accessibilityObject object: NSObject, parentPath: String, index: Int, depth: Int) {
-        guard let window else { return }
-        let className = String(describing: type(of: object))
-        let path = "\(parentPath) > \(className)[\(index)]"
-        let screenFrame = object.accessibilityFrame
-        let frame = window.convert(screenFrame, from: nil)
-        guard frame.isFiniteNonEmpty, window.bounds.intersects(frame) else { return }
-        append(target: object, frame: frame, path: path, depth: depth, isUserInteractionEnabled: true)
-    }
 
     private mutating func append(target: NSObject, frame: CGRect, path: String, depth: Int, isUserInteractionEnabled: Bool) {
         guard let window else { return }

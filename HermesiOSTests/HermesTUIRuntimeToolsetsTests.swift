@@ -3,12 +3,19 @@ import XCTest
 
 @MainActor
 final class HermesTUIRuntimeToolsetsTests: XCTestCase {
-    private func profiles(_ values: [(String, String)]) -> JSONValue {
+    private func profiles(
+        _ values: [(String, String)],
+        identities: [String: String] = [:]
+    ) -> JSONValue {
         .object(["profiles": .array(values.map { name, path in
-            .object([
+            var row: [String: JSONValue] = [
                 "name": .string(name), "path": .string(path), "display_name": .string(name),
                 "provider": .string("openai"), "model": .string("gpt-5")
-            ])
+            ]
+            if let identity = identities[name] {
+                row["path_identity"] = .string(identity)
+            }
+            return .object(row)
         })])
     }
 
@@ -66,6 +73,64 @@ final class HermesTUIRuntimeToolsetsTests: XCTestCase {
         } catch {
             XCTFail("Expected named launch-profile match: \(error)")
         }
+    }
+
+    func testRuntimeToolsetsAllowsServerVerifiedFilesystemAlias() async throws {
+        let store = HermesTUIGatewayStore()
+        store.isConnected = true
+        store.requestOverride = { method, _ in
+            switch method {
+            case "config.get":
+                return .object([
+                    "home": .string("/Volumes/WDBlack4TB/.hermes"),
+                    "home_identity": .string("/Volumes/WDBlack4TB/.hermes")
+                ])
+            case "profiles.list":
+                return self.profiles(
+                    [("default", "/Users/laurent/.hermes")],
+                    identities: ["default": "/Volumes/WDBlack4TB/.hermes"]
+                )
+            case "toolsets.list":
+                return self.toolsets()
+            default:
+                return .object([:])
+            }
+        }
+
+        let toolsets = try await store.runtimeToolsets(
+            profileName: "default",
+            authenticatedProfilePath: "/Users/laurent/.hermes"
+        )
+
+        XCTAssertEqual(toolsets.map(\.name), ["terminal"])
+    }
+
+    func testRuntimeToolsetsRejectsMismatchedServerIdentity() async throws {
+        let store = HermesTUIGatewayStore()
+        store.isConnected = true
+        var methods: [String] = []
+        store.requestOverride = { method, _ in
+            methods.append(method)
+            if method == "config.get" {
+                return .object([
+                    "home": .string("/profiles/default"),
+                    "home_identity": .string("identity-default")
+                ])
+            }
+            return self.profiles(
+                [("default", "/profiles/default")],
+                identities: ["default": "identity-other"]
+            )
+        }
+
+        await assertThrows {
+            _ = try await store.runtimeToolsets(
+                profileName: "default",
+                authenticatedProfilePath: "/profiles/default"
+            )
+        }
+
+        XCTAssertFalse(methods.contains("toolsets.list"))
     }
 
     func testSelectedDefaultRejectsNamedGatewayMismatchWithoutToolsetRPCOrChatCreation() async throws {

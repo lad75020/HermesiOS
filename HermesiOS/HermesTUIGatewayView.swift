@@ -221,13 +221,23 @@ struct HermesTUIProfileOption: Identifiable, Equatable {
     let name: String
     /// This is an opaque remote path.  It must never be canonicalized on iOS.
     let path: String
+    /// Server-resolved identity for comparing remote paths that may be filesystem aliases.
+    let pathIdentity: String?
     let displayName: String
     let provider: String
     let model: String
 
-    init(name: String, path: String = "", displayName: String, provider: String, model: String) {
+    init(
+        name: String,
+        path: String = "",
+        pathIdentity: String? = nil,
+        displayName: String,
+        provider: String,
+        model: String
+    ) {
         self.name = name
         self.path = path
+        self.pathIdentity = pathIdentity
         self.displayName = displayName
         self.provider = provider
         self.model = model
@@ -1196,6 +1206,7 @@ final class HermesTUIGatewayStore {
             return HermesTUIProfileOption(
                 name: name,
                 path: row["path"]?.stringValue ?? "",
+                pathIdentity: row["path_identity"]?.stringValue,
                 displayName: displayName?.isEmpty == false ? displayName! : name,
                 provider: row["provider"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
                 model: row["model"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1215,6 +1226,8 @@ final class HermesTUIGatewayStore {
         }
         var names = Set<String>()
         var paths = Set<String>()
+        var identities = Set<String>()
+        var identityCount = 0
         let options = try values.map { value -> HermesTUIProfileOption in
             guard case .object(let row) = value,
                   case .string(let name)? = row["name"], name.isEmpty == false,
@@ -1226,7 +1239,29 @@ final class HermesTUIGatewayStore {
                   paths.insert(path).inserted else {
                 throw HermesTUIGatewayError.requestFailed("Invalid or ambiguous TUI Gateway profile inventory response.")
             }
-            return HermesTUIProfileOption(name: name, path: path, displayName: displayName, provider: provider, model: model)
+            let pathIdentity: String?
+            if let rawIdentity = row["path_identity"] {
+                guard case .string(let identity) = rawIdentity,
+                      identity.isEmpty == false,
+                      identities.insert(identity).inserted else {
+                    throw HermesTUIGatewayError.requestFailed("Invalid or ambiguous TUI Gateway profile inventory response.")
+                }
+                identityCount += 1
+                pathIdentity = identity
+            } else {
+                pathIdentity = nil
+            }
+            return HermesTUIProfileOption(
+                name: name,
+                path: path,
+                pathIdentity: pathIdentity,
+                displayName: displayName,
+                provider: provider,
+                model: model
+            )
+        }
+        guard identityCount == 0 || identityCount == options.count else {
+            throw HermesTUIGatewayError.requestFailed("Invalid or ambiguous TUI Gateway profile inventory response.")
         }
         return options.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
@@ -1245,11 +1280,29 @@ final class HermesTUIGatewayStore {
               launchHome.isEmpty == false else {
             throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway launch-profile response.")
         }
+        let launchIdentity: String?
+        if let rawIdentity = configPayload["home_identity"] {
+            guard case .string(let identity) = rawIdentity, identity.isEmpty == false else {
+                throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway launch-profile response.")
+            }
+            launchIdentity = identity
+        } else {
+            launchIdentity = nil
+        }
         let selected = profiles.filter { $0.name == profileName && $0.path == authenticatedProfilePath }
         guard selected.count == 1 else {
             throw HermesTUIGatewayError.requestFailed("The selected authenticated profile is missing or ambiguous in the TUI Gateway inventory.")
         }
-        guard launchHome == authenticatedProfilePath else {
+        let scopeMatches: Bool
+        switch (launchIdentity, selected[0].pathIdentity) {
+        case let (.some(homeIdentity), .some(profileIdentity)):
+            scopeMatches = homeIdentity == profileIdentity
+        case (nil, nil):
+            scopeMatches = launchHome == authenticatedProfilePath
+        default:
+            scopeMatches = false
+        }
+        guard scopeMatches else {
             throw HermesTUIGatewayError.runtimeScopeMismatch("The TUI Gateway launch profile does not match the selected authenticated profile. Gateway toolset changes are blocked.")
         }
         return generation

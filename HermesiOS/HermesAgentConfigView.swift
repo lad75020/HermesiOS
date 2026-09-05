@@ -392,7 +392,15 @@ struct HermesAgentConfigView: View {
             ))
         case .mcpServers: HermesMCPServersPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         case .providers: HermesProvidersPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
-        case .models: HermesModelsPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
+        case .models:
+            HermesGatewayModelsPanel(gatewayStore: tuiGatewayStore, apiSettings: apiSettings,
+                dashboardURL: dashboardURLString, profileName: selectedRuntimeProfileName,
+                companionSettings: companionSettings, companionEnrollment: companionEnrollment,
+                authenticatedProfiles: companionRuntime.profiles)
+            .id(HermesToolsScopeIdentity(gateway: runtimeProfileLoadKey,
+                profileName: selectedRuntimeProfileName, gatewayPath: nil,
+                companionPath: companionRuntime.profiles.filter { $0.name == selectedRuntimeProfileName }.map(\.path).sorted().joined(separator: "|"),
+                settings: companionSettings, identity: companionEnrollment.identityState))
         case .memory: HermesMemoryPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         case .knowledgeEraser: HermesKnowledgeEraserPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         case .schedules:
@@ -480,6 +488,9 @@ struct HermesAgentConfigView: View {
     }
 
     private func categoryStatus(for category: HermesRuntimePanelKind) -> HermesRuntimeCategoryStatus {
+        if category == .models {
+            return .init(summary: "Gateway main model; Companion endpoint, delegation, and auxiliary settings", badge: "Gateway", loaded: false, hasError: false)
+        }
         if category == .schedules {
             return .init(summary: "Gateway creation, list, pause, resume, and delete; Companion advanced controls", badge: "Gateway", loaded: false, hasError: false)
         }

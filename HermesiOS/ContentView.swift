@@ -117,7 +117,11 @@ struct ContentView: View {
         let loadedResponsesDraft = HermesSettingsPersistence.loadResponsesDraft()
         let initialResponseWorkspace = HermesResponsesWorkspace(number: 1, draft: loadedResponsesDraft, session: HermesResponsesSession())
         let initialTUIWorkspace = HermesTUIWorkspace(number: 1)
-        _apiSettings = State(initialValue: HermesSettingsPersistence.loadAPISettings())
+        let loadedAPISettings = HermesSettingsPersistence.loadAPISettings()
+        #if DEBUG
+        print("HermesiOSAPIAuthDebug keyLength=\(loadedAPISettings.normalizedAPIKey.count) keyFingerprint=\(HermesRuntimeConnectionIdentity.fingerprint(loadedAPISettings.normalizedAPIKey))")
+        #endif
+        _apiSettings = State(initialValue: loadedAPISettings)
         _companionSettings = State(initialValue: HermesSettingsPersistence.loadCompanionSettings())
         _responsesDraft = State(initialValue: loadedResponsesDraft)
         _responseWorkspaces = State(initialValue: [initialResponseWorkspace])

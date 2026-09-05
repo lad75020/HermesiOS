@@ -437,6 +437,22 @@ final class HermesTUIGatewayStore {
 
     var runtimeConnectionVersion: UUID { connectionGeneration }
 
+    /// Narrow bridge for the existing selected-profile main-model editor.
+    func runtimeProfileModelRequest(method: String, params: [String: JSONValue]) async throws -> JSONValue {
+        let allowedKeys: Set<String> = method == "profiles.describe" ? ["name"] : ["name", "model", "provider", "confirm_expensive_model"]
+        guard ["profiles.describe", "profiles.configure"].contains(method),
+              Set(params.keys).isSubset(of: allowedKeys),
+              case .string(let profile)? = params["name"], !profile.isEmpty,
+              profile == profile.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw HermesTUIGatewayError.requestFailed("Unsupported runtime model request.")
+        }
+        let generation = connectionGeneration
+        try validateRuntimeRequest(generation)
+        let result = try await request(method, params: params, timeoutSeconds: 45)
+        try validateRuntimeRequest(generation)
+        return result
+    }
+
     /// Existing structured cron RPC; no conversation or sticky-profile changes.
     func runtimeCronRequest(params: [String: JSONValue]) async throws -> JSONValue {
         guard case .string(let profile)? = params["profile"], !profile.isEmpty,

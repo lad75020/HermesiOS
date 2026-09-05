@@ -68,6 +68,8 @@ struct ContentView: View {
     @AppStorage(hermesDashboardPortStorageKey) private var dashboardPort = defaultHermesDashboardPort
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @AppStorage(hermesRuntimeTabEnabledStorageKey) private var isRuntimeTabEnabled = false
+    @AppStorage(hermesAskTabEnabledStorageKey) private var isAskHermesTabEnabled = true
+    @AppStorage(hermesChatTabEnabledStorageKey) private var isChatWithHermesTabEnabled = true
     @AppStorage("hermes.utilities.clipboardHistoryMonitoringEnabled") private var isClipboardHistoryMonitoringEnabled = false
 
     @State private var selectedWorkspace: WorkspaceSection? = .responses
@@ -84,6 +86,9 @@ struct ContentView: View {
     @State private var selectedResponseWorkspaceID: HermesResponsesWorkspace.ID
     @State private var tuiWorkspaces: [HermesTUIWorkspace]
     @State private var selectedTUIWorkspaceID: HermesTUIWorkspace.ID
+    /// Separate from the conversational TUI workspace so Agent Runtime does not
+    /// create or mutate the selected chat session.
+    @State private var runtimeTUIGatewayStore = HermesTUIGatewayStore()
     @State private var chatDraft: HermesChatDraft
     @State private var terminalSettings: HermesTerminalSettings
     @State private var chatSession = HermesChatSession()
@@ -261,14 +266,17 @@ struct ContentView: View {
             isHistorySearchFailureUnread = false
             isHistorySearchCompletionUnread = true
         }
-        .onChange(of: isRuntimeTabEnabled) { _, isEnabled in
-            guard !isEnabled else { return }
-            if selectedWorkspace == .runtime {
-                selectedWorkspace = .responses
+        .onChange(of: workspaceTabVisibility, initial: true) { _, visibility in
+            if rootLayout == .split {
+                selectedWorkspace = visibility.resolvedSelection(selectedWorkspace)
             }
-            if selectedPhoneSection == .runtime {
+            if !visibility.isRuntimeEnabled, selectedPhoneSection == .runtime {
                 openPhoneWorkspace(.tuiGateway)
             }
+        }
+        .onChange(of: rootLayout) { _, layout in
+            guard layout == .split else { return }
+            selectedWorkspace = workspaceTabVisibility.resolvedSelection(selectedWorkspace)
         }
         .onChange(of: selectedPhoneTab) { _, tab in
             guard let section = tab.selectedSection else { return }
@@ -389,9 +397,19 @@ struct ContentView: View {
     }
 
     private var visibleWorkspaceSections: [WorkspaceSection] {
-        WorkspaceSection.allCases.filter { section in
-            section != .runtime || isRuntimeTabEnabled
-        }
+        workspaceTabVisibility.visibleSections
+    }
+
+    private var workspaceTabVisibility: HermesWorkspaceTabVisibility {
+        HermesWorkspaceTabVisibility(
+            isAskHermesEnabled: isAskHermesTabEnabled,
+            isChatWithHermesEnabled: isChatWithHermesTabEnabled,
+            isRuntimeEnabled: isRuntimeTabEnabled
+        )
+    }
+
+    private var resolvedWorkspaceSelection: WorkspaceSection {
+        workspaceTabVisibility.resolvedSelection(selectedWorkspace)
     }
 
     private var statusLoopKey: String {
@@ -490,7 +508,7 @@ struct ContentView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationSplitViewColumnWidth(min: 72, ideal: 84, max: 96)
         } detail: {
-            workspaceDetail(for: selectedWorkspace ?? .responses)
+            workspaceDetail(for: resolvedWorkspaceSelection)
         }
         .navigationSplitViewStyle(.balanced)
     }
@@ -605,7 +623,8 @@ struct ContentView: View {
     }
 
     private func openPhoneWorkspace(_ section: WorkspaceSection) {
-        let tab = HermesPhonePrimaryTab.resolve(for: section)
+        let destination = section == .runtime && !isRuntimeTabEnabled ? WorkspaceSection.tuiGateway : section
+        let tab = HermesPhonePrimaryTab.resolve(for: destination)
         selectedPhoneTab = tab
 
         if rootLayout == .phone {
@@ -616,9 +635,9 @@ struct ContentView: View {
             selectedPhoneSection = primarySection
             phoneMorePath = NavigationPath()
         } else {
-            selectedPhoneSection = section
+            selectedPhoneSection = destination
             selectedPhoneTab = .more
-            phoneMorePath = NavigationPath([section])
+            phoneMorePath = NavigationPath([destination])
         }
     }
 
@@ -788,7 +807,10 @@ struct ContentView: View {
                 agentConfiguration: $agentConfiguration,
                 companionSettings: companionSettings,
                 companionEnrollment: companionEnrollment,
-                companionRuntime: companionRuntime
+                companionRuntime: companionRuntime,
+                tuiGatewayStore: runtimeTUIGatewayStore,
+                apiSettings: apiSettings,
+                dashboardURLString: dashboardURLString
             )
         }
     }
@@ -802,7 +824,7 @@ struct ContentView: View {
         workspace.acknowledgeCurrentStatus()
         selectedResponseWorkspaceID = workspace.id
         responsesDraft = workspace.draft
-        selectedWorkspace = .responses
+        selectedWorkspace = workspaceTabVisibility.resolvedSelection(.responses)
         openPhoneWorkspace(.responses)
     }
 
@@ -872,7 +894,7 @@ struct ContentView: View {
     }
 
     private func openChatWorkspace() {
-        selectedWorkspace = .chat
+        selectedWorkspace = workspaceTabVisibility.resolvedSelection(.chat)
         openPhoneWorkspace(.chat)
     }
 
@@ -891,7 +913,7 @@ struct ContentView: View {
         let server = StateServer.shared
         server.register(buildId: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "debug", accessorHash: "hermesios-contentview-v1") { keys in
             if let raw = keys["ui.selected_workspace"] as? String, let section = WorkspaceSection(rawValue: raw) {
-                selectedWorkspace = section
+                selectedWorkspace = workspaceTabVisibility.resolvedSelection(section)
             } else if keys["ui.selected_workspace"] != nil {
                 return .typeMismatch("ui.selected_workspace")
             }
@@ -914,6 +936,18 @@ struct ContentView: View {
                 return .typeMismatch("settings.runtime_tab_enabled")
             }
 
+            if let value = keys["settings.ask_tab_enabled"] as? Bool {
+                isAskHermesTabEnabled = value
+            } else if keys["settings.ask_tab_enabled"] != nil {
+                return .typeMismatch("settings.ask_tab_enabled")
+            }
+
+            if let value = keys["settings.chat_tab_enabled"] as? Bool {
+                isChatWithHermesTabEnabled = value
+            } else if keys["settings.chat_tab_enabled"] != nil {
+                return .typeMismatch("settings.chat_tab_enabled")
+            }
+
             if let value = keys["ui.is_splash_visible"] as? Bool {
                 isShowingSplash = value
             } else if keys["ui.is_splash_visible"] != nil {
@@ -929,7 +963,7 @@ struct ContentView: View {
             read: { selectedWorkspace?.rawValue ?? NSNull() },
             write: { value in
                 guard let raw = value as? String, let section = WorkspaceSection(rawValue: raw) else { return false }
-                selectedWorkspace = section
+                selectedWorkspace = workspaceTabVisibility.resolvedSelection(section)
                 openPhoneWorkspace(section)
                 return true
             }
@@ -941,7 +975,7 @@ struct ContentView: View {
             write: { value in
                 guard let raw = value as? String, let section = WorkspaceSection(rawValue: raw) else { return false }
                 openPhoneWorkspace(section)
-                selectedWorkspace = section
+                selectedWorkspace = workspaceTabVisibility.resolvedSelection(section)
                 return true
             }
         )
@@ -962,6 +996,26 @@ struct ContentView: View {
             write: { value in
                 guard let bool = value as? Bool else { return false }
                 isRuntimeTabEnabled = bool
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "settings.ask_tab_enabled",
+            type: "Bool",
+            read: { isAskHermesTabEnabled },
+            write: { value in
+                guard let bool = value as? Bool else { return false }
+                isAskHermesTabEnabled = bool
+                return true
+            }
+        )
+        server.registerAccessor(
+            key: "settings.chat_tab_enabled",
+            type: "Bool",
+            read: { isChatWithHermesTabEnabled },
+            write: { value in
+                guard let bool = value as? Bool else { return false }
+                isChatWithHermesTabEnabled = bool
                 return true
             }
         )

@@ -2,6 +2,63 @@ import XCTest
 @testable import HermesiOS
 
 final class HermesRuntimeWorkspaceTests: XCTestCase {
+    func testWorkspaceTabVisibilityDefaultsKeepAskAndChatButHideRuntime() {
+        let visibility = HermesWorkspaceTabVisibility()
+
+        XCTAssertTrue(visibility.visibleSections.contains(.responses))
+        XCTAssertTrue(visibility.visibleSections.contains(.chat))
+        XCTAssertFalse(visibility.visibleSections.contains(.runtime))
+    }
+
+    func testWorkspaceTabVisibilityFiltersAllOptionalSections() {
+        let visibility = HermesWorkspaceTabVisibility(
+            isAskHermesEnabled: false,
+            isChatWithHermesEnabled: false,
+            isRuntimeEnabled: true
+        )
+
+        XCTAssertFalse(visibility.visibleSections.contains(.responses))
+        XCTAssertFalse(visibility.visibleSections.contains(.chat))
+        XCTAssertTrue(visibility.visibleSections.contains(.runtime))
+        XCTAssertTrue(visibility.visibleSections.contains(.tuiGateway))
+    }
+
+    func testWorkspaceTabVisibilityFallsBackFromDisabledSelectionsInPreferredOrder() {
+        XCTAssertEqual(
+            HermesWorkspaceTabVisibility(
+                isAskHermesEnabled: true,
+                isChatWithHermesEnabled: false,
+                isRuntimeEnabled: false
+            ).resolvedSelection(.chat),
+            .responses
+        )
+        XCTAssertEqual(
+            HermesWorkspaceTabVisibility(
+                isAskHermesEnabled: false,
+                isChatWithHermesEnabled: true,
+                isRuntimeEnabled: false
+            ).resolvedSelection(.responses),
+            .chat
+        )
+        XCTAssertEqual(
+            HermesWorkspaceTabVisibility(
+                isAskHermesEnabled: false,
+                isChatWithHermesEnabled: false,
+                isRuntimeEnabled: false
+            ).resolvedSelection(.runtime),
+            .tuiGateway
+        )
+        XCTAssertEqual(HermesWorkspaceTabVisibility().resolvedSelection(nil), .responses)
+    }
+
+    func testWorkspaceTabVisibilityKeepsEnabledSelections() {
+        let visibility = HermesWorkspaceTabVisibility(isRuntimeEnabled: true)
+
+        XCTAssertEqual(visibility.resolvedSelection(.responses), .responses)
+        XCTAssertEqual(visibility.resolvedSelection(.chat), .chat)
+        XCTAssertEqual(visibility.resolvedSelection(.runtime), .runtime)
+    }
+
     func testPrimaryCategoriesMatchTheEightRuntimeConfigurationAreas() {
         XCTAssertEqual(
             HermesRuntimePanelKind.primaryCategories,

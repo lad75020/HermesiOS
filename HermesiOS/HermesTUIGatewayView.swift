@@ -68,6 +68,14 @@ enum JSONValue: Codable, Equatable {
         }
     }
 
+    var integerValue: Int? {
+        switch self {
+        case .number(let value): Int(exactly: value)
+        case .string(let value): Int(value)
+        default: nil
+        }
+    }
+
     var objectValue: [String: JSONValue] {
         if case .object(let value) = self { return value }
         return [:]
@@ -79,13 +87,14 @@ enum JSONValue: Codable, Equatable {
     }
 }
 
-private enum HermesTUIGatewayError: LocalizedError {
+enum HermesTUIGatewayError: LocalizedError {
     case invalidDashboardURL
     case invalidWebSocketURL
     case notConnected
     case requestFailed(String)
     case missingSession
     case blockedPlaintext(String)
+    case runtimeScopeMismatch(String)
 
     var errorDescription: String? {
         switch self {
@@ -100,6 +109,8 @@ private enum HermesTUIGatewayError: LocalizedError {
         case .missingSession:
             "Create or activate a TUI Gateway session first."
         case .blockedPlaintext(let message):
+            message
+        case .runtimeScopeMismatch(let message):
             message
         }
     }
@@ -184,11 +195,43 @@ struct HermesTUIModelOption: Identifiable, Equatable {
     var id: String { "\(provider)::\(model)" }
 }
 
+/// A toolset reported by the existing TUI Gateway `toolsets.list` RPC. This is
+/// separate from Host Companion's file-backed toolset model because the gateway
+/// owns both the configuration semantics and the active runtime scope.
+struct HermesTUIRuntimeToolset: Identifiable, Equatable {
+    let name: String
+    let description: String
+    let toolCount: Int
+    let enabled: Bool
+
+    var id: String { name }
+}
+
+/// The gateway's `skills.manage` list response is a process-wide, cached catalog.
+/// It deliberately carries only the categories and skill names reported by Hermes.
+struct HermesTUIGatewaySkillsCatalog: Equatable {
+    let categories: [String: [String]]
+
+    var skillCount: Int {
+        categories.values.reduce(0) { $0 + $1.count }
+    }
+}
+
 struct HermesTUIProfileOption: Identifiable, Equatable {
     let name: String
+    /// This is an opaque remote path.  It must never be canonicalized on iOS.
+    let path: String
     let displayName: String
     let provider: String
     let model: String
+
+    init(name: String, path: String = "", displayName: String, provider: String, model: String) {
+        self.name = name
+        self.path = path
+        self.displayName = displayName
+        self.provider = provider
+        self.model = model
+    }
 
     var id: String { name }
 }
@@ -311,6 +354,7 @@ final class HermesTUIGatewayStore {
 #if DEBUG
     // Test transport seam: exercise the real submit/session parameter path without a host.
     @ObservationIgnored var requestOverride: ((String, [String: JSONValue]) async throws -> JSONValue)?
+    @ObservationIgnored var runtimeConnectOverride: (() async -> Void)?
 #endif
 
     var canSendPrompt: Bool {
@@ -320,6 +364,155 @@ final class HermesTUIGatewayStore {
     func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, inference: HermesTUIInferenceSelection) {
         guard !isConnecting else { return }
         Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, inference: inference) }
+    }
+
+    /// Connect a dedicated Agent Runtime client without creating a chat session.
+    /// The RPC surface and authentication remain entirely owned by the TUI Gateway.
+    private var runtimeConnectionIdentity: HermesRuntimeConnectionIdentity?
+    private var runtimeToolsetMutationInProgress = false
+
+    func connectForRuntime(dashboardBaseURL: String, apiSettings: HermesAPISettings) async throws {
+        let identity = HermesRuntimeConnectionIdentity(dashboardURL: dashboardBaseURL, apiSettings: apiSettings)
+        if let previous = runtimeConnectionIdentity, previous != identity {
+            disconnect()
+        }
+        runtimeConnectionIdentity = identity
+        let generation = connectionGeneration
+        if !isConnected {
+            await connectRuntimeTransport(
+                dashboardBaseURL: dashboardBaseURL,
+                apiSettings: apiSettings
+            )
+        }
+        guard generation == connectionGeneration, runtimeConnectionIdentity == identity, !Task.isCancelled else {
+            throw HermesTUIGatewayError.notConnected
+        }
+        guard isConnected else {
+            throw HermesTUIGatewayError.requestFailed(
+                lastErrorMessage.isEmpty ? "Unable to connect to the TUI Gateway." : lastErrorMessage
+            )
+        }
+    }
+
+    /// Lists the launch-runtime toolsets only after proving that its home is the
+    /// exact, authenticated path selected in Agent Runtime.  Toolset RPCs have
+    /// no profile/session parameter because their scope is the gateway launch home.
+    func runtimeToolsets(profileName: String, authenticatedProfilePath: String) async throws -> [HermesTUIRuntimeToolset] {
+        let generation = try await proveRuntimeToolsetScope(
+            profileName: profileName,
+            authenticatedProfilePath: authenticatedProfilePath
+        )
+        let result = try await request("toolsets.list", params: [:], timeoutSeconds: 45)
+        try validateRuntimeRequest(generation)
+        return try Self.decodeRuntimeToolsets(result)
+    }
+
+    /// Reads Hermes' existing process-wide skills catalog without a profile or
+    /// session. This does not create or mutate a chat session, and it is not a
+    /// selected-profile inventory because the gateway cache is not profile-keyed.
+    func runtimeSkillsCatalog() async throws -> HermesTUIGatewaySkillsCatalog {
+        let generation = connectionGeneration
+        let result = try await request(
+            "skills.manage",
+            params: ["action": .string("list")],
+            timeoutSeconds: 45
+        )
+        guard connectionGeneration == generation, isConnected, !Task.isCancelled else {
+            throw HermesTUIGatewayError.notConnected
+        }
+        return try Self.decodeRuntimeSkillsCatalog(result)
+    }
+
+    /// Reads installed names and enabled state from the selected profile, not the process cache.
+    func runtimeProfileSkills(profileName: String) async throws -> HermesTUIProfileSkills {
+        guard !profileName.isEmpty, profileName == profileName.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw HermesTUIGatewayError.requestFailed("An exact selected profile name is required.")
+        }
+        let generation = connectionGeneration
+        try validateRuntimeRequest(generation)
+        let result = try await request("profiles.describe", params: ["name": .string(profileName)], timeoutSeconds: 45)
+        try validateRuntimeRequest(generation)
+        return try HermesTUIProfileSkills.decode(result, profileName: profileName)
+    }
+
+    var runtimeConnectionVersion: UUID { connectionGeneration }
+
+    /// Existing structured cron RPC; no conversation or sticky-profile changes.
+    func runtimeCronRequest(params: [String: JSONValue]) async throws -> JSONValue {
+        guard case .string(let profile)? = params["profile"], !profile.isEmpty,
+              case .string(let action)? = params["action"],
+              ["list", "add", "pause", "resume", "remove"].contains(action) else {
+            throw HermesTUIGatewayError.requestFailed("Unsupported runtime schedule request.")
+        }
+        let generation = connectionGeneration
+        try validateRuntimeRequest(generation)
+        let result = try await request("cron.manage", params: params, timeoutSeconds: 45)
+        try validateRuntimeRequest(generation)
+        return result
+    }
+
+    func setRuntimeToolsetEnabled(
+        name: String,
+        enabled: Bool,
+        profileName: String,
+        authenticatedProfilePath: String
+    ) async throws -> [HermesTUIRuntimeToolset] {
+        guard !runtimeToolsetMutationInProgress else {
+            throw HermesTUIGatewayError.requestFailed("A gateway toolset change is already in progress.")
+        }
+        runtimeToolsetMutationInProgress = true
+        defer { runtimeToolsetMutationInProgress = false }
+        let operationGeneration = connectionGeneration
+        // Read before modifying so an unknown target cannot be reported as changed.
+        let before = try await runtimeToolsets(
+            profileName: profileName,
+            authenticatedProfilePath: authenticatedProfilePath
+        )
+        try validateRuntimeRequest(operationGeneration)
+        guard before.contains(where: { $0.name == name }) else {
+            throw HermesTUIGatewayError.requestFailed("The requested TUI Gateway toolset is not available.")
+        }
+        // The read above may have taken time; prove the launch scope again directly
+        // before the write, then use a fresh generation guard for the acknowledgement.
+        let generation = try await proveRuntimeToolsetScope(
+            profileName: profileName,
+            authenticatedProfilePath: authenticatedProfilePath
+        )
+        try validateRuntimeRequest(operationGeneration)
+        let acknowledgement = try await request(
+            "tools.configure",
+            params: [
+                "action": .string(enabled ? "enable" : "disable"),
+                "names": .array([.string(name)])
+            ],
+            timeoutSeconds: 45
+        )
+        try validateRuntimeRequest(generation)
+        try Self.validateToolsetConfigurationAcknowledgement(acknowledgement, expectedName: name)
+        // A successful write is not enough: a reconnect or scope change between
+        // acknowledgement and refresh must not paint a different runtime as success.
+        let refreshed = try await runtimeToolsets(
+            profileName: profileName,
+            authenticatedProfilePath: authenticatedProfilePath
+        )
+        try validateRuntimeRequest(operationGeneration)
+        guard refreshed.first(where: { $0.name == name })?.enabled == enabled else {
+            throw HermesTUIGatewayError.requestFailed("The gateway acknowledged the change, but its refreshed toolset state does not match. Reload before retrying.")
+        }
+        return refreshed
+    }
+
+    /// Profiles are listed without sessions.  Their opaque paths support the
+    /// fail-closed proof used by the launch-scoped toolset RPCs.
+    func runtimeProfileOptions() async throws -> [HermesTUIProfileOption] {
+        let generation = connectionGeneration
+        let result = try await request(
+            "profiles.list",
+            params: ["include_sessions": .bool(false)],
+            timeoutSeconds: 45
+        )
+        try validateRuntimeRequest(generation)
+        return try Self.decodeRuntimeProfileOptions(result)
     }
 
     func disconnect() {
@@ -520,8 +713,20 @@ final class HermesTUIGatewayStore {
         }
     }
 
+    private func connectRuntimeTransport(dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
+#if DEBUG
+        if let runtimeConnectOverride {
+            await runtimeConnectOverride()
+            return
+        }
+#endif
+        await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: false)
+    }
+
     private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, inference: HermesTUIInferenceSelection? = nil) async {
         guard !isConnecting else { return }
+        let generation = connectionGeneration
+        defer { if generation == connectionGeneration { isConnecting = false } }
         let inference = inference ?? HermesTUIInferenceSelection()
         isConnecting = true
         lastErrorMessage = ""
@@ -529,6 +734,7 @@ final class HermesTUIGatewayStore {
         do {
             let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
             let candidateURLs = try await webSocketURLs(baseURL: baseURL, apiSettings: apiSettings)
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             var lastConnectionError: Error?
 
             for wsURL in candidateURLs {
@@ -548,6 +754,7 @@ final class HermesTUIGatewayStore {
                     await refreshActiveSessions()
                     return
                 } catch {
+                    guard generation == connectionGeneration, !Task.isCancelled else { return }
                     lastConnectionError = error
                     closeFailedConnection(error)
                     isConnecting = true
@@ -557,6 +764,7 @@ final class HermesTUIGatewayStore {
 
             throw lastConnectionError ?? HermesTUIGatewayError.requestFailed("Unable to connect to the TUI Gateway WebSocket.")
         } catch {
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             isConnecting = false
             isConnected = false
             lastErrorMessage = error.localizedDescription
@@ -754,6 +962,7 @@ final class HermesTUIGatewayStore {
         while !Task.isCancelled {
             do {
                 let message = try await task.receive()
+                guard task === webSocketTask, !Task.isCancelled else { return }
                 switch message {
                 case .string(let text):
                     await handleWebSocketText(text)
@@ -763,7 +972,7 @@ final class HermesTUIGatewayStore {
                     break
                 }
             } catch {
-                if Task.isCancelled { return }
+                if Task.isCancelled || task !== webSocketTask { return }
                 isConnected = false
                 isStreaming = false
                 connectionStatus = "Disconnected"
@@ -916,7 +1125,52 @@ final class HermesTUIGatewayStore {
         }
     }
 
+    private static func decodeRuntimeToolsets(_ result: JSONValue) throws -> [HermesTUIRuntimeToolset] {
+        guard case .object(let payload) = result,
+              case .array(let values)? = payload["toolsets"] else {
+            throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway toolsets response.")
+        }
+        var names = Set<String>()
+        let toolsets = try values.map { value -> HermesTUIRuntimeToolset in
+            guard case .object(let row) = value,
+                  case .string(let rawName)? = row["name"],
+                  rawName.isEmpty == false,
+                  case .string(let description)? = row["description"],
+                  case .number(let rawCount)? = row["tool_count"],
+                  let toolCount = Int(exactly: rawCount),
+                  toolCount >= 0,
+                  case .bool(let enabled)? = row["enabled"],
+                  names.insert(rawName).inserted else {
+                throw HermesTUIGatewayError.requestFailed("Invalid or ambiguous TUI Gateway toolset response.")
+            }
+            return HermesTUIRuntimeToolset(name: rawName, description: description, toolCount: toolCount, enabled: enabled)
+        }
+        return toolsets.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    static func decodeRuntimeSkillsCatalog(_ result: JSONValue) throws -> HermesTUIGatewaySkillsCatalog {
+        guard case .object(let payload) = result,
+              case .object(let rawCategories)? = payload["skills"] else {
+            throw HermesTUIGatewayError.requestFailed("Invalid gateway skills catalog response.")
+        }
+        var categories: [String: [String]] = [:]
+        for (category, rawNames) in rawCategories {
+            guard case .array(let values) = rawNames else {
+                throw HermesTUIGatewayError.requestFailed("Invalid gateway skills category response.")
+            }
+            let names = try values.map { value -> String in
+                guard case .string(let name) = value else {
+                    throw HermesTUIGatewayError.requestFailed("Invalid gateway skill name response.")
+                }
+                return name
+            }
+            categories[category] = names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        }
+        return HermesTUIGatewaySkillsCatalog(categories: categories)
+    }
+
     private static func decodeProfileOptions(_ result: JSONValue) -> [HermesTUIProfileOption] {
+        // Preserve chat's tolerant catalog behavior; runtime proof is separate.
         var seen = Set<String>()
         let options = (result.objectValue["profiles"]?.arrayValue ?? []).compactMap { value -> HermesTUIProfileOption? in
             let row = value.objectValue
@@ -925,15 +1179,81 @@ final class HermesTUIGatewayStore {
             let displayName = row["display_name"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
             return HermesTUIProfileOption(
                 name: name,
+                path: row["path"]?.stringValue ?? "",
                 displayName: displayName?.isEmpty == false ? displayName! : name,
                 provider: row["provider"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
                 model: row["model"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             )
         }
         if options.isEmpty {
-            return [HermesTUIProfileOption(name: "default", displayName: "default", provider: "", model: "")]
+            return [HermesTUIProfileOption(name: "default", path: "", displayName: "default", provider: "", model: "")]
         }
         return options.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    private static func decodeRuntimeProfileOptions(_ result: JSONValue) throws -> [HermesTUIProfileOption] {
+        guard case .object(let payload) = result,
+              case .array(let values)? = payload["profiles"],
+              values.isEmpty == false else {
+            throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway profile inventory response.")
+        }
+        var names = Set<String>()
+        var paths = Set<String>()
+        let options = try values.map { value -> HermesTUIProfileOption in
+            guard case .object(let row) = value,
+                  case .string(let name)? = row["name"], name.isEmpty == false,
+                  case .string(let path)? = row["path"], path.isEmpty == false,
+                  case .string(let displayName)? = row["display_name"],
+                  case .string(let provider)? = row["provider"],
+                  case .string(let model)? = row["model"],
+                  names.insert(name).inserted,
+                  paths.insert(path).inserted else {
+                throw HermesTUIGatewayError.requestFailed("Invalid or ambiguous TUI Gateway profile inventory response.")
+            }
+            return HermesTUIProfileOption(name: name, path: path, displayName: displayName, provider: provider, model: model)
+        }
+        return options.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    private func proveRuntimeToolsetScope(profileName: String, authenticatedProfilePath: String) async throws -> UUID {
+        guard !profileName.isEmpty, !authenticatedProfilePath.isEmpty, isConnected, !Task.isCancelled else {
+            throw HermesTUIGatewayError.notConnected
+        }
+        let generation = connectionGeneration
+        let config = try await request("config.get", params: ["key": .string("profile")], timeoutSeconds: 45)
+        try validateRuntimeRequest(generation)
+        let profiles = try await runtimeProfileOptions()
+        try validateRuntimeRequest(generation)
+        guard case .object(let configPayload) = config,
+              case .string(let launchHome)? = configPayload["home"],
+              launchHome.isEmpty == false else {
+            throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway launch-profile response.")
+        }
+        let selected = profiles.filter { $0.name == profileName && $0.path == authenticatedProfilePath }
+        guard selected.count == 1 else {
+            throw HermesTUIGatewayError.requestFailed("The selected authenticated profile is missing or ambiguous in the TUI Gateway inventory.")
+        }
+        guard launchHome == authenticatedProfilePath else {
+            throw HermesTUIGatewayError.runtimeScopeMismatch("The TUI Gateway launch profile does not match the selected authenticated profile. Gateway toolset changes are blocked.")
+        }
+        return generation
+    }
+
+    private func validateRuntimeRequest(_ generation: UUID) throws {
+        guard connectionGeneration == generation, isConnected, !Task.isCancelled else {
+            throw HermesTUIGatewayError.notConnected
+        }
+    }
+
+    private static func validateToolsetConfigurationAcknowledgement(_ result: JSONValue, expectedName: String) throws {
+        guard case .object(let payload) = result,
+              case .array(let changed)? = payload["changed"],
+              case .array(let unknown)? = payload["unknown"], unknown.isEmpty,
+              case .array(let missingServers)? = payload["missing_servers"], missingServers.isEmpty,
+              changed.count == 1,
+              changed.first == .string(expectedName) else {
+            throw HermesTUIGatewayError.requestFailed("TUI Gateway did not acknowledge the requested toolset change.")
+        }
     }
 
     private static func normalizedInference(_ inference: HermesTUIInferenceSelection, options: [HermesTUIModelOption]) -> HermesTUIInferenceSelection {
@@ -1880,7 +2200,7 @@ private struct HermesTUIGatewayView: View {
 
     private var profileOptions: [HermesTUIProfileOption] {
         workspace.profileOptions.isEmpty
-            ? [HermesTUIProfileOption(name: "default", displayName: "default", provider: "", model: "")]
+            ? [HermesTUIProfileOption(name: "default", path: "", displayName: "default", provider: "", model: "")]
             : workspace.profileOptions
     }
 

@@ -11,6 +11,8 @@ struct HermesSchedulesPanel: View {
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    /// The gateway-first panel retains this view only for unmigrated operations.
+    var gatewayManagedControls = false
 
     @State private var showCreateForm = false
     @State private var editingJob: HermesCompanionScheduleCronJob?
@@ -100,7 +102,9 @@ struct HermesSchedulesPanel: View {
 
                 HermesSectionCard("Schedule Controls") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Create, pause, resume, trigger, and delete Hermes cron jobs stored on the macOS host.")
+                        Text(gatewayManagedControls
+                             ? "Companion supports creation with model/provider overrides, full editing, and Run Now. Return to the gateway list for basic creation, pause, resume, or delete."
+                             : "Create, pause, resume, trigger, and delete Hermes cron jobs stored on the macOS host.")
                             .font(.subheadline)
                             .foregroundStyle(.hermesSecondaryText)
                         if !companionRuntime.schedulesFilePath.isEmpty {
@@ -263,8 +267,15 @@ struct HermesSchedulesPanel: View {
 
             schedulePinFields(provider: $newProvider, model: $newModel, baseURL: $newBaseURL)
 
+            if gatewayManagedControls {
+                Text("For a task using the selected profile's model and provider, use New Task in the gateway list. Companion creation requires a model or provider override.")
+                    .font(.caption)
+                    .foregroundStyle(.hermesSecondaryText)
+            }
+
             HStack {
                 Button {
+                    guard !gatewayManagedControls || optionalNewValue(newProvider) != nil || optionalNewValue(newModel) != nil else { return }
                     let prompt = newPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
                     let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
                     companionRuntime.createSchedule(
@@ -284,7 +295,7 @@ struct HermesSchedulesPanel: View {
                     Label("Create", systemImage: "plus.circle.fill")
                 }
                 .hermesGlassProminentButton()
-                .disabled(!isScheduleValid)
+                .disabled(!isScheduleValid || (gatewayManagedControls && optionalNewValue(newProvider) == nil && optionalNewValue(newModel) == nil))
 
                 Button("Reset") { resetForm() }
                     .hermesGlassButton()
@@ -441,7 +452,7 @@ struct HermesSchedulesPanel: View {
             }
 
             HStack {
-                if job.state != "completed" {
+                if !gatewayManagedControls, job.state != "completed" {
                     Button {
                         if job.state == "paused" {
                             companionRuntime.resumeSchedule(jobID: job.id, settings: companionSettings, identityState: companionEnrollment.identityState)
@@ -473,12 +484,14 @@ struct HermesSchedulesPanel: View {
 
                 Spacer()
 
-                Button(role: .destructive) {
-                    confirmDeleteJobID = job.id
-                } label: {
-                    Label("Delete", systemImage: "trash")
+                if !gatewayManagedControls {
+                    Button(role: .destructive) {
+                        confirmDeleteJobID = job.id
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .hermesGlassButton()
                 }
-                .hermesGlassButton()
             }
         }
         .padding(14)

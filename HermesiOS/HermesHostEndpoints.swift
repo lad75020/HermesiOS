@@ -17,6 +17,8 @@ let hermesOfficePortStorageKey = "hermes.office.port"
 let defaultHermesOfficePort = "9116"
 
 let hermesRuntimeTabEnabledStorageKey = "hermes.runtime.tab.enabled"
+let hermesAskTabEnabledStorageKey = "hermes.ask.tab.enabled"
+let hermesChatTabEnabledStorageKey = "hermes.chat.tab.enabled"
 let hermesTailscaleServePortStorageKey = "hermes.tailscale.serve.selected.port"
 
 let defaultHermesAPIPort = "8642"
@@ -164,4 +166,3 @@ enum HermesEndpointSecurityError: LocalizedError {
         }
     }
 }
-

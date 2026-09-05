@@ -67,6 +67,9 @@ struct HermesAgentConfigView: View {
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    let tuiGatewayStore: HermesTUIGatewayStore
+    let apiSettings: HermesAPISettings
+    let dashboardURLString: String
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// This is deliberately local to Agent Runtime. Selecting an edit scope must
@@ -76,6 +79,12 @@ struct HermesAgentConfigView: View {
     /// ContentView kickstarts. Replacing this object on a scope change makes an
     /// old request unable to populate the newly selected profile's UI.
     @State private var scopedCompanionRuntime = HermesCompanionRuntimeSession()
+    /// The TUI Gateway is the primary source of the Agent Runtime edit scope.
+    /// Host Companion keeps its own profile inventory only for panels that require
+    /// the explicit host fallback.
+    @State private var runtimeProfiles: [HermesTUIProfileOption] = []
+    @State private var isLoadingRuntimeProfiles = false
+    @State private var runtimeProfilesError = ""
 
     private var selectedCategory: HermesRuntimePanelKind {
         agentConfiguration.activeRuntimePanel ?? .profiles
@@ -109,9 +118,15 @@ struct HermesAgentConfigView: View {
             detailPage(for: category)
         }
         .task(id: companionEnrollment.identityState.deviceID) {
+            // Resolve authenticated host paths only for panels that fall back to
+            // Host Companion. The runtime scope itself comes from TUI Gateway.
             guard companionEnrollment.identityState.isEnrolled else { return }
             companionRuntime.refreshProfiles(settings: companionSettings, identityState: companionEnrollment.identityState)
         }
+        .task(id: runtimeProfileLoadKey) {
+            await loadRuntimeProfiles()
+        }
+
     }
 
     private var overviewWorkspace: some View {
@@ -214,43 +229,46 @@ struct HermesAgentConfigView: View {
 
     @ViewBuilder
     private var runtimeScopePicker: some View {
-        if companionEnrollment.identityState.isEnrolled, companionRuntime.profiles.isEmpty == false {
+        if runtimeProfiles.isEmpty == false {
             Picker("Runtime edit scope", selection: $selectedRuntimeProfileName) {
-                ForEach(companionRuntime.profiles) { profile in
-                    Text(profile.isDefault ? "Default workspace" : profile.name).tag(profile.name)
+                ForEach(runtimeProfiles) { profile in
+                    Text(profile.name == "default" ? "Default workspace" : profile.displayName).tag(profile.name)
                 }
             }
             .pickerStyle(.menu)
-            .accessibilityHint("Changes only the Agent Runtime edit target; it does not change Hermes' active profile.")
+            .accessibilityHint("Changes only the TUI Gateway edit target; it does not change Hermes' active profile.")
             .onChange(of: selectedRuntimeProfileName) { _, _ in
                 scopedCompanionRuntime = HermesCompanionRuntimeSession()
             }
+        } else if isLoadingRuntimeProfiles {
+            ProgressView("Loading TUI Gateway profiles")
+                .controlSize(.small)
         }
     }
 
     private var connectionBanner: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: companionEnrollment.identityState.isEnrolled ? "checkmark.circle.fill" : "lock.circle.fill")
-                .foregroundStyle(companionEnrollment.identityState.isEnrolled ? .igOnlineGreen : .igGradOrange)
+            Image(systemName: tuiGatewayStore.isConnected ? "checkmark.circle.fill" : "terminal.fill")
+                .foregroundStyle(tuiGatewayStore.isConnected ? .igOnlineGreen : .igGradOrange)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(companionConnectionTitle)
+                Text(tuiGatewayConnectionTitle)
                     .font(.subheadline.weight(.semibold))
-                Text(companionConnectionDetail)
+                Text(tuiGatewayConnectionDetail)
                     .font(.caption)
                     .foregroundStyle(.hermesSecondaryText)
             }
             Spacer(minLength: 8)
-            if companionEnrollment.identityState.isEnrolled == false {
-                NavigationLink(value: HermesRuntimePanelKind.companion) {
-                    Text("Connect").font(.subheadline.weight(.semibold))
+            if !tuiGatewayStore.isConnected, !isLoadingRuntimeProfiles {
+                Button("Reconnect") {
+                    Task { await loadRuntimeProfiles() }
                 }
                 .buttonStyle(.bordered)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .hermesLiquidGlass(cornerRadius: 18, tint: (companionEnrollment.identityState.isEnrolled ? Color.igOnlineGreen : Color.igGradOrange).opacity(0.10))
+        .hermesLiquidGlass(cornerRadius: 18, tint: (tuiGatewayStore.isConnected ? Color.igOnlineGreen : Color.igGradOrange).opacity(0.10))
         .accessibilityElement(children: .combine)
     }
 
@@ -328,35 +346,133 @@ struct HermesAgentConfigView: View {
     @ViewBuilder
     private func detailContent(for category: HermesRuntimePanelKind) -> some View {
         switch category {
-        case .skills: HermesSkillsPanel(agentConfiguration: $agentConfiguration, companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
+        case .skills:
+            HermesSkillsPanel(
+                agentConfiguration: $agentConfiguration,
+                companionSettings: companionSettings,
+                companionEnrollment: companionEnrollment,
+                tuiGatewayStore: tuiGatewayStore,
+                apiSettings: apiSettings,
+                dashboardURLString: dashboardURLString,
+                selectedProfileName: selectedRuntimeProfileName,
+                authenticatedProfiles: companionRuntime.profiles
+            )
+            .id(HermesToolsScopeIdentity(
+                gateway: runtimeProfileLoadKey,
+                profileName: selectedRuntimeProfileName,
+                gatewayPath: nil,
+                companionPath: skillsFallbackPathIdentity,
+                settings: companionSettings,
+                identity: companionEnrollment.identityState
+            ))
         case .companion: HermesCompanionPanel(companionSettings: companionSettings, companionEnrollment: companionEnrollment, companionRuntime: companionRuntime)
         case .profiles: HermesProfilesPanel(companionSettings: companionSettings, companionEnrollment: companionEnrollment, companionRuntime: companionRuntime)
         case .gateway: HermesGatewayPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
-        case .tools: HermesToolsPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
+        case .tools:
+            HermesToolsPanel(
+                // Tools owns its fallback scope privately.  Give it the unscoped
+                // Companion settings plus the authenticated inventory so it can
+                // require an exact selected-profile path before any fallback.
+                companionSettings: companionSettings,
+                companionEnrollment: companionEnrollment,
+                authenticatedProfiles: companionRuntime.profiles,
+                gatewayProfilePath: selectedToolsGatewayPath,
+                tuiGatewayStore: tuiGatewayStore,
+                apiSettings: apiSettings,
+                dashboardURLString: dashboardURLString,
+                runtimeProfileName: selectedRuntimeProfileName
+            )
+            .id(HermesToolsScopeIdentity(
+                gateway: runtimeProfileLoadKey,
+                profileName: selectedRuntimeProfileName,
+                gatewayPath: selectedToolsGatewayPath,
+                companionPath: companionRuntime.profiles.filter { $0.name == selectedRuntimeProfileName }.map(\.path).sorted().joined(separator: "|"),
+                settings: companionSettings,
+                identity: companionEnrollment.identityState
+            ))
         case .mcpServers: HermesMCPServersPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         case .providers: HermesProvidersPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         case .models: HermesModelsPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         case .memory: HermesMemoryPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         case .knowledgeEraser: HermesKnowledgeEraserPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
-        case .schedules: HermesSchedulesPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
+        case .schedules:
+            HermesGatewaySchedulesPanel(
+                gatewayStore: tuiGatewayStore,
+                apiSettings: apiSettings,
+                dashboardURL: dashboardURLString,
+                profileName: selectedRuntimeProfileName,
+                companionSettings: companionSettings,
+                companionEnrollment: companionEnrollment,
+                authenticatedProfiles: companionRuntime.profiles
+            )
+            .id(HermesToolsScopeIdentity(
+                gateway: runtimeProfileLoadKey,
+                profileName: selectedRuntimeProfileName,
+                gatewayPath: nil,
+                companionPath: companionRuntime.profiles.filter { $0.name == selectedRuntimeProfileName }.map(\.path).sorted().joined(separator: "|"),
+                settings: companionSettings,
+                identity: companionEnrollment.identityState
+            ))
         case .observability: HermesObservabilityPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         }
     }
 
     private var profileScopeText: String {
-        guard companionEnrollment.identityState.isEnrolled else { return "Runtime edit scope unavailable until Host Companion is enrolled" }
-        guard let profile = companionRuntime.profiles.first(where: { $0.name == selectedRuntimeProfileName }) else { return "Load profiles to choose this Runtime edit scope" }
-        return "Runtime edit scope: \(profile.isDefault ? "Default workspace" : profile.name)"
+        guard let profile = runtimeProfiles.first(where: { $0.name == selectedRuntimeProfileName }) else {
+            return runtimeProfilesError.isEmpty ? "Loading TUI Gateway profiles for the Runtime edit scope" : runtimeProfilesError
+        }
+        return "Runtime edit scope: \(profile.name == "default" ? "Default workspace" : profile.displayName)"
     }
 
-    private var companionConnectionTitle: String {
-        guard companionEnrollment.identityState.isEnrolled else { return "Host Companion not approved" }
-        return companionRuntime.connectionStatus == "Failed" ? "Host Companion request failed" : "Host Companion approved"
+    private var tuiGatewayConnectionTitle: String {
+        if tuiGatewayStore.isConnected { return "TUI Gateway connected" }
+        if isLoadingRuntimeProfiles { return "Connecting to TUI Gateway" }
+        return "TUI Gateway unavailable"
     }
 
-    private var companionConnectionDetail: String {
-        guard companionEnrollment.identityState.isEnrolled else { return "Enroll and approve this device to load or change host configuration." }
-        return companionRuntime.lastErrorMessage.isEmpty ? companionRuntime.connectionStatus : companionRuntime.lastErrorMessage
+    private var tuiGatewayConnectionDetail: String {
+        if !runtimeProfilesError.isEmpty { return runtimeProfilesError }
+        if tuiGatewayStore.isConnected {
+            return "Agent Runtime uses existing TUI Gateway RPCs first. Host Companion is used only where that RPC surface has no equivalent."
+        }
+        return "Connect the Hermes dashboard and API gateway in Settings, then retry."
+    }
+
+    private var runtimeProfileLoadKey: HermesRuntimeConnectionIdentity {
+        HermesRuntimeConnectionIdentity(dashboardURL: dashboardURLString, apiSettings: apiSettings)
+    }
+
+    private var selectedToolsGatewayPath: String? {
+        let matches = runtimeProfiles.filter { $0.name == selectedRuntimeProfileName }
+        guard matches.count == 1, !matches[0].path.isEmpty else { return nil }
+        return matches[0].path
+    }
+
+    private var skillsFallbackPathIdentity: String {
+        companionRuntime.profiles.first(where: { $0.name == selectedRuntimeProfileName })?.path ?? "unresolved"
+    }
+
+    @MainActor
+    private func loadRuntimeProfiles() async {
+        isLoadingRuntimeProfiles = true
+        runtimeProfilesError = ""
+        defer { isLoadingRuntimeProfiles = false }
+        do {
+            try await tuiGatewayStore.connectForRuntime(
+                dashboardBaseURL: dashboardURLString,
+                apiSettings: apiSettings
+            )
+            let profiles = try await tuiGatewayStore.runtimeProfileOptions()
+            try Task.checkCancellation()
+            runtimeProfiles = profiles
+            if !profiles.contains(where: { $0.name == selectedRuntimeProfileName }) {
+                selectedRuntimeProfileName = profiles.first?.name ?? "default"
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            runtimeProfiles = []
+            runtimeProfilesError = error.localizedDescription
+        }
     }
 
     private func select(_ category: HermesRuntimePanelKind) {
@@ -364,6 +480,15 @@ struct HermesAgentConfigView: View {
     }
 
     private func categoryStatus(for category: HermesRuntimePanelKind) -> HermesRuntimeCategoryStatus {
+        if category == .schedules {
+            return .init(summary: "Gateway creation, list, pause, resume, and delete; Companion advanced controls", badge: "Gateway", loaded: false, hasError: false)
+        }
+        if category == .tools {
+            return .init(summary: "Gateway toolsets require a verified profile match; Companion fallback is optional", badge: "Gateway", loaded: false, hasError: false)
+        }
+        if category == .skills {
+            return .init(summary: "Gateway selected-profile inventory; Companion details and toggles", badge: "Gateway", loaded: false, hasError: false)
+        }
         guard companionEnrollment.identityState.isEnrolled else { return .init(summary: "Companion not enrolled", badge: "Locked", loaded: false, hasError: false) }
         let runtime = (category == .profiles || category == .companion) ? companionRuntime : scopedCompanionRuntime
         let error = runtime.runtimeSectionError(category.rawValue)

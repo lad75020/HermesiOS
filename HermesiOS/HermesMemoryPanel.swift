@@ -41,6 +41,11 @@ struct HermesMemoryPanel: View {
                     description: Text("Use Settings → Host Companion to authenticate this iOS device before editing Hermes memory files and provider configuration on the macOS host.")
                 )
             } else {
+                Label("Host Companion fallback", systemImage: "laptopcomputer")
+                    .font(.subheadline.weight(.semibold))
+                Text("The existing TUI Gateway has no equivalent Memory configuration API.")
+                    .font(.caption)
+                    .foregroundStyle(.hermesSecondaryText)
                 HermesSectionCard("Memory Overview") {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Mirrors the desktop Memory screen: reads and writes `memories/MEMORY.md`, `memories/USER.md`, memory provider config, and memory provider env keys through HermesHostCompanion.")

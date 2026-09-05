@@ -88,6 +88,42 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     }
 }
 
+struct HermesWorkspaceTabVisibility: Equatable {
+    var isAskHermesEnabled = true
+    var isChatWithHermesEnabled = true
+    var isRuntimeEnabled = false
+
+    func includes(_ section: WorkspaceSection) -> Bool {
+        switch section {
+        case .responses:
+            isAskHermesEnabled
+        case .chat:
+            isChatWithHermesEnabled
+        case .runtime:
+            isRuntimeEnabled
+        case .tuiGateway, .history, .web, .terminal, .utilities, .settings:
+            true
+        }
+    }
+
+    var visibleSections: [WorkspaceSection] {
+        WorkspaceSection.allCases.filter(includes)
+    }
+
+    func resolvedSelection(_ selection: WorkspaceSection?) -> WorkspaceSection {
+        guard let selection, includes(selection) else {
+            return fallbackSelection
+        }
+        return selection
+    }
+
+    private var fallbackSelection: WorkspaceSection {
+        if isAskHermesEnabled { return .responses }
+        if isChatWithHermesEnabled { return .chat }
+        return .tuiGateway
+    }
+}
+
 struct WorkspaceSidebar: View {
     @Environment(\.colorScheme) private var colorScheme
 

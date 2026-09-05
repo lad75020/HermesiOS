@@ -24,6 +24,8 @@ struct HermesSettingsView: View {
     @AppStorage(hermesOfficePortStorageKey) private var officePort = defaultHermesOfficePort
     @AppStorage(hermesTailscaleServePortStorageKey) private var selectedTailscaleServePort = defaultHermesAPIPort
     @AppStorage(hermesRuntimeTabEnabledStorageKey) private var isRuntimeTabEnabled = false
+    @AppStorage(hermesAskTabEnabledStorageKey) private var isAskHermesTabEnabled = true
+    @AppStorage(hermesChatTabEnabledStorageKey) private var isChatWithHermesTabEnabled = true
     @AppStorage("hermes.history.dashboardURL") private var legacyDashboardURL = ""
     @AppStorage("hermes.office.url") private var legacyOfficeURL = ""
     @State private var dashboardGatewayRestart = HermesDashboardGatewayRestartSession()
@@ -404,9 +406,11 @@ struct HermesSettingsView: View {
                 }
 
                 Section("Tabs") {
+                    Toggle("Ask Hermes", isOn: $isAskHermesTabEnabled)
+                    Toggle("Chat with Hermes", isOn: $isChatWithHermesTabEnabled)
                     Toggle("Hermes Agent Runtime", isOn: $isRuntimeTabEnabled)
 
-                    Text("Off by default. Enable only when you need the runtime management panels in the tab bar and iPad sidebar.")
+                    Text("Ask Hermes and Chat with Hermes are enabled by default. Agent Runtime is off by default; enable it only when you need the runtime management panels in the tab bar and iPad sidebar.")
                         .font(.caption)
                         .foregroundStyle(.hermesSecondaryText)
                 }

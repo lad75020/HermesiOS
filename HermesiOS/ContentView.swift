@@ -14,6 +14,17 @@ import Vision
 import VisionKit
 
 
+/// Device idiom takes precedence: compact iPad keeps its existing tabs.
+enum HermesRootLayout: Equatable {
+    case phone, compactPad, split
+
+    static func resolve(idiom: UIUserInterfaceIdiom, isCompact: Bool) -> Self {
+        if idiom == .phone { return .phone }
+        return isCompact ? .compactPad : .split
+    }
+}
+
+// Retained for the compact iPad tabs and existing programmatic section mapping.
 enum HermesPhonePrimaryTab: CaseIterable, Hashable {
     case tuiGateway
     case more
@@ -62,6 +73,7 @@ struct ContentView: View {
     @State private var selectedWorkspace: WorkspaceSection? = .responses
     @State private var selectedPhoneSection: WorkspaceSection = .tuiGateway
     @State private var selectedPhoneTab: HermesPhonePrimaryTab = .tuiGateway
+    @State private var isShowingPhoneMore = false
     // More pushes both WorkspaceSection and nested HermesRuntimePanelKind values.
     @State private var phoneMorePath = NavigationPath()
     @State private var apiSettings: HermesAPISettings
@@ -119,7 +131,7 @@ struct ContentView: View {
                     .zIndex(1)
             } else {
                 Group {
-                    if horizontalSizeClass == .compact {
+                    if rootLayout != .split {
                         phoneRootLayout
                     } else {
                         iPadLayout
@@ -343,9 +355,13 @@ struct ContentView: View {
         isAnyResponseWorkspaceActivelyStreaming || chatSession.isStreaming || isAnyTUIWorkspaceStreaming
     }
 
+    private var rootLayout: HermesRootLayout {
+        HermesRootLayout.resolve(idiom: UIDevice.current.userInterfaceIdiom, isCompact: horizontalSizeClass == .compact)
+    }
+
     private var shouldShowPhoneConnectionIssueOverlay: Bool {
         !isShowingSplash
-            && horizontalSizeClass == .compact
+            && rootLayout != .split
             && selectedPhoneSection != .settings
             && (statusMonitor.apiServerStatus == .down
                 || statusMonitor.companionStatus == .down
@@ -488,11 +504,38 @@ struct ContentView: View {
                     .padding(.bottom, 8)
             }
 
-            iPhoneLayout
+            if rootLayout == .phone {
+                iPhoneLayout
+            } else {
+                compactPadLayout
+            }
         }
     }
 
     private var iPhoneLayout: some View {
+        // Keep the TUI subtree mounted while browsing secondary destinations.
+        // More owns a separate stack in its presentation, not a nested TUI stack.
+        NavigationStack {
+            HermesTUIGatewayWorkspacesView(
+                apiSettings: $apiSettings,
+                dashboardURLString: dashboardURLString,
+                workspaces: tuiWorkspaces,
+                selectedWorkspaceID: selectedTUIWorkspaceBinding,
+                onSelectWorkspace: selectTUIWorkspace,
+                onAddWorkspace: createTUIWorkspace,
+                onDeleteWorkspace: deleteTUIWorkspace,
+                onOpenMore: { isShowingPhoneMore = true }
+            )
+        }
+        .sheet(isPresented: $isShowingPhoneMore, onDismiss: {
+            openPhoneWorkspace(.tuiGateway)
+        }) {
+            phoneMoreNavigation
+                .presentationDetents([.large])
+        }
+    }
+
+    private var compactPadLayout: some View {
         TabView(selection: $selectedPhoneTab) {
             Tab(
                 HermesPhonePrimaryTab.tuiGateway.title,
@@ -517,17 +560,38 @@ struct ContentView: View {
                 systemImage: HermesPhonePrimaryTab.more.systemImage,
                 value: .more
             ) {
-                NavigationStack(path: $phoneMorePath) {
-                    List(phoneSecondarySections) { section in
-                        NavigationLink(value: section) {
-                            Label(section.title, systemImage: section.systemImage)
-                        }
-                        .accessibilityHint(section.subtitle)
-                    }
-                    .navigationTitle("More")
-                    .navigationDestination(for: WorkspaceSection.self) { section in
+                phoneMoreNavigation
+            }
+        }
+    }
+
+    private var phoneMoreNavigation: some View {
+        NavigationStack(path: $phoneMorePath) {
+            List(phoneSecondarySections) { section in
+                NavigationLink(value: section) {
+                    Label(section.title, systemImage: section.systemImage)
+                }
+                .accessibilityHint(section.subtitle)
+            }
+            .navigationTitle("More")
+            .navigationDestination(for: WorkspaceSection.self) { section in
+                Group {
+                    if rootLayout == .phone {
+                        // These shared screens hide their bars in the iPad workspace.
+                        // The phone sheet needs native Back navigation to More.
                         workspaceDetail(for: section)
-                            .onAppear { selectedPhoneSection = section }
+                            .toolbar(.visible, for: .navigationBar)
+                    } else {
+                        workspaceDetail(for: section)
+                    }
+                }
+                .onAppear { selectedPhoneSection = section }
+            }
+            .toolbar {
+                if rootLayout == .phone {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Back to TUI") { openPhoneWorkspace(.tuiGateway) }
+                            .accessibilityIdentifier("phone.more.close")
                     }
                 }
             }
@@ -543,6 +607,10 @@ struct ContentView: View {
     private func openPhoneWorkspace(_ section: WorkspaceSection) {
         let tab = HermesPhonePrimaryTab.resolve(for: section)
         selectedPhoneTab = tab
+
+        if rootLayout == .phone {
+            isShowingPhoneMore = tab == .more
+        }
 
         if let primarySection = tab.selectedSection {
             selectedPhoneSection = primarySection

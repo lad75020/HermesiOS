@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import UIKit
 import XCTest
 @testable import HermesiOS
 
@@ -43,7 +45,30 @@ final class HermesHostEndpointsTests: XCTestCase {
 }
 
 final class HermesPhonePrimaryTabTests: XCTestCase {
-    func testPrimaryTabsContainOnlyTUIAndMore() {
+    func testIPhoneUsesSingleLandingPageAtEveryWidth() {
+        XCTAssertEqual(HermesRootLayout.resolve(idiom: .phone, isCompact: true), .phone)
+        XCTAssertEqual(HermesRootLayout.resolve(idiom: .phone, isCompact: false), .phone)
+    }
+
+    func testIPadKeepsItsExistingCompactTabsAndRegularSplitLayout() {
+        XCTAssertEqual(HermesRootLayout.resolve(idiom: .pad, isCompact: true), .compactPad)
+        XCTAssertEqual(HermesRootLayout.resolve(idiom: .pad, isCompact: false), .split)
+    }
+
+    @MainActor
+    func testMorePathSupportsWorkspaceThenRuntimePanelAndBack() {
+        for category in HermesRuntimePanelKind.primaryCategories + HermesRuntimePanelKind.secondaryCategories {
+            var path = NavigationPath([WorkspaceSection.runtime])
+            path.append(category)
+            XCTAssertEqual(path.count, 2)
+            path.removeLast()
+            XCTAssertEqual(path, NavigationPath([WorkspaceSection.runtime]))
+            path.removeLast()
+            XCTAssertTrue(path.isEmpty)
+        }
+    }
+
+    func testCompactIPadTabsStillContainOnlyTUIAndMore() {
         XCTAssertEqual(HermesPhonePrimaryTab.allCases.map(\.title), ["TUI", "More"])
         XCTAssertFalse(HermesPhonePrimaryTab.allCases.map(\.systemImage).contains("dot.radiowaves.left.and.right"))
         XCTAssertFalse(HermesPhonePrimaryTab.allCases.map(\.systemImage).contains("text.bubble"))

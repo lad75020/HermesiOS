@@ -1181,6 +1181,7 @@ struct HermesTUIGatewayWorkspacesView: View {
     let onSelectWorkspace: (HermesTUIWorkspace) -> Void
     let onAddWorkspace: () -> Void
     let onDeleteWorkspace: (HermesTUIWorkspace) -> Void
+    var onOpenMore: (() -> Void)? = nil
 
     private var selectedWorkspace: HermesTUIWorkspace {
         workspaces.first(where: { $0.id == selectedWorkspaceID }) ?? workspaces[0]
@@ -1191,7 +1192,8 @@ struct HermesTUIGatewayWorkspacesView: View {
             apiSettings: $apiSettings,
             dashboardURLString: dashboardURLString,
             workspace: selectedWorkspace,
-            workspaceControls: workspaceControls
+            workspaceControls: workspaceControls,
+            onOpenMore: onOpenMore
         )
         .id(selectedWorkspace.id)
     }
@@ -1299,6 +1301,7 @@ private struct HermesTUIGatewayView: View {
     let dashboardURLString: String
     @Bindable var workspace: HermesTUIWorkspace
     let workspaceControls: AnyView
+    var onOpenMore: (() -> Void)? = nil
 
     @State private var isImportingAttachment = false
     @State private var dashboardSkills = HermesDashboardSkillsStore()
@@ -1333,7 +1336,19 @@ private struct HermesTUIGatewayView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
-                if isPhoneLayout {
+                if UIDevice.current.userInterfaceIdiom == .phone, let onOpenMore {
+                    Button(action: onOpenMore) {
+                        Label("More", systemImage: "ellipsis.circle")
+                            .labelStyle(.iconOnly)
+                            .font(.title2.weight(.bold))
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .hermesGlassButton()
+                    .accessibilityLabel("More")
+                    .accessibilityHint("Opens History, Web, Terminal, Utilities, Settings, and enabled Runtime settings.")
+                    .accessibilityIdentifier("phone.more.open")
+                    workspaceControls
+                } else if isPhoneLayout {
                     Image(systemName: "terminal.fill")
                         .font(.title2.weight(.bold))
                         .foregroundStyle(Color.igActionBlue)

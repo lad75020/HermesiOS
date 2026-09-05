@@ -56,12 +56,28 @@ final class HermesRuntimeConnectionTests: XCTestCase {
         XCTAssertTrue(rejected)
     }
 
-    func testRuntimeIdentityTracksKeyRotationWithoutIncludingRawCredential() {
+    func testRuntimeIdentityTracksNormalizedCredentialRotationWithoutIncludingRawCredential() {
         var settings = HermesAPISettings()
-        settings.apiKey = String(repeating: "x", count: 24)
+        settings.baseURL = "http://first.invalid/v1"
+        let firstToken = String(repeating: "x", count: 24)
+        settings.apiKey = "  Bearer \(firstToken)  "
         let first = HermesRuntimeConnectionIdentity(dashboardURL: "http://example.invalid", apiSettings: settings)
         XCTAssertNotEqual(first.credentialFingerprint, settings.apiKey)
+        XCTAssertFalse(first.credentialFingerprint.contains(settings.normalizedAPIKey))
+
+        settings.apiKey = "bearer \(firstToken)"
+        XCTAssertEqual(first, HermesRuntimeConnectionIdentity(dashboardURL: "http://example.invalid", apiSettings: settings))
+
         settings.apiKey = String(repeating: "y", count: 24)
+        XCTAssertNotEqual(first, HermesRuntimeConnectionIdentity(dashboardURL: "http://example.invalid", apiSettings: settings))
+        settings.apiKey = ""
+        XCTAssertNotEqual(first, HermesRuntimeConnectionIdentity(dashboardURL: "http://example.invalid", apiSettings: settings))
+
+        settings.apiKey = firstToken
+        settings.baseURL = "http://second.invalid/v1"
+        XCTAssertNotEqual(first, HermesRuntimeConnectionIdentity(dashboardURL: "http://example.invalid", apiSettings: settings))
+        settings.baseURL = "http://first.invalid/v1"
+        settings.allowSelfSignedCertificates = true
         XCTAssertNotEqual(first, HermesRuntimeConnectionIdentity(dashboardURL: "http://example.invalid", apiSettings: settings))
     }
 }

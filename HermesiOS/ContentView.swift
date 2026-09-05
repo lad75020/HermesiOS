@@ -457,7 +457,7 @@ struct ContentView: View {
     private var statusRefreshKey: String {
         [
             apiSettings.baseURL,
-            apiSettings.apiKey.isEmpty ? "no-api-key" : "api-key-set",
+            HermesRuntimeConnectionIdentity.fingerprint(apiSettings.normalizedAPIKey),
             String(apiSettings.allowSelfSignedCertificates),
             companionSettings.apiURL,
             companionEnrollment.identityState.deviceSecretFingerprint.isEmpty ? "no-device-secret" : "device-secret-set",

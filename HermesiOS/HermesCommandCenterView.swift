@@ -376,6 +376,10 @@ final class HermesCommandCenterStore {
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if apiSettings.hasAuthorizationToken {
+            try HermesEndpointSecurity.validateSensitiveURL(url)
+            request.setHermesAuthorization(from: apiSettings)
+        }
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (data, response) = try await session.data(for: request)
         try HermesNetworkSessionFactory.validate(response: response)

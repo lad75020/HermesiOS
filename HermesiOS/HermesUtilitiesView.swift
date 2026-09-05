@@ -232,7 +232,7 @@ struct HermesUtilitiesView: View {
     private var commandCenterRefreshKey: String {
         [
             apiSettings.baseURL,
-            apiSettings.apiKey.isEmpty ? "no-key" : "key-set",
+            HermesRuntimeConnectionIdentity.fingerprint(apiSettings.normalizedAPIKey),
             apiSettings.allowSelfSignedCertificates ? "self-signed" : "strict"
         ].joined(separator: "|")
     }

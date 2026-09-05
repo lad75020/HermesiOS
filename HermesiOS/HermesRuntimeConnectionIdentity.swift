@@ -12,7 +12,7 @@ struct HermesRuntimeConnectionIdentity: Hashable {
     init(dashboardURL: String, apiSettings: HermesAPISettings) {
         self.dashboardURL = dashboardURL
         apiURL = apiSettings.baseURL
-        credentialFingerprint = Self.fingerprint(apiSettings.apiKey)
+        credentialFingerprint = Self.fingerprint(apiSettings.normalizedAPIKey)
         allowSelfSignedCertificates = apiSettings.allowSelfSignedCertificates
     }
 

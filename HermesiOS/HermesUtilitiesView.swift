@@ -1311,13 +1311,16 @@ final class HermesClipboardHistoryStore {
 
     private func loadEncryptionKey(reason: String) throws -> SymmetricKey {
         try Self.requireFaceIDAvailable()
+        let authenticationContext = LAContext()
+        authenticationContext.localizedReason = reason
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Self.keychainService,
             kSecAttrAccount as String: Self.keychainKeyAccount,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseOperationPrompt as String: reason
+            kSecUseAuthenticationContext as String: authenticationContext
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
@@ -1380,13 +1383,16 @@ final class HermesClipboardHistoryStore {
     }
 
     private static func keychainKeyExists() -> Bool {
+        let authenticationContext = LAContext()
+        authenticationContext.interactionNotAllowed = true
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: keychainKeyAccount,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnAttributes as String: true,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail
+            kSecUseAuthenticationContext as String: authenticationContext
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)

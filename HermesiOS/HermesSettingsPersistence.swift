@@ -417,13 +417,16 @@ enum HermesSettingsPersistence {
     }
 
     private static func loadKeychainDataWithBiometrics(service: String, account: String, reason: String) throws -> Data? {
+        let authenticationContext = LAContext()
+        authenticationContext.localizedReason = reason
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseOperationPrompt as String: reason
+            kSecUseAuthenticationContext as String: authenticationContext
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)

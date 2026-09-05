@@ -218,7 +218,7 @@ private struct HermesSwiftTermContainer: UIViewRepresentable {
         if let connectionInfo {
             uiView.configure(connectionInfo: connectionInfo, terminalID: terminalID)
             DispatchQueue.main.async {
-                uiView.becomeFirstResponder()
+                _ = uiView.becomeFirstResponder()
             }
         } else {
             uiView.disconnectAndReset()
@@ -226,7 +226,7 @@ private struct HermesSwiftTermContainer: UIViewRepresentable {
     }
 }
 
-private final class AcceptAllHostKeysDelegate: NIOSSHClientServerAuthenticationDelegate {
+nonisolated private final class AcceptAllHostKeysDelegate: NIOSSHClientServerAuthenticationDelegate {
     func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
         validationCompletePromise.succeed(())
     }
@@ -270,7 +270,7 @@ private final class SSHErrorHandler: ChannelInboundHandler {
     }
 }
 
-private final class SSHShellChannelHandler: ChannelInboundHandler {
+nonisolated private final class SSHShellChannelHandler: ChannelInboundHandler {
     typealias InboundIn = SSHChannelData
 
     private weak var terminalView: HermesSshTerminalView?
@@ -286,8 +286,9 @@ private final class SSHShellChannelHandler: ChannelInboundHandler {
     }
 
     func handlerAdded(context: ChannelHandlerContext) {
-        context.channel.setOption(ChannelOptions.allowRemoteHalfClosure, value: true).whenFailure { error in
-            context.fireErrorCaught(error)
+        let channel = context.channel
+        channel.setOption(ChannelOptions.allowRemoteHalfClosure, value: true).whenFailure { error in
+            channel.pipeline.fireErrorCaught(error)
         }
     }
 

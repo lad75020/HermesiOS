@@ -3521,16 +3521,16 @@ final class HermesCompanionRuntimeSession {
 
 private final class HermesCompanionRequestState: @unchecked Sendable {
     private let lock = NSLock()
-    private var resumed = false
-    private var timedOut = false
+    nonisolated(unsafe) private var resumed = false
+    nonisolated(unsafe) private var timedOut = false
 
-    var didTimeout: Bool {
+    nonisolated var didTimeout: Bool {
         lock.lock()
         defer { lock.unlock() }
         return timedOut
     }
 
-    func markResumed() -> Bool {
+    nonisolated func markResumed() -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard resumed == false else { return false }
@@ -3538,7 +3538,7 @@ private final class HermesCompanionRequestState: @unchecked Sendable {
         return true
     }
 
-    func markTimedOut() -> Bool {
+    nonisolated func markTimedOut() -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard resumed == false else { return false }

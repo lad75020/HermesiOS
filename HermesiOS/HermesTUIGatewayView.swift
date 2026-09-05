@@ -218,7 +218,13 @@ final class HermesTUIWorkspace: Identifiable {
     var promptText = ""
     var profileOptions: [HermesTUIProfileOption] = []
     var modelOptions: [HermesTUIModelOption] = []
-    var inference = HermesTUIInferenceSelection()
+    var inference = HermesTUIInferenceSelection() {
+        didSet {
+            if oldValue != inference { modelOptionsRequestID = UUID() }
+        }
+    }
+    // Invalidates catalog completions even for A → B → A or an explicit draft Save.
+    var modelOptionsRequestID = UUID()
     var requestResponses: [UUID: String] = [:]
     var selectedAttachment: HermesPromptAttachment?
     private var acknowledgedCompletionToken = ""
@@ -294,12 +300,18 @@ final class HermesTUIGatewayStore {
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var requestCounter = 0
+    private var connectionGeneration = UUID()
     private var pendingResponses: [String: CheckedContinuation<JSONValue, Error>] = [:]
     private var activeAssistantMessageID: UUID?
     private var activeStreamMessageID: UUID?
     private var activeStreamContentType: String?
     private var currentTurnReceivedMessageDelta = false
     private var currentTurnMessageDeltaSegmentCount = 0
+
+#if DEBUG
+    // Test transport seam: exercise the real submit/session parameter path without a host.
+    @ObservationIgnored var requestOverride: ((String, [String: JSONValue]) async throws -> JSONValue)?
+#endif
 
     var canSendPrompt: Bool {
         isConnected && !isStreaming && !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -311,6 +323,7 @@ final class HermesTUIGatewayStore {
     }
 
     func disconnect() {
+        connectionGeneration = UUID()
         receiveTask?.cancel()
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
@@ -335,15 +348,20 @@ final class HermesTUIGatewayStore {
 
     func loadProfileOptions(into workspace: HermesTUIWorkspace) {
         guard isConnected else { return }
+        let generation = connectionGeneration
+        let selectionID = workspace.modelOptionsRequestID
         Task {
             do {
                 let result = try await request("profiles.list", params: ["include_sessions": .bool(false)], timeoutSeconds: 45)
+                guard connectionGeneration == generation, isConnected else { return }
                 workspace.profileOptions = Self.decodeProfileOptions(result)
+                guard workspace.modelOptionsRequestID == selectionID else { return }
                 if !workspace.profileOptions.contains(where: { $0.name == workspace.inference.profile }) {
                     workspace.inference.profile = workspace.profileOptions.first?.name ?? "default"
                 }
                 await loadModelOptions(into: workspace, selectProfileDefault: workspace.inference.model.isEmpty)
             } catch {
+                guard connectionGeneration == generation, workspace.modelOptionsRequestID == selectionID else { return }
                 lastErrorMessage = error.localizedDescription
             }
         }
@@ -356,30 +374,39 @@ final class HermesTUIGatewayStore {
         workspace.inference.model = profile.model
         workspace.inference.reasoningEffort = "medium"
         workspace.inference.fast = false
+        workspace.modelOptions = []
+        let selectionID = workspace.modelOptionsRequestID
         Task {
-            await loadModelOptions(into: workspace, selectProfileDefault: true)
-            guard isConnected else { return }
+            guard workspace.modelOptionsRequestID == selectionID else { return }
+            guard await loadModelOptions(into: workspace, selectProfileDefault: true), isConnected else { return }
             await createGatewaySession(inference: workspace.inference)
         }
     }
 
-    func modelOptions(for profile: String) async -> [HermesTUIModelOption]? {
-        guard isConnected else { return nil }
-        do {
-            var params: [String: JSONValue] = [:]
-            let trimmedProfile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedProfile.isEmpty { params["profile"] = .string(trimmedProfile) }
-            let result = try await request("model.options", params: params, timeoutSeconds: 45)
-            return Self.decodeModelOptions(result)
-        } catch {
-            lastErrorMessage = error.localizedDescription
-            return nil
-        }
+    func modelOptions(for profile: String) async throws -> [HermesTUIModelOption] {
+        guard isConnected else { throw HermesTUIGatewayError.notConnected }
+        let generation = connectionGeneration
+        var params: [String: JSONValue] = [:]
+        let trimmedProfile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedProfile.isEmpty { params["profile"] = .string(trimmedProfile) }
+        let result = try await request("model.options", params: params, timeoutSeconds: 45)
+        guard connectionGeneration == generation, isConnected else { throw HermesTUIGatewayError.notConnected }
+        return Self.decodeModelOptions(result)
     }
 
-    private func loadModelOptions(into workspace: HermesTUIWorkspace, selectProfileDefault: Bool) async {
+    @discardableResult
+    func loadModelOptions(
+        into workspace: HermesTUIWorkspace,
+        selectProfileDefault: Bool,
+        load: HermesTUIPhoneInferenceDraft.ModelLoader? = nil
+    ) async -> Bool {
+        let requestID = UUID()
+        workspace.modelOptionsRequestID = requestID
+        let generation = connectionGeneration
         let profile = workspace.inference.profile.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let options = await modelOptions(for: profile) {
+        do {
+            let options = try await (load ?? modelOptions)(profile)
+            guard workspace.modelOptionsRequestID == requestID, connectionGeneration == generation, !Task.isCancelled else { return false }
             workspace.modelOptions = options
             if selectProfileDefault, let profileOption = workspace.profileOptions.first(where: { $0.name == profile }) {
                 let defaultOption = options.first { $0.provider == profileOption.provider && $0.model == profileOption.model }
@@ -397,6 +424,11 @@ final class HermesTUIGatewayStore {
                 workspace.inference.fast = false
             }
             workspace.inference = Self.normalizedInference(workspace.inference, options: options)
+            return true
+        } catch {
+            guard workspace.modelOptionsRequestID == requestID, connectionGeneration == generation, !Task.isCancelled else { return false }
+            lastErrorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -488,8 +520,9 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, inference: HermesTUIInferenceSelection = .init()) async {
+    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, inference: HermesTUIInferenceSelection? = nil) async {
         guard !isConnecting else { return }
+        let inference = inference ?? HermesTUIInferenceSelection()
         isConnecting = true
         lastErrorMessage = ""
         connectionStatus = "Connecting"
@@ -879,6 +912,9 @@ final class HermesTUIGatewayStore {
     }
 
     private func request(_ method: String, params: [String: JSONValue], timeoutSeconds: UInt64) async throws -> JSONValue {
+#if DEBUG
+        if let requestOverride { return try await requestOverride(method, params) }
+#endif
         guard let task = webSocketTask, isConnected else { throw HermesTUIGatewayError.notConnected }
         requestCounter += 1
         let id = "ios-\(requestCounter)"
@@ -1308,8 +1344,7 @@ private struct HermesTUIGatewayView: View {
     @State private var phoneComposerPresentation = HermesTUIPhoneComposerPresentation()
     @State private var isPhoneAttachmentImportPending = false
     @State private var isCompactPadComposerActionsExpanded = false
-    @State private var phoneInferenceDraft = HermesTUIInferenceSelection()
-    @State private var phoneModelOptions: [HermesTUIModelOption] = []
+    @State private var phoneInference = HermesTUIPhoneInferenceDraft()
 
     private var store: HermesTUIGatewayStore { workspace.store }
     private var isPhoneLayout: Bool { horizontalSizeClass == .compact }
@@ -1328,6 +1363,10 @@ private struct HermesTUIGatewayView: View {
         .onChange(of: store.isConnected) { _, isConnected in
             if isConnected { store.loadProfileOptions(into: workspace) }
         }
+        .onChange(of: phoneComposerPresentation[isPresented: .inference]) { _, isPresented in
+            if !isPresented { phoneInference.dismiss() }
+        }
+        .onDisappear { phoneInference.dismiss() }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
         }
@@ -1614,8 +1653,7 @@ private struct HermesTUIGatewayView: View {
 
     private var phoneInferenceButton: some View {
         Button {
-            phoneInferenceDraft = workspace.inference
-            phoneModelOptions = workspace.modelOptions
+            phoneInference.open(workspace: workspace, load: store.modelOptions)
             phoneComposerPresentation[isPresented: .inference] = true
         } label: {
             phoneComposerTriggerIcon("slider.horizontal.3")
@@ -1650,6 +1688,7 @@ private struct HermesTUIGatewayView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.igActionBlue)
+                .disabled(!phoneInference.canSave || !store.isConnected || store.isStreaming)
                 .accessibilityLabel("Save inference settings")
             }
 
@@ -1666,13 +1705,13 @@ private struct HermesTUIGatewayView: View {
                 Button(profile.displayName) { selectPhoneProfile(profile) }
             }
         } label: {
-            inferenceControlLabel(title: "PROFILE", value: phoneSelectedProfile?.displayName ?? phoneInferenceDraft.profile)
+            inferenceControlLabel(title: "PROFILE", value: phoneSelectedProfile?.displayName ?? phoneInference.draft.profile)
         }
         .disabled(store.isStreaming || profileOptions.isEmpty)
         .accessibilityLabel("Choose Hermes profile")
 
         Menu {
-            if phoneModelOptions.isEmpty {
+            if phoneInference.modelOptions.isEmpty {
                 Text(verbatim: "No models available")
             } else {
                 ForEach(phoneModelProviderGroups, id: \.provider) { group in
@@ -1684,18 +1723,33 @@ private struct HermesTUIGatewayView: View {
                 }
             }
         } label: {
-            inferenceControlLabel(title: "MODEL", value: phoneSelectedModel?.model ?? "Loading models…")
+            inferenceControlLabel(title: "MODEL", value: phoneInference.modelLabel)
         }
-        .disabled(store.isStreaming || phoneModelOptions.isEmpty)
+        .disabled(store.isStreaming || phoneInference.isLoading || phoneInference.modelOptions.isEmpty)
         .accessibilityLabel("Choose Hermes Agent model")
+
+        if phoneInference.isLoading {
+            ProgressView("Loading models…")
+                .font(.caption)
+        } else if let errorMessage = phoneInference.errorMessage {
+            Text(errorMessage)
+                .font(.caption)
+                .foregroundStyle(Color.igDestructive)
+        }
+        if !phoneInference.isLoading && (phoneInference.errorMessage != nil || phoneInference.modelOptions.isEmpty) {
+            Button("Retry loading models") {
+                phoneInference.reload(load: store.modelOptions)
+            }
+            .disabled(!store.isConnected || store.isStreaming)
+        }
 
         if phoneSelectedModel?.supportsReasoning == true {
             Menu {
                 ForEach(HermesTUIInferenceSelection.reasoningEfforts, id: \.self) { effort in
-                    Button(reasoningLabel(for: effort)) { phoneInferenceDraft.reasoningEffort = effort }
+                    Button(reasoningLabel(for: effort)) { phoneInference.draft.reasoningEffort = effort }
                 }
             } label: {
-                inferenceControlLabel(title: "REASONING", value: reasoningLabel(for: phoneInferenceDraft.reasoningEffort))
+                inferenceControlLabel(title: "REASONING", value: reasoningLabel(for: phoneInference.draft.reasoningEffort))
             }
             .disabled(store.isStreaming)
             .accessibilityLabel("Choose model reasoning effort")
@@ -1703,10 +1757,10 @@ private struct HermesTUIGatewayView: View {
 
         if phoneSelectedModel?.supportsFast == true {
             Menu {
-                Button { phoneInferenceDraft.fast = false } label: { Text(verbatim: "Normal") }
-                Button { phoneInferenceDraft.fast = true } label: { Text(verbatim: "Fast") }
+                Button { phoneInference.draft.fast = false } label: { Text(verbatim: "Normal") }
+                Button { phoneInference.draft.fast = true } label: { Text(verbatim: "Fast") }
             } label: {
-                inferenceControlLabel(title: "SPEED", value: phoneInferenceDraft.fast ? "Fast" : "Normal")
+                inferenceControlLabel(title: "SPEED", value: phoneInference.draft.fast ? "Fast" : "Normal")
             }
             .disabled(store.isStreaming)
             .accessibilityLabel("Choose model inference speed")
@@ -1772,7 +1826,7 @@ private struct HermesTUIGatewayView: View {
     }
 
     private var phoneSelectedModel: HermesTUIModelOption? {
-        phoneModelOptions.first { $0.provider == phoneInferenceDraft.provider && $0.model == phoneInferenceDraft.model }
+        phoneInference.modelOptions.first { $0.provider == phoneInference.draft.provider && $0.model == phoneInference.draft.model }
     }
 
     private var selectedProfile: HermesTUIProfileOption? {
@@ -1780,7 +1834,7 @@ private struct HermesTUIGatewayView: View {
     }
 
     private var phoneSelectedProfile: HermesTUIProfileOption? {
-        profileOptions.first { $0.name == phoneInferenceDraft.profile }
+        profileOptions.first { $0.name == phoneInference.draft.profile }
     }
 
     private var profileOptions: [HermesTUIProfileOption] {
@@ -1794,7 +1848,7 @@ private struct HermesTUIGatewayView: View {
     }
 
     private var phoneModelProviderGroups: [(provider: String, name: String, options: [HermesTUIModelOption])] {
-        modelProviderGroups(for: phoneModelOptions)
+        modelProviderGroups(for: phoneInference.modelOptions)
     }
 
     private func modelProviderGroups(for options: [HermesTUIModelOption]) -> [(provider: String, name: String, options: [HermesTUIModelOption])] {
@@ -1829,41 +1883,20 @@ private struct HermesTUIGatewayView: View {
     }
 
     private func selectPhoneProfile(_ profile: HermesTUIProfileOption) {
-        guard phoneInferenceDraft.profile != profile.name else { return }
-        phoneInferenceDraft.profile = profile.name
-        phoneInferenceDraft.provider = profile.provider
-        phoneInferenceDraft.model = profile.model
-        phoneInferenceDraft.reasoningEffort = "medium"
-        phoneInferenceDraft.fast = false
-
-        Task {
-            guard let options = await store.modelOptions(for: profile.name) else { return }
-            phoneModelOptions = options
-            let defaultOption = options.first { $0.provider == profile.provider && $0.model == profile.model }
-                ?? options.first { $0.model == profile.model }
-                ?? options.first
-            if let defaultOption {
-                phoneInferenceDraft.provider = defaultOption.provider
-                phoneInferenceDraft.model = defaultOption.model
-            }
+        if phoneInference.draft.profile == profile.name {
+            phoneInference.reload(load: store.modelOptions)
+        } else {
+            phoneInference.selectProfile(profile, load: store.modelOptions)
         }
     }
 
     private func selectPhoneModel(_ option: HermesTUIModelOption) {
-        phoneInferenceDraft.provider = option.provider
-        phoneInferenceDraft.model = option.model
-        if !option.supportsReasoning { phoneInferenceDraft.reasoningEffort = "none" }
-        if !option.supportsFast { phoneInferenceDraft.fast = false }
+        phoneInference.selectModel(option)
     }
 
     private func applyPhoneInferenceDraft() {
-        let didChange = workspace.inference != phoneInferenceDraft
-        workspace.inference = phoneInferenceDraft
-        workspace.modelOptions = phoneModelOptions
+        guard phoneInference.save() else { return }
         phoneComposerPresentation[isPresented: .inference] = false
-        if didChange && store.isConnected && !store.isStreaming {
-            store.createSession(inference: workspace.inference)
-        }
     }
 
     private func selectModel(_ option: HermesTUIModelOption) {

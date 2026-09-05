@@ -79,7 +79,7 @@ extension ShapeStyle where Self == Color {
 
 extension LinearGradient {
     /// The official Instagram story-ring gradient (10-stop sweep).
-    static let instagramBrand = LinearGradient(
+    @MainActor static let instagramBrand = LinearGradient(
         gradient: Gradient(colors: [
             .igGradYellow, .igGradOrangeYellow, .igGradOrange, .igGradRedOrange,
             .igGradRed, .igGradRose, .igGradPurpleRed, .igGradPurple,
@@ -90,7 +90,7 @@ extension LinearGradient {
     )
 
     /// Short 3-stop version used in marketing surfaces.
-    static let instagramBrandShort = LinearGradient(
+    @MainActor static let instagramBrandShort = LinearGradient(
         colors: [.igGradPurple, .igGradRed, .igGradOrangeYellow],
         startPoint: .bottomLeading,
         endPoint: .topTrailing
@@ -98,7 +98,7 @@ extension LinearGradient {
 }
 
 extension AngularGradient {
-    static let storyRing = AngularGradient(
+    @MainActor static let storyRing = AngularGradient(
         gradient: Gradient(colors: [
             .igGradYellow, .igGradOrangeYellow, .igGradOrange,
             .igGradRed, .igGradRose, .igGradPurple, .igGradYellow

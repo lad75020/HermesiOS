@@ -60,16 +60,25 @@ class PhoneComposerLayoutTests(unittest.TestCase):
         self.assertIn("HStack(spacing: 8) {\n                    attachButton(frame: 44)\n                    sendButton(frame: 44)", fallback)
         self.assertIn(".transition(.scale(scale: 0.82, anchor: .trailing).combined(with: .opacity))", fallback)
 
-    def test_inference_only_commits_through_explicit_save(self):
+    def test_first_open_starts_a_draft_owned_catalog_request(self):
         opening = section("private var phoneInferenceButton:", "private func phoneComposerTriggerIcon")
-        self.assertIn("phoneInferenceDraft = workspace.inference", opening)
-        self.assertIn("phoneModelOptions = workspace.modelOptions", opening)
+        self.assertIn("phoneInference.open(workspace: workspace, load: store.modelOptions)", opening)
+
+    def test_opening_is_read_only_and_close_and_save_share_commit_owner(self):
+        opening = section("private var phoneInferenceButton:", "private func phoneComposerTriggerIcon")
+        self.assertIn("phoneInference.open(workspace: workspace, load: store.modelOptions)", opening)
+        self.assertNotIn("workspace.inference =", opening)
+        self.assertNotIn("store.createSession", opening)
         saving = section("private func applyPhoneInferenceDraft()", "private func selectModel(")
-        self.assertIn("workspace.inference = phoneInferenceDraft", saving)
-        self.assertIn("workspace.modelOptions = phoneModelOptions", saving)
-        self.assertIn("if didChange && store.isConnected && !store.isStreaming", saving)
-        self.assertIn("store.createSession(inference: workspace.inference)", saving)
-        self.assertEqual(SOURCE.count("workspace.inference = phoneInferenceDraft"), 1)
+        self.assertIn("guard phoneInference.save() else { return }", saving)
+        self.assertIn("if !isPresented { phoneInference.dismiss() }", SOURCE)
+        owner = (Path(__file__).resolve().parents[1] / "HermesiOS" / "HermesTUIPhoneInferenceDraft.swift").read_text()
+        dismiss = owner.split("func dismiss()", 1)[1].split("func selectModel", 1)[0]
+        self.assertIn("if let option = explicitlySelectedModel", dismiss)
+        self.assertIn("commit(option: option)", dismiss)
+        self.assertIn("workspace.inference = draft", owner)
+        self.assertIn("workspace.modelOptionsRequestID = UUID()", owner)
+        self.assertIn("workspace.store.createSession(inference: draft)", owner)
         self.assertIn('.accessibilityLabel("Save inference settings")', SOURCE)
 
     def test_attachment_send_and_disabled_contracts_are_retained(self):

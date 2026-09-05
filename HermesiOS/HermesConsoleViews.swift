@@ -290,12 +290,13 @@ final class HermesSpeechTranscriptionSession {
         }
 
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
+        try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP])
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+        try inputNode.installAudioTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+            guard let session = self else { return }
             Task { @MainActor in
-                self?.appendAudioBuffer(buffer)
+                session.appendAudioBuffer(AVAudioPCMBuffer(copying: buffer))
             }
         }
 

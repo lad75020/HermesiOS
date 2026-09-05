@@ -82,7 +82,7 @@ struct HermesCommandCenterRunStatus: Identifiable, Decodable, Equatable {
         )
     }
 
-    private static func compactText(_ value: String) -> String {
+    nonisolated private static func compactText(_ value: String) -> String {
         let normalized = value
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")

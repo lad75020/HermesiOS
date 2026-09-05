@@ -168,20 +168,24 @@ public final class StateServer {
             params.allowLocalEndpointReuse = true
 
             let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
-            listener.stateUpdateHandler = { [weak self] state in
-                Task { @MainActor in
-                    if case .ready = state {
-                        self?.logger.notice("StateServer listening on \(String(describing: family))")
-                    } else if case .failed(let err) = state {
-                        self?.logger.error("StateServer listener failed: \(err.localizedDescription, privacy: .public)")
-                    }
+            let listenerLogger = logger
+            let familyDescription = String(describing: family)
+            listener.stateUpdateHandler = { state in
+                if case .ready = state {
+                    listenerLogger.notice("StateServer listening on \(familyDescription)")
+                } else if case .failed(let err) = state {
+                    listenerLogger.error("StateServer listener failed: \(err.localizedDescription, privacy: .public)")
                 }
             }
             listener.newConnectionHandler = { [weak self] connection in
+                guard let self else {
+                    connection.cancel()
+                    return
+                }
                 Task { @MainActor in
                     // Defense-in-depth: even with .loopback interface gate, double-check
                     // the peer is loopback. Reject otherwise.
-                    if let self, self.isLoopbackPeer(connection) {
+                    if self.isLoopbackPeer(connection) {
                         self.handle(connection)
                     } else {
                         connection.cancel()

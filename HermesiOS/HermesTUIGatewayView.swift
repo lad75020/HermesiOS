@@ -1258,6 +1258,40 @@ private struct HermesTUIWorkspaceButtonLabel: View {
     }
 }
 
+/// One active panel prevents the two phone composer popovers competing.
+struct HermesTUIPhoneComposerPresentation {
+    enum Panel { case inference, actions }
+
+    private(set) var activePanel: Panel?
+
+    subscript(isPresented panel: Panel) -> Bool {
+        get { activePanel == panel }
+        set {
+            if newValue {
+                activePanel = panel
+            } else if activePanel == panel {
+                // A delayed dismissal of the previous panel must not close its replacement.
+                activePanel = nil
+            }
+        }
+    }
+}
+
+private struct HermesTUIPhoneComposerPopover<PanelContent: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    @ViewBuilder let panelContent: () -> PanelContent
+
+    func body(content: Content) -> some View {
+        // Both controls use the system's same anchored animation and tap-away dismissal.
+        content.popover(isPresented: $isPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            panelContent()
+                .padding(16)
+                .frame(width: 320, alignment: .leading)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
 private struct HermesTUIGatewayView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -1268,13 +1302,15 @@ private struct HermesTUIGatewayView: View {
 
     @State private var isImportingAttachment = false
     @State private var dashboardSkills = HermesDashboardSkillsStore()
-    @State private var isPhoneComposerActionsExpanded = false
-    @State private var isPhoneInferencePopoverPresented = false
+    @State private var phoneComposerPresentation = HermesTUIPhoneComposerPresentation()
+    @State private var isPhoneAttachmentImportPending = false
+    @State private var isCompactPadComposerActionsExpanded = false
     @State private var phoneInferenceDraft = HermesTUIInferenceSelection()
     @State private var phoneModelOptions: [HermesTUIModelOption] = []
 
     private var store: HermesTUIGatewayStore { workspace.store }
     private var isPhoneLayout: Bool { horizontalSizeClass == .compact }
+    private var usesPhoneComposerRail: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1511,9 +1547,9 @@ private struct HermesTUIGatewayView: View {
                 .disabled(store.isStreaming)
             }
 
-            if isPhoneLayout {
+            if isPhoneLayout && !usesPhoneComposerRail {
                 phoneInferenceButton
-            } else {
+            } else if !usesPhoneComposerRail {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { inferenceControls }
                     VStack(alignment: .leading, spacing: 8) { inferenceControls }
@@ -1547,7 +1583,14 @@ private struct HermesTUIGatewayView: View {
                         }
                 }
 
-                composerActions
+                if usesPhoneComposerRail {
+                    VStack(spacing: 8) {
+                        phoneInferenceButton
+                        composerActions
+                    }
+                } else {
+                    composerActions
+                }
             }
         }
         .padding(14)
@@ -1558,20 +1601,23 @@ private struct HermesTUIGatewayView: View {
         Button {
             phoneInferenceDraft = workspace.inference
             phoneModelOptions = workspace.modelOptions
-            isPhoneInferencePopoverPresented = true
+            phoneComposerPresentation[isPresented: .inference] = true
         } label: {
-            Image(systemName: "slider.horizontal.3")
-                .font(.headline)
-                .frame(minWidth: 44, minHeight: 44)
+            phoneComposerTriggerIcon("slider.horizontal.3")
         }
         .hermesGlassButton()
         .disabled(!store.isConnected || store.isStreaming)
         .accessibilityLabel("Configure TUI Gateway inference")
         .accessibilityHint("Choose profile, model, reasoning effort, and inference speed")
-        .popover(isPresented: $isPhoneInferencePopoverPresented, arrowEdge: .bottom) {
+        .modifier(HermesTUIPhoneComposerPopover(isPresented: $phoneComposerPresentation[isPresented: .inference]) {
             phoneInferencePopover
-                .presentationCompactAdaptation(.popover)
-        }
+        })
+    }
+
+    private func phoneComposerTriggerIcon(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.headline)
+            .frame(width: 44, height: 44)
     }
 
     private var phoneInferencePopover: some View {
@@ -1596,8 +1642,6 @@ private struct HermesTUIGatewayView: View {
                 phoneInferenceControls
             }
         }
-        .padding(16)
-        .frame(width: 320, alignment: .leading)
     }
 
     @ViewBuilder
@@ -1801,7 +1845,7 @@ private struct HermesTUIGatewayView: View {
         let didChange = workspace.inference != phoneInferenceDraft
         workspace.inference = phoneInferenceDraft
         workspace.modelOptions = phoneModelOptions
-        isPhoneInferencePopoverPresented = false
+        phoneComposerPresentation[isPresented: .inference] = false
         if didChange && store.isConnected && !store.isStreaming {
             store.createSession(inference: workspace.inference)
         }
@@ -1824,8 +1868,32 @@ private struct HermesTUIGatewayView: View {
 
     @ViewBuilder
     private var composerActions: some View {
-        if isPhoneLayout {
-            if isPhoneComposerActionsExpanded {
+        if usesPhoneComposerRail {
+            Button {
+                phoneComposerPresentation[isPresented: .actions] = true
+            } label: {
+                phoneComposerTriggerIcon("plus.circle.fill")
+            }
+            .hermesGlassButton()
+            .disabled(!store.isConnected || store.isStreaming)
+            .accessibilityLabel("Show TUI Gateway prompt actions")
+            .modifier(HermesTUIPhoneComposerPopover(isPresented: $phoneComposerPresentation[isPresented: .actions]) {
+                VStack(spacing: 8) {
+                    attachButton(frame: 44)
+                    sendButton(frame: 44)
+                }
+                .frame(maxWidth: .infinity)
+                .onDisappear {
+                    // Present Files only after the action popover relinquishes presentation.
+                    if isPhoneAttachmentImportPending {
+                        isPhoneAttachmentImportPending = false
+                        isImportingAttachment = true
+                    }
+                }
+            })
+        } else if isPhoneLayout {
+            // Keep the pre-existing narrow iPad layout; only iPhone adopts the rail.
+            if isCompactPadComposerActionsExpanded {
                 HStack(spacing: 8) {
                     attachButton(frame: 44)
                     sendButton(frame: 44)
@@ -1834,7 +1902,7 @@ private struct HermesTUIGatewayView: View {
             } else {
                 Button {
                     withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
-                        isPhoneComposerActionsExpanded = true
+                        isCompactPadComposerActionsExpanded = true
                     }
                 } label: {
                     Image(systemName: "plus.circle.fill")
@@ -1855,10 +1923,15 @@ private struct HermesTUIGatewayView: View {
 
     private func attachButton(frame: CGFloat) -> some View {
         Button {
-            if isPhoneLayout {
-                withAnimation(.easeOut(duration: 0.16)) { isPhoneComposerActionsExpanded = false }
+            if usesPhoneComposerRail {
+                isPhoneAttachmentImportPending = true
+                phoneComposerPresentation[isPresented: .actions] = false
+            } else {
+                if isPhoneLayout {
+                    withAnimation(.easeOut(duration: 0.16)) { isCompactPadComposerActionsExpanded = false }
+                }
+                isImportingAttachment = true
             }
-            isImportingAttachment = true
         } label: {
             Image(systemName: workspace.selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
                 .font(.headline)
@@ -1871,8 +1944,10 @@ private struct HermesTUIGatewayView: View {
 
     private func sendButton(frame: CGFloat) -> some View {
         Button {
-            if isPhoneLayout {
-                withAnimation(.easeOut(duration: 0.16)) { isPhoneComposerActionsExpanded = false }
+            if usesPhoneComposerRail {
+                phoneComposerPresentation[isPresented: .actions] = false
+            } else if isPhoneLayout {
+                withAnimation(.easeOut(duration: 0.16)) { isCompactPadComposerActionsExpanded = false }
             }
             submitPrompt()
         } label: {

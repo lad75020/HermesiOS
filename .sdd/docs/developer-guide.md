@@ -80,7 +80,7 @@ These are compiled out of release builds. The related sources are
 `GstackDebugStateServer.swift` and `GstackDebugBridges.swift`.
 
 Runtime visibility during development also comes from the in-app Observability
-panel, Background Activity, Schedules, the Approvals Inbox, and the companion
+panel, Background Activity, Schedules, and the companion
 `log.tail` operation.
 
 ## Testing

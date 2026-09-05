@@ -27,7 +27,8 @@ Host file edits, service controls, git operations, and secret-aware configuratio
 
 - Ask Hermes through the OpenAI-compatible `/v1/responses` endpoint, with parallel independent workspaces.
 - Chat with Hermes through `/v1/chat/completions`, with tool/event/debug stream output kept out of assistant chat bubbles.
-- TUI Gateway tab for dashboard WebSocket sessions, streamed events, attachments, clarifications, approvals, secret prompts, sudo prompts, session resume, and multiple workspaces.
+- TUI Gateway tab for dashboard WebSocket sessions, streamed events, attachments, clarifications, in-conversation tool approvals, secret prompts, sudo prompts, session resume, and multiple workspaces.
+- iPhone navigation uses TUI and More tabs. Tool decisions remain inside the requesting TUI conversation; there is no standalone cross-session approval inbox or background queue polling. Host Companion device authorization remains required.
 - Sidebar status indicators for API, Mac Companion, Dashboard, active work, unread completion, and unread failure states.
 - Profile selection through `GET /v1/profiles` and `X-Hermes-Profile`.
 - Prompt attachments for images, documents, text, and source files.

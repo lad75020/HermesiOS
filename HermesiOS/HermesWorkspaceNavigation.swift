@@ -9,7 +9,6 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
     case responses
     case chat
     case tuiGateway
-    case approvals
     case history
     case web
     case terminal
@@ -27,8 +26,6 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Chat with Hermes"
         case .tuiGateway:
             "TUI Gateway"
-        case .approvals:
-            "Approvals Inbox"
         case .history:
             "History"
         case .web:
@@ -52,8 +49,6 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "Use `/v1/chat/completions` with an independent transcript."
         case .tuiGateway:
             "Talk to Hermes through the dashboard TUI Gateway WebSocket."
-        case .approvals:
-            "Approve or deny pending dangerous-command requests across sessions and profiles."
         case .history:
             "Review saved requests and final responses grouped by session."
         case .web:
@@ -77,8 +72,6 @@ enum WorkspaceSection: String, CaseIterable, Identifiable {
             "text.bubble"
         case .tuiGateway:
             "terminal.fill"
-        case .approvals:
-            "checkmark.shield"
         case .history:
             "clock.arrow.circlepath"
         case .web:
@@ -110,7 +103,6 @@ struct WorkspaceSidebar: View {
     var dashboardChannelActive = false
     var isResponsesStreamingActive = false
     var tuiGatewayAttention: HermesTUIWorkspaceAttention?
-    var hasPendingApprovals = false
     var isHistorySearchActive = false
     var hasUnreadResponsesCompletion = false
     var hasUnreadResponsesFailure = false
@@ -131,7 +123,7 @@ struct WorkspaceSidebar: View {
             tuiGatewayAttention == .completed
         case .history:
             isHistorySearchCompletionUnread
-        case .approvals, .web, .utilities, .settings, .runtime, .terminal:
+        case .web, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -146,7 +138,7 @@ struct WorkspaceSidebar: View {
             tuiGatewayAttention == .failed
         case .history:
             isHistorySearchFailureUnread
-        case .approvals, .web, .utilities, .settings, .runtime, .terminal:
+        case .web, .utilities, .settings, .runtime, .terminal:
             false
         }
     }
@@ -161,8 +153,6 @@ struct WorkspaceSidebar: View {
             tuiGatewayAttention == .streaming
         case .history:
             isHistorySearchActive
-        case .approvals:
-            hasPendingApprovals
         case .runtime:
             companionRuntime.isKickstartingRuntime
         case .web:
@@ -182,8 +172,6 @@ struct WorkspaceSidebar: View {
             "Runtime sections are loading from the Mac host companion."
         case .web:
             "Saved web pages are loading."
-        case .approvals:
-            "Dangerous-command approval is waiting."
         case .responses, .chat, .tuiGateway, .history, .utilities, .settings, .terminal:
             "Activity in progress."
         }
@@ -200,7 +188,7 @@ struct WorkspaceSidebar: View {
         case .history:
             isHistorySearchCompletionUnread = false
             isHistorySearchFailureUnread = false
-        case .tuiGateway, .approvals, .web, .utilities, .settings, .runtime, .terminal:
+        case .tuiGateway, .web, .utilities, .settings, .runtime, .terminal:
             break
         }
     }

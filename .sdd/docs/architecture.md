@@ -63,7 +63,6 @@ Navigation is modeled by the `WorkspaceSection` enum
 | `responses` | Ask Hermes | `/v1/responses` with SSE and response chaining |
 | `chat` | Chat with Hermes | `/v1/chat/completions`, independent transcript |
 | `tuiGateway` | TUI Gateway | Dashboard TUI Gateway WebSocket sessions |
-| `approvals` | Approvals Inbox | Approve/deny dangerous-command requests |
 | `history` | History | Dashboard-backed request/response history |
 | `web` | Web | In-app web page browsing |
 | `terminal` | Terminal | SSH terminal to the configured Mac host |

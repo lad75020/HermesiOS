@@ -43,8 +43,8 @@ final class HermesHostEndpointsTests: XCTestCase {
 }
 
 final class HermesPhonePrimaryTabTests: XCTestCase {
-    func testPrimaryTabsExcludeAskAndChatDestinations() {
-        XCTAssertEqual(HermesPhonePrimaryTab.allCases.map(\.title), ["TUI", "Approvals", "More"])
+    func testPrimaryTabsContainOnlyTUIAndMore() {
+        XCTAssertEqual(HermesPhonePrimaryTab.allCases.map(\.title), ["TUI", "More"])
         XCTAssertFalse(HermesPhonePrimaryTab.allCases.map(\.systemImage).contains("dot.radiowaves.left.and.right"))
         XCTAssertFalse(HermesPhonePrimaryTab.allCases.map(\.systemImage).contains("text.bubble"))
     }
@@ -53,6 +53,18 @@ final class HermesPhonePrimaryTabTests: XCTestCase {
         XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .responses), .tuiGateway)
         XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .chat), .tuiGateway)
         XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .history), .more)
+    }
+
+    func testWorkspaceInventoryContainsOnlySupportedDestinations() {
+        XCTAssertEqual(WorkspaceSection.allCases, [
+            .responses, .chat, .tuiGateway, .history, .web,
+            .terminal, .utilities, .settings, .runtime
+        ])
+        XCTAssertEqual(HermesPhonePrimaryTab.tuiGateway.selectedSection, .tuiGateway)
+        XCTAssertNil(HermesPhonePrimaryTab.more.selectedSection)
+        for section in [WorkspaceSection.history, .web, .terminal, .utilities, .settings, .runtime] {
+            XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: section), .more)
+        }
     }
 }
 

@@ -70,7 +70,7 @@
 - [ ] T051 [US7] Verify unsupported runtime operation payloads return typed errors in `./HermesHostCompanion/CompanionServer.swift` and `./HermesiOS/HermesCompanionClient.swift`.
 
 ## Phase 10: Polish & Cross-Cutting Concerns
-- [ ] T052 Update runtime panel error and status surfaces for new typed errors in `./HermesiOS/HermesiOS/HermesCompanionPanel.swift` and `./HermesiOS/HermesiOS/HermesApprovalsInboxView.swift`.
+- [ ] T052 Update runtime panel error and status surfaces for new typed errors in `./HermesiOS/HermesiOS/HermesCompanionPanel.swift`.
 - [ ] T053 Verify deterministic request id + request-response correlation for representative flows in `./HermesHostCompanion/CompanionProtocol.swift` and `./HermesiOS/HermesCompanionClient.swift`.
 - [ ] T054 Verify lifecycle and security events are logged consistently in `./HermesHostCompanion/CompanionServer.swift` and `./HermesHostCompanion/HermesHostCompanionApp.swift`.
 - [ ] T055 [P] Run `./Volumes/WDBlack4TB/.hermes/skills/local/speckit-tasks/scripts/validate_tasks.py` and fix any validation issues in `./.specify/specs/009-host-companion/tasks.md`.

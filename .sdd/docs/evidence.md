@@ -63,7 +63,7 @@ listed here.
 
 `WorkspaceSection` enum (`HermesWorkspaceNavigation.swift`) defines the sidebar:
 `responses` (Ask Hermes), `chat` (Chat with Hermes), `tuiGateway` (TUI Gateway),
-`approvals` (Approvals Inbox), `history`, `web`, `terminal`, `utilities`,
+`history`, `web`, `terminal`, `utilities`,
 `settings`, `runtime` (Hermes Agent Runtime). Each carries title, subtitle, and
 an SF Symbol. The sidebar tracks API/companion/dashboard channel activity plus
 unread completion, unread failure, and streaming attention states.
@@ -173,8 +173,8 @@ above and are cross-checked against them.
 ## Tests, health, observability
 
 - No XCTest/unit-test targets found in the graph (`is_test` false everywhere).
-- In-app observability panel, background activity, schedules, approvals inbox,
-  and companion `log.tail` provide runtime visibility.
+- In-app observability panel, background activity, schedules, and companion
+  `log.tail` provide runtime visibility.
 - Debug-only `StateServer`/`DebugBridge` wiring compiles under `#if DEBUG`.
 
 ## Evidence gaps and caveats

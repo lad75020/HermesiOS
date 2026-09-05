@@ -30,11 +30,6 @@ No automated test suite exists, so no rules are marked from tests.
   streamed events, clarifications, approvals, secret prompts, and sudo prompts.
 - As a user, I can run multiple TUI workspaces and resume sessions.
 
-### Approvals Inbox
-
-- As a user, I can review pending dangerous-command approvals across sessions
-  and profiles and approve or deny each.
-
 ### History
 
 - As a user, I can search prior requests and responses grouped by session and

@@ -16,13 +16,11 @@ import VisionKit
 
 enum HermesPhonePrimaryTab: CaseIterable, Hashable {
     case tuiGateway
-    case approvals
     case more
 
     var title: String {
         switch self {
         case .tuiGateway: "TUI"
-        case .approvals: "Approvals"
         case .more: "More"
         }
     }
@@ -30,7 +28,6 @@ enum HermesPhonePrimaryTab: CaseIterable, Hashable {
     var systemImage: String {
         switch self {
         case .tuiGateway: "terminal.fill"
-        case .approvals: WorkspaceSection.approvals.systemImage
         case .more: "ellipsis.circle"
         }
     }
@@ -38,7 +35,6 @@ enum HermesPhonePrimaryTab: CaseIterable, Hashable {
     var selectedSection: WorkspaceSection? {
         switch self {
         case .tuiGateway: .tuiGateway
-        case .approvals: .approvals
         case .more: nil
         }
     }
@@ -46,7 +42,6 @@ enum HermesPhonePrimaryTab: CaseIterable, Hashable {
     static func resolve(for section: WorkspaceSection) -> Self {
         switch section {
         case .tuiGateway: .tuiGateway
-        case .approvals: .approvals
         case .responses, .chat: .tuiGateway
         case .history, .web, .terminal, .utilities, .settings, .runtime: .more
         }
@@ -67,7 +62,8 @@ struct ContentView: View {
     @State private var selectedWorkspace: WorkspaceSection? = .responses
     @State private var selectedPhoneSection: WorkspaceSection = .tuiGateway
     @State private var selectedPhoneTab: HermesPhonePrimaryTab = .tuiGateway
-    @State private var phoneMorePath: [WorkspaceSection] = []
+    // More pushes both WorkspaceSection and nested HermesRuntimePanelKind values.
+    @State private var phoneMorePath = NavigationPath()
     @State private var apiSettings: HermesAPISettings
     @State private var companionSettings: HermesCompanionSettings
     @State private var agentConfiguration = HermesAgentConfiguration()
@@ -85,7 +81,6 @@ struct ContentView: View {
     @State private var dashboardHistorySearchSession = HermesDashboardHistorySearchSession()
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
-    @State private var approvalsInbox = HermesApprovalsInboxStore()
     @StateObject private var webBrowserStore = HermesWebBrowserDeckStore()
     @State private var isShowingSplash = true
     @State private var didKickstartRuntimeSectionsAfterLoad = false
@@ -206,10 +201,6 @@ struct ContentView: View {
             guard !isShowingSplash, scenePhase == .active, isClipboardHistoryMonitoringEnabled else { return }
             await clipboardHistory.runMonitoringLoop(isEnabled: isClipboardHistoryMonitoringEnabled)
         }
-        .task(id: approvalsRefreshKey) {
-            guard !isShowingSplash, scenePhase == .active else { return }
-            await approvalsInbox.runAutoRefreshLoop(apiSettings: apiSettings)
-        }
         .task(id: statusLoopKey) {
             guard !isShowingSplash, scenePhase == .active else { return }
             await statusMonitor.runStatusLoop(
@@ -270,7 +261,7 @@ struct ContentView: View {
         .onChange(of: selectedPhoneTab) { _, tab in
             guard let section = tab.selectedSection else { return }
             selectedPhoneSection = section
-            phoneMorePath = []
+            phoneMorePath = NavigationPath()
         }
         .onChange(of: shouldShowPhoneConnectionIssueOverlay) { _, isPresented in
             guard isPresented else { return }
@@ -438,17 +429,6 @@ struct ContentView: View {
         ].joined(separator: "|")
     }
 
-    private var approvalsRefreshKey: String {
-        [
-            "approvals",
-            apiSettings.baseURL,
-            apiSettings.apiKey.isEmpty ? "no-api-key" : "api-key-set",
-            String(apiSettings.allowSelfSignedCertificates),
-            "scenePhase=\(scenePhase)",
-            "splash=\(isShowingSplash)"
-        ].joined(separator: "|")
-    }
-
     private func refreshServicePortsFromCompanion() async {
         do {
             let ports = try await companionRuntime.refreshServicePorts(
@@ -481,7 +461,6 @@ struct ContentView: View {
                 dashboardChannelActive: dashboardChannelActive,
                 isResponsesStreamingActive: isAnyResponseWorkspaceStreaming,
                 tuiGatewayAttention: tuiGatewaySidebarAttention,
-                hasPendingApprovals: approvalsInbox.hasPendingApprovals,
                 isHistorySearchActive: dashboardHistorySearchSession.isSearching,
                 hasUnreadResponsesCompletion: hasUnreadResponseWorkspaceCompletion,
                 hasUnreadResponsesFailure: hasUnreadResponseWorkspaceFailure,
@@ -534,21 +513,6 @@ struct ContentView: View {
             }
 
             Tab(
-                HermesPhonePrimaryTab.approvals.title,
-                systemImage: HermesPhonePrimaryTab.approvals.systemImage,
-                value: .approvals
-            ) {
-                NavigationStack {
-                    HermesApprovalsInboxView(
-                        store: approvalsInbox,
-                        apiSettings: apiSettings,
-                        connectedHostName: HermesHostEndpoints.displayHost(from: apiSettings.baseURL)
-                    )
-                }
-            }
-            .badge(approvalsInbox.pendingCount)
-
-            Tab(
                 HermesPhonePrimaryTab.more.title,
                 systemImage: HermesPhonePrimaryTab.more.systemImage,
                 value: .more
@@ -582,11 +546,11 @@ struct ContentView: View {
 
         if let primarySection = tab.selectedSection {
             selectedPhoneSection = primarySection
-            phoneMorePath = []
+            phoneMorePath = NavigationPath()
         } else {
             selectedPhoneSection = section
             selectedPhoneTab = .more
-            phoneMorePath = [section]
+            phoneMorePath = NavigationPath([section])
         }
     }
 
@@ -703,12 +667,6 @@ struct ContentView: View {
                 onSelectWorkspace: selectTUIWorkspace,
                 onAddWorkspace: createTUIWorkspace,
                 onDeleteWorkspace: deleteTUIWorkspace
-            )
-        case .approvals:
-            HermesApprovalsInboxView(
-                store: approvalsInbox,
-                apiSettings: apiSettings,
-                connectedHostName: HermesHostEndpoints.displayHost(from: apiSettings.baseURL)
             )
         case .history:
             HermesHistoryView(

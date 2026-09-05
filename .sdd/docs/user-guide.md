@@ -47,10 +47,8 @@ workspaces. The sidebar icon reflects the strongest attention state across all
 TUI workspaces: red if any failed, green if any completed, blinking orange if
 any is streaming, and default when all are idle.
 
-### Approvals Inbox
-
-When the agent requests a dangerous command, it appears here. You can approve or
-deny pending requests across sessions and profiles from one place.
+Tool approval prompts stay in the requesting TUI conversation. Choose Run once,
+Allow all, or Deny there; the app does not provide a cross-session inbox.
 
 ### History
 

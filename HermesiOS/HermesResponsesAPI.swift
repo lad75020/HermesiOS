@@ -1017,14 +1017,6 @@ struct HermesAPISettings: Codable, Equatable {
         endpointURL(from: baseURL, suffix: "profiles")
     }
 
-    static func approvalsURL(from baseURL: String) -> URL? {
-        endpointURL(from: baseURL, suffix: "approvals")
-    }
-
-    static func approvalResolveURL(from baseURL: String) -> URL? {
-        endpointURL(from: baseURL, suffix: "approvals/resolve")
-    }
-
     static func runsURL(from baseURL: String) -> URL? {
         endpointURL(from: baseURL, suffix: "runs")
     }
@@ -1102,8 +1094,6 @@ extension HermesAPISettings {
             "v1/chat/completions",
             "v1/models",
             "v1/profiles",
-            "v1/approvals",
-            "v1/approvals/resolve",
             "v1/runs",
             "v1/requests"
         ]

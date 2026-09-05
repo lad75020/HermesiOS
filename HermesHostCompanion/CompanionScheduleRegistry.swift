@@ -5,6 +5,7 @@ enum CompanionScheduleRegistryError: LocalizedError {
     case invalidWorkspace(String)
     case missingJobID
     case missingSchedule
+    case unsupportedBaseURLPin
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +15,8 @@ enum CompanionScheduleRegistryError: LocalizedError {
             return "Missing scheduled job ID."
         case .missingSchedule:
             return "Missing schedule expression."
+        case .unsupportedBaseURLPin:
+            return "This installed Hermes CLI does not expose a cron --base-url flag, so a base URL pin cannot be changed safely."
         }
     }
 }
@@ -29,23 +32,16 @@ final class CompanionScheduleRegistry {
         )
     }
 
-    func create(workspacePath: String, schedule: String, prompt: String?, name: String?, deliver: String?) throws -> ScheduleOperationResult {
-        let trimmedSchedule = schedule.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmedSchedule.isEmpty == false else { throw CompanionScheduleRegistryError.missingSchedule }
+    func create(workspacePath: String, schedule: String, prompt: String?, name: String?, deliver: String?, provider: String?, model: String?, baseUrl: String?) throws -> ScheduleOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        var args = ["create", trimmedSchedule]
-        if let prompt, prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-            // `hermes cron create` defines the prompt as an optional positional
-            // argument immediately after the schedule. Passing it after options
-            // with `--` makes argparse report it as an unrecognized argument.
-            args.append(prompt.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        if let name, name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-            args.append(contentsOf: ["--name", name.trimmingCharacters(in: .whitespacesAndNewlines)])
-        }
-        if let deliver, deliver.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false, deliver != "local" {
-            args.append(contentsOf: ["--deliver", deliver.trimmingCharacters(in: .whitespacesAndNewlines)])
-        }
+        let args = try Self.createArguments(schedule: schedule, prompt: prompt, name: name, deliver: deliver, provider: provider, model: model, baseUrl: baseUrl)
+        let result = runCronCommand(args: args, workspaceURL: workspaceURL)
+        return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, result: result)
+    }
+
+    func edit(workspacePath: String, jobID: String, schedule: String?, prompt: String?, name: String?, deliver: String?, provider: String?, model: String?, baseUrl: String?) throws -> ScheduleOperationResult {
+        let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
+        let args = try Self.editArguments(jobID: jobID, schedule: schedule, prompt: prompt, name: name, deliver: deliver, provider: provider, model: model, baseUrl: baseUrl)
         let result = runCronCommand(args: args, workspaceURL: workspaceURL)
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, result: result)
     }
@@ -87,7 +83,7 @@ final class CompanionScheduleRegistry {
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
-        guard let workspaceURL = CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: workspacePath, requireHermesCLI: true) else {
+        guard let workspaceURL = CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: workspacePath)?.selectedHomeURL else {
             throw CompanionScheduleRegistryError.invalidWorkspace(workspacePath)
         }
         return workspaceURL
@@ -107,10 +103,10 @@ final class CompanionScheduleRegistry {
         } else {
             rawJobs = []
         }
-        return rawJobs.compactMap { normalizeJob($0, includeDisabled: includeDisabled) }
+        return rawJobs.compactMap { Self.normalizeJob($0, includeDisabled: includeDisabled) }
     }
 
-    private func normalizeJob(_ job: [String: Any], includeDisabled: Bool) -> ScheduleCronJob? {
+    static func normalizeJob(_ job: [String: Any], includeDisabled: Bool) -> ScheduleCronJob? {
         guard let rawID = job["id"] else { return nil }
         let id = String(describing: rawID)
         let enabled = (job["enabled"] as? Bool) ?? true
@@ -118,15 +114,12 @@ final class CompanionScheduleRegistry {
         var state = "active"
         if (job["state"] as? String) == "paused" || enabled == false { state = "paused" }
         else if (job["state"] as? String) == "completed" { state = "completed" }
+        let rawSchedule = rawSchedule(from: job)
         let scheduleValue: String
         if let display = job["schedule_display"] as? String, display.isEmpty == false {
             scheduleValue = display
-        } else if let schedule = job["schedule"] as? String {
-            scheduleValue = schedule
-        } else if let schedule = job["schedule"] as? [String: Any], let value = schedule["value"] as? String {
-            scheduleValue = value
         } else {
-            scheduleValue = "?"
+            scheduleValue = rawSchedule.isEmpty ? "?" : rawSchedule
         }
         let repeatInfo: ScheduleRepeatInfo?
         if let repeatObject = job["repeat"] as? [String: Any] {
@@ -138,6 +131,7 @@ final class CompanionScheduleRegistry {
             id: id,
             name: (job["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "(unnamed)",
             schedule: scheduleValue,
+            rawSchedule: rawSchedule,
             prompt: job["prompt"] as? String ?? "",
             state: state,
             enabled: enabled,
@@ -148,18 +142,76 @@ final class CompanionScheduleRegistry {
             repeatInfo: repeatInfo,
             deliver: stringArray(from: job["deliver"], defaultValue: ["local"]),
             skills: stringArray(from: job["skills"], defaultValue: (job["skill"] as? String).map { [$0] } ?? []),
-            script: job["script"] as? String
+            script: job["script"] as? String,
+            provider: string(from: job["provider"] ?? job["model_provider"]),
+            model: string(from: job["model"]),
+            baseUrl: string(from: job["base_url"])
         )
     }
 
-    private func stringArray(from value: Any?, defaultValue: [String]) -> [String] {
+    static func createArguments(schedule: String, prompt: String?, name: String?, deliver: String?, provider: String?, model: String?, baseUrl: String?) throws -> [String] {
+        let trimmedSchedule = schedule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedSchedule.isEmpty == false else { throw CompanionScheduleRegistryError.missingSchedule }
+        guard baseUrl == nil else { throw CompanionScheduleRegistryError.unsupportedBaseURLPin }
+        var args = ["create", trimmedSchedule]
+        if let prompt, prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            args.append(prompt.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        appendCreatePin(&args, flag: "--name", value: name)
+        appendCreatePin(&args, flag: "--deliver", value: deliver)
+        appendCreatePin(&args, flag: "--provider", value: provider)
+        appendCreatePin(&args, flag: "--model", value: model)
+        return args
+    }
+
+    static func editArguments(jobID: String, schedule: String?, prompt: String?, name: String?, deliver: String?, provider: String?, model: String?, baseUrl: String?) throws -> [String] {
+        let trimmedJobID = jobID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedJobID.isEmpty == false else { throw CompanionScheduleRegistryError.missingJobID }
+        guard baseUrl == nil else { throw CompanionScheduleRegistryError.unsupportedBaseURLPin }
+        var args = ["edit", trimmedJobID]
+        appendEditPin(&args, flag: "--schedule", value: schedule)
+        appendEditPin(&args, flag: "--prompt", value: prompt)
+        appendEditPin(&args, flag: "--name", value: name)
+        appendEditPin(&args, flag: "--deliver", value: deliver)
+        appendEditPin(&args, flag: "--provider", value: provider)
+        appendEditPin(&args, flag: "--model", value: model)
+        return args
+    }
+
+    private static func appendCreatePin(_ args: inout [String], flag: String, value: String?) {
+        guard let value else { return }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return }
+        args.append("\(flag)=\(trimmed)")
+    }
+
+    private static func appendEditPin(_ args: inout [String], flag: String, value: String?) {
+        guard let value else { return }
+        args.append("\(flag)=\(value.trimmingCharacters(in: .whitespacesAndNewlines))")
+    }
+
+    private static func rawSchedule(from job: [String: Any]) -> String {
+        if let schedule = job["schedule"] as? String { return schedule }
+        if let schedule = job["schedule"] as? [String: Any], let value = schedule["value"] as? String { return value }
+        return ""
+    }
+
+    private static func stringArray(from value: Any?, defaultValue: [String]) -> [String] {
         if let array = value as? [String] { return array }
         if let string = value as? String, string.isEmpty == false { return [string] }
         return defaultValue
     }
 
+    private static func string(from value: Any?) -> String? {
+        guard let value = value as? String, value.isEmpty == false else { return nil }
+        return value
+    }
+
     private func runCronCommand(args: [String], workspaceURL: URL) -> (success: Bool, output: String, error: String?) {
-        let repoURL = workspaceURL.appendingPathComponent("hermes-agent")
+        guard let cliContext = CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: workspaceURL.path) else {
+            return (false, "", "Hermes CLI root could not be resolved for \(workspaceURL.path)")
+        }
+        let repoURL = cliContext.cliRootURL.appendingPathComponent("hermes-agent")
         let scriptURL = repoURL.appendingPathComponent("hermes")
         let pythonURL = repoURL.appendingPathComponent("venv/bin/python")
         guard FileManager.default.fileExists(atPath: scriptURL.path) else {
@@ -176,8 +228,8 @@ final class CompanionScheduleRegistry {
         }
         process.currentDirectoryURL = repoURL
         var env = ProcessInfo.processInfo.environment
-        env["HERMES_HOME"] = workspaceURL.path
-        env["PATH"] = enhancedPath(workspaceURL: workspaceURL, existing: env["PATH"] ?? "")
+        env["HERMES_HOME"] = cliContext.selectedHomeURL.path
+        env["PATH"] = enhancedPath(cliRootURL: cliContext.cliRootURL, existing: env["PATH"] ?? "")
         process.environment = env
 
         let stdout = Pipe()
@@ -195,12 +247,12 @@ final class CompanionScheduleRegistry {
         }
     }
 
-    private func enhancedPath(workspaceURL: URL, existing: String) -> String {
+    private func enhancedPath(cliRootURL: URL, existing: String) -> String {
         let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         return [
             home.appendingPathComponent(".local/bin").path,
             home.appendingPathComponent(".cargo/bin").path,
-            workspaceURL.appendingPathComponent("hermes-agent/venv/bin").path,
+            cliRootURL.appendingPathComponent("hermes-agent/venv/bin").path,
             "/usr/local/bin",
             "/opt/homebrew/bin",
             "/opt/homebrew/sbin",

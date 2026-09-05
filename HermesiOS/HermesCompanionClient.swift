@@ -499,13 +499,20 @@ struct HermesCompanionSkillSummary: Codable, Identifiable, Equatable {
 struct HermesCompanionEmptyPayload: Codable {}
 
 struct HermesCompanionListMCPServersResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
     let servers: [HermesCompanionMCPServerSummary]
     let output: String
+}
+
+struct HermesCompanionListMCPServersPayload: Codable {
+    let workspacePath: String
 }
 
 enum HermesCompanionMCPServerTransport: String, Codable, CaseIterable, Identifiable {
     case stdio
     case streamableHTTP
+    case openAPI
 
     var id: String { rawValue }
 
@@ -513,11 +520,13 @@ enum HermesCompanionMCPServerTransport: String, Codable, CaseIterable, Identifia
         switch self {
         case .stdio: "Stdio"
         case .streamableHTTP: "Streamable HTTP"
+        case .openAPI: "OpenAPI"
         }
     }
 }
 
 struct HermesCompanionAddMCPServerPayload: Codable {
+    let workspacePath: String
     let name: String
     let transport: HermesCompanionMCPServerTransport
     let command: String
@@ -527,10 +536,13 @@ struct HermesCompanionAddMCPServerPayload: Codable {
 }
 
 struct HermesCompanionRemoveMCPServerPayload: Codable {
+    let workspacePath: String
     let name: String
 }
 
 struct HermesCompanionMCPOperationResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
     let serverName: String
     let output: String
     let servers: [HermesCompanionMCPServerSummary]
@@ -834,6 +846,14 @@ struct HermesCompanionRuntimeModelSlotConfig: Codable, Identifiable, Equatable {
     let key: String
     let provider: String
     let model: String
+    let baseUrl: String
+
+    private enum CodingKeys: String, CodingKey { case id, label, section, key, provider, model, baseUrl }
+    init(id: String, label: String, section: String, key: String, provider: String, model: String, baseUrl: String = "") { self.id = id; self.label = label; self.section = section; self.key = key; self.provider = provider; self.model = model; self.baseUrl = baseUrl }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id); label = try values.decode(String.self, forKey: .label); section = try values.decode(String.self, forKey: .section); key = try values.decode(String.self, forKey: .key); provider = try values.decode(String.self, forKey: .provider); model = try values.decode(String.self, forKey: .model); baseUrl = try values.decodeIfPresent(String.self, forKey: .baseUrl) ?? ""
+    }
 }
 
 struct HermesCompanionProviderCredentialEntry: Codable, Identifiable, Equatable {
@@ -908,6 +928,7 @@ struct HermesCompanionSetRuntimeModelSlotPayload: Codable {
     let key: String
     let provider: String
     let model: String
+    let baseUrl: String?
 }
 
 struct HermesCompanionSetRuntimeModelSlotResult: Codable {
@@ -1186,6 +1207,7 @@ struct HermesCompanionScheduleCronJob: Codable, Identifiable, Equatable {
     let id: String
     let name: String
     let schedule: String
+    let rawSchedule: String
     let prompt: String
     let state: String
     let enabled: Bool
@@ -1197,6 +1219,19 @@ struct HermesCompanionScheduleCronJob: Codable, Identifiable, Equatable {
     let deliver: [String]
     let skills: [String]
     let script: String?
+    let provider: String?
+    let model: String?
+    let baseUrl: String?
+
+    init(id: String, name: String, schedule: String, rawSchedule: String, prompt: String, state: String, enabled: Bool, nextRunAt: String?, lastRunAt: String?, lastStatus: String?, lastError: String?, repeatInfo: HermesCompanionScheduleRepeatInfo?, deliver: [String], skills: [String], script: String?, provider: String?, model: String?, baseUrl: String?) {
+        self.id = id; self.name = name; self.schedule = schedule; self.rawSchedule = rawSchedule; self.prompt = prompt; self.state = state; self.enabled = enabled; self.nextRunAt = nextRunAt; self.lastRunAt = lastRunAt; self.lastStatus = lastStatus; self.lastError = lastError; self.repeatInfo = repeatInfo; self.deliver = deliver; self.skills = skills; self.script = script; self.provider = provider; self.model = model; self.baseUrl = baseUrl
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, schedule, rawSchedule, prompt, state, enabled, nextRunAt, lastRunAt, lastStatus, lastError, repeatInfo, deliver, skills, script, provider, model, baseUrl }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id); name = try values.decode(String.self, forKey: .name); schedule = try values.decode(String.self, forKey: .schedule); rawSchedule = try values.decodeIfPresent(String.self, forKey: .rawSchedule) ?? schedule; prompt = try values.decode(String.self, forKey: .prompt); state = try values.decode(String.self, forKey: .state); enabled = try values.decode(Bool.self, forKey: .enabled); nextRunAt = try values.decodeIfPresent(String.self, forKey: .nextRunAt); lastRunAt = try values.decodeIfPresent(String.self, forKey: .lastRunAt); lastStatus = try values.decodeIfPresent(String.self, forKey: .lastStatus); lastError = try values.decodeIfPresent(String.self, forKey: .lastError); repeatInfo = try values.decodeIfPresent(HermesCompanionScheduleRepeatInfo.self, forKey: .repeatInfo); deliver = try values.decodeIfPresent([String].self, forKey: .deliver) ?? []; skills = try values.decodeIfPresent([String].self, forKey: .skills) ?? []; script = try values.decodeIfPresent(String.self, forKey: .script); provider = try values.decodeIfPresent(String.self, forKey: .provider); model = try values.decodeIfPresent(String.self, forKey: .model); baseUrl = try values.decodeIfPresent(String.self, forKey: .baseUrl)
+    }
 }
 
 struct HermesCompanionListSchedulesPayload: Codable {
@@ -1217,6 +1252,21 @@ struct HermesCompanionCreateSchedulePayload: Codable {
     let prompt: String?
     let name: String?
     let deliver: String?
+    let provider: String?
+    let model: String?
+    let baseUrl: String?
+}
+
+struct HermesCompanionEditSchedulePayload: Codable {
+    let workspacePath: String
+    let jobID: String
+    let schedule: String?
+    let prompt: String?
+    let name: String?
+    let deliver: String?
+    let provider: String?
+    let model: String?
+    let baseUrl: String?
 }
 
 struct HermesCompanionScheduleOperationPayload: Codable {
@@ -1661,6 +1711,9 @@ final class HermesCompanionRuntimeSession {
     var isBusy = false
     var isKickstartingRuntime = false
     var runtimeLoadedSectionIDs: Set<String> = []
+    /// Errors belong to a request category. A failed schedule refresh must not
+    /// turn Skills, Models, and every other already-loaded panel red.
+    var runtimeSectionErrors: [String: String] = [:]
     var hermesSkills: [HermesCompanionSkillSummary] = []
     var hermesMCPServers: [HermesCompanionMCPServerSummary] = []
     var mcpListOutput = ""
@@ -1684,7 +1737,7 @@ final class HermesCompanionRuntimeSession {
     var providerOptions: [HermesCompanionProviderOption] = []
     var providerCredentialPool: [String: [HermesCompanionProviderCredentialEntry]] = [:]
     var providerModelConfig = HermesCompanionProviderModelConfig(provider: "auto", model: "", baseUrl: "")
-    var delegationModelConfig = HermesCompanionRuntimeModelSlotConfig(id: "delegation", label: "Delegation", section: "delegation", key: "delegation", provider: "", model: "")
+    var delegationModelConfig = HermesCompanionRuntimeModelSlotConfig(id: "delegation", label: "Delegation", section: "delegation", key: "delegation", provider: "", model: "", baseUrl: "")
     var auxiliaryModelConfigs: [HermesCompanionRuntimeModelSlotConfig] = []
     var providerEnvFilePath = ""
     var providerConfigPath = ""
@@ -1733,8 +1786,39 @@ final class HermesCompanionRuntimeSession {
         runtimeLoadedSectionIDs.contains(id)
     }
 
+    func runtimeSectionError(_ id: String) -> String { runtimeSectionErrors[id] ?? "" }
+
     private func markRuntimeSectionLoaded(_ id: String) {
         runtimeLoadedSectionIDs.insert(id)
+        runtimeSectionErrors[id] = nil
+    }
+
+    func resetRuntimeScopeState() {
+        runtimeLoadedSectionIDs = []
+        runtimeSectionErrors = [:]
+        lastErrorMessage = ""
+        resolvedHermesWorkspacePath = ""
+        hermesSkills = []
+        hermesMCPServers = []
+        hermesToolsets = []
+        hermesModels = []
+        providerEnv = [:]
+        providerSections = []
+        providerOptions = []
+        providerCredentialPool = [:]
+        providerModelConfig = HermesCompanionProviderModelConfig(provider: "auto", model: "", baseUrl: "")
+        delegationModelConfig = HermesCompanionRuntimeModelSlotConfig(id: "delegation", label: "Delegation", section: "delegation", key: "delegation", provider: "", model: "", baseUrl: "")
+        auxiliaryModelConfigs = []
+        memoryConfig = nil
+        memoryEntries = []
+        schedules = []
+        gatewayConfig = nil
+        gatewayEnv = [:]
+        gatewayPlatformEnabled = [:]
+        observabilityLogContent = ""
+        observabilityLoadedLineCount = 0
+        knowledgeEraserItems = []
+        knowledgeEraserSelectedItemIDs = []
     }
 
     func kickstartRuntimeSections(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
@@ -1798,6 +1882,7 @@ final class HermesCompanionRuntimeSession {
             markRuntimeSectionLoaded(id)
         } catch {
             lastErrorMessage = error.localizedDescription
+            runtimeSectionErrors[id] = error.localizedDescription
         }
     }
 
@@ -2232,7 +2317,7 @@ final class HermesCompanionRuntimeSession {
         }
     }
 
-    private func run(_ operation: @escaping @MainActor () async throws -> Void) {
+    private func run(category: String? = nil, _ operation: @escaping @MainActor () async throws -> Void) {
         Task {
             isBusy = true
             lastErrorMessage = ""
@@ -2240,6 +2325,7 @@ final class HermesCompanionRuntimeSession {
                 try await operation()
             } catch {
                 lastErrorMessage = error.localizedDescription
+                if let category { runtimeSectionErrors[category] = error.localizedDescription }
                 connectionStatus = "Failed"
             }
             isBusy = false
@@ -2247,7 +2333,7 @@ final class HermesCompanionRuntimeSession {
     }
 
     func refreshHermesSkills(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        run {
+        run(category: "skills") {
             self.connectionStatus = "Loading Skills"
             try await self.refreshHermesSkillsImmediately(settings: settings, identityState: identityState)
             self.markRuntimeSectionLoaded("skills")
@@ -2314,7 +2400,7 @@ final class HermesCompanionRuntimeSession {
     }
 
     func refreshGatewayConfig(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        run {
+        run(category: "gateway") {
             self.connectionStatus = "Loading Messaging"
             try await self.refreshGatewayConfigImmediately(settings: settings, identityState: identityState)
             self.markRuntimeSectionLoaded("gateway")
@@ -2333,7 +2419,7 @@ final class HermesCompanionRuntimeSession {
     }
 
     func refreshGatewayStatus(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        run {
+        run(category: "gateway") {
             let result: HermesCompanionGatewayStatusResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
                 state: identityState,
@@ -2349,7 +2435,7 @@ final class HermesCompanionRuntimeSession {
     }
 
     func setGatewayRunning(_ running: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        run {
+        run(category: "gateway") {
             self.connectionStatus = running ? "Starting Gateway" : "Stopping Gateway"
             let result: HermesCompanionGatewayOperationResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
@@ -2363,7 +2449,7 @@ final class HermesCompanionRuntimeSession {
     }
 
     func restartGateway(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        run {
+        run(category: "gateway") {
             self.connectionStatus = "Restarting Gateway"
             let result: HermesCompanionGatewayOperationResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
@@ -2377,8 +2463,7 @@ final class HermesCompanionRuntimeSession {
     }
 
     func setGatewayEnvValue(key: String, value: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        gatewayEnv[key] = value
-        run {
+        run(category: "gateway") {
             self.connectionStatus = "Saving \(key)"
             let result: HermesCompanionSetGatewayEnvResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
@@ -2397,8 +2482,7 @@ final class HermesCompanionRuntimeSession {
     }
 
     func setGatewayPlatformEnabled(platform: String, enabled: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        gatewayPlatformEnabled[platform] = enabled
-        run {
+        run(category: "gateway") {
             self.connectionStatus = enabled ? "Enabling Platform" : "Disabling Platform"
             let result: HermesCompanionSetGatewayPlatformResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
@@ -2531,7 +2615,7 @@ final class HermesCompanionRuntimeSession {
     }
 
     func refreshHermesMCPServers(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        run {
+        run(category: "mcpServers") {
             self.connectionStatus = "Loading MCP Servers"
             try await self.refreshHermesMCPServersImmediately(settings: settings, identityState: identityState)
             self.markRuntimeSectionLoaded("mcpServers")
@@ -2544,10 +2628,11 @@ final class HermesCompanionRuntimeSession {
             settings: settings,
             state: identityState,
             type: "list_mcp_servers",
-            payload: HermesCompanionEmptyPayload()
+            payload: HermesCompanionListMCPServersPayload(workspacePath: settings.hermesWorkspacePath)
         )
         hermesMCPServers = result.servers
         mcpListOutput = result.output
+        resolvedHermesWorkspacePath = result.resolvedWorkspacePath
     }
 
     func addHermesMCPServer(
@@ -2560,13 +2645,14 @@ final class HermesCompanionRuntimeSession {
         settings: HermesCompanionSettings,
         identityState: HermesCompanionIdentityState
     ) {
-        run {
+        run(category: "mcpServers") {
             self.connectionStatus = "Adding MCP Server"
             let result: HermesCompanionMCPOperationResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
                 state: identityState,
                 type: "add_mcp_server",
                 payload: HermesCompanionAddMCPServerPayload(
+                    workspacePath: settings.hermesWorkspacePath,
                     name: name,
                     transport: transport,
                     command: command,
@@ -2577,21 +2663,23 @@ final class HermesCompanionRuntimeSession {
             )
             self.hermesMCPServers = result.servers
             self.mcpOperationOutput = result.output
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
             self.connectionStatus = "MCP Server Added"
         }
     }
 
     func removeHermesMCPServer(name: String, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
-        run {
+        run(category: "mcpServers") {
             self.connectionStatus = "Removing MCP Server"
             let result: HermesCompanionMCPOperationResult = try await HermesCompanionSessionFactory.request(
                 settings: settings,
                 state: identityState,
                 type: "remove_mcp_server",
-                payload: HermesCompanionRemoveMCPServerPayload(name: name)
+                payload: HermesCompanionRemoveMCPServerPayload(workspacePath: settings.hermesWorkspacePath, name: name)
             )
             self.hermesMCPServers = result.servers
             self.mcpOperationOutput = result.output
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
             self.connectionStatus = "MCP Server Removed"
         }
     }
@@ -2780,7 +2868,6 @@ final class HermesCompanionRuntimeSession {
         settings: HermesCompanionSettings,
         identityState: HermesCompanionIdentityState
     ) {
-        providerEnv[key] = value
         run {
             self.connectionStatus = "Saving \(key)"
             let result: HermesCompanionSetProviderEnvResult = try await HermesCompanionSessionFactory.request(
@@ -2831,7 +2918,6 @@ final class HermesCompanionRuntimeSession {
         settings: HermesCompanionSettings,
         identityState: HermesCompanionIdentityState
     ) {
-        providerModelConfig = HermesCompanionProviderModelConfig(provider: provider, model: model, baseUrl: baseUrl)
         run {
             self.connectionStatus = "Saving Provider Model"
             let result: HermesCompanionSetProviderModelConfigResult = try await HermesCompanionSessionFactory.request(
@@ -2871,22 +2957,10 @@ final class HermesCompanionRuntimeSession {
         slot: HermesCompanionRuntimeModelSlotConfig,
         provider: String,
         model: String,
+        baseUrl: String,
         settings: HermesCompanionSettings,
         identityState: HermesCompanionIdentityState
     ) {
-        let updated = HermesCompanionRuntimeModelSlotConfig(
-            id: slot.id,
-            label: slot.label,
-            section: slot.section,
-            key: slot.key,
-            provider: provider,
-            model: model
-        )
-        if slot.section == "delegation" {
-            delegationModelConfig = updated
-        } else if let index = auxiliaryModelConfigs.firstIndex(where: { $0.id == slot.id }) {
-            auxiliaryModelConfigs[index] = updated
-        }
         run {
             self.connectionStatus = "Saving \(slot.label) Model"
             let result: HermesCompanionSetRuntimeModelSlotResult = try await HermesCompanionSessionFactory.request(
@@ -2898,7 +2972,8 @@ final class HermesCompanionRuntimeSession {
                     section: slot.section,
                     key: slot.key,
                     provider: provider,
-                    model: model
+                    model: model,
+                    baseUrl: baseUrl
                 )
             )
             if result.slot.section == "delegation" {
@@ -3310,6 +3385,9 @@ final class HermesCompanionRuntimeSession {
         prompt: String?,
         name: String?,
         deliver: String?,
+        provider: String?,
+        model: String?,
+        baseUrl: String?,
         settings: HermesCompanionSettings,
         identityState: HermesCompanionIdentityState
     ) {
@@ -3324,11 +3402,49 @@ final class HermesCompanionRuntimeSession {
                     schedule: schedule,
                     prompt: prompt,
                     name: name,
-                    deliver: deliver
+                    deliver: deliver,
+                    provider: provider,
+                    model: model,
+                    baseUrl: baseUrl
                 )
             )
             self.applyScheduleOperation(result)
             self.connectionStatus = result.success ? "Schedule Created" : "Schedule Create Failed"
+        }
+    }
+
+    func editSchedule(
+        jobID: String,
+        schedule: String?,
+        prompt: String?,
+        name: String?,
+        deliver: String?,
+        provider: String?,
+        model: String?,
+        baseUrl: String?,
+        settings: HermesCompanionSettings,
+        identityState: HermesCompanionIdentityState
+    ) {
+        run {
+            self.connectionStatus = "Updating Schedule"
+            let result: HermesCompanionScheduleOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "edit_schedule",
+                payload: HermesCompanionEditSchedulePayload(
+                    workspacePath: settings.hermesWorkspacePath,
+                    jobID: jobID,
+                    schedule: schedule,
+                    prompt: prompt,
+                    name: name,
+                    deliver: deliver,
+                    provider: provider,
+                    model: model,
+                    baseUrl: baseUrl
+                )
+            )
+            self.applyScheduleOperation(result)
+            self.connectionStatus = result.success ? "Schedule Updated" : "Schedule Update Failed"
         }
     }
 

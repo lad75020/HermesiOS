@@ -17,6 +17,13 @@ struct HermesMCPServersPanel: View {
     @State private var arguments = ""
     @State private var url = ""
     @State private var bearerToken = ""
+    @State private var searchQuery = ""
+
+    private var visibleServers: [HermesCompanionMCPServerSummary] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard query.isEmpty == false else { return companionRuntime.hermesMCPServers }
+        return companionRuntime.hermesMCPServers.filter { $0.name.lowercased().contains(query) || $0.transport.lowercased().contains(query) || $0.tools.lowercased().contains(query) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -30,7 +37,7 @@ struct HermesMCPServersPanel: View {
                 HermesSectionCard("Known MCP Servers") {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("Loaded with `hermes mcp list` on the host.")
+                            Text("Loaded from the selected Hermes profile on the host.")
                                 .font(.subheadline)
                                 .foregroundStyle(.hermesSecondaryText)
                             Spacer()
@@ -46,14 +53,19 @@ struct HermesMCPServersPanel: View {
                             .disabled(companionRuntime.isBusy)
                         }
 
-                        if companionRuntime.hermesMCPServers.isEmpty {
+                        TextField("Search MCP servers", text: $searchQuery)
+                            .hermesRuntimeInput()
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                        if visibleServers.isEmpty {
                             ContentUnavailableView(
                                 "No MCP Servers",
                                 systemImage: "shippingbox",
                                 description: Text("Add a stdio or streamable HTTP MCP server below.")
                             )
                         } else {
-                            ForEach(companionRuntime.hermesMCPServers) { server in
+                            ForEach(visibleServers) { server in
                                 MCPServerRow(server: server) {
                                     companionRuntime.removeHermesMCPServer(
                                         name: server.name,
@@ -92,7 +104,7 @@ struct HermesMCPServersPanel: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                         } else {
-                            TextField("MCP URL", text: $url)
+                            TextField(transport == .openAPI ? "OpenAPI base URL" : "MCP URL", text: $url)
                                 .hermesRuntimeInput()
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
@@ -151,7 +163,7 @@ struct HermesMCPServersPanel: View {
         switch transport {
         case .stdio:
             return !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .streamableHTTP:
+        case .streamableHTTP, .openAPI:
             let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return trimmedURL.hasPrefix("http://") || trimmedURL.hasPrefix("https://")
         }
@@ -164,6 +176,8 @@ struct HermesMCPServersPanel: View {
             return "hermes mcp add \(name) --command \(command.isEmpty ? "<command>" : command) --args \(arguments.isEmpty ? "<arguments>" : arguments)"
         case .streamableHTTP:
             return "hermes mcp add \(name) --url \(url.isEmpty ? "<url>" : url)" + (bearerToken.isEmpty ? "" : " --auth header")
+        case .openAPI:
+            return "hermes mcp add \(name) --transport openapi --url \(url.isEmpty ? "<url>" : url)" + (bearerToken.isEmpty ? "" : " --auth header")
         }
     }
 }

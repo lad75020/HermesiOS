@@ -19,11 +19,11 @@ struct HermesModelsPanel: View {
                 .init(value: "main", label: "Main model"),
                 .init(value: "openrouter", label: "OpenRouter"),
                 .init(value: "anthropic", label: "Anthropic"),
-                .init(value: "openai", label: "OpenAI"),
-                .init(value: "google", label: "Google"),
                 .init(value: "xai", label: "xAI"),
                 .init(value: "nous", label: "Nous"),
-                .init(value: "qwen", label: "Qwen"),
+                .init(value: "openai-codex", label: "OpenAI Codex"),
+                .init(value: "gemini", label: "Gemini"),
+                .init(value: "qwen-oauth", label: "Qwen OAuth"),
                 .init(value: "minimax", label: "MiniMax"),
                 .init(value: "custom", label: "Local / Custom")
             ]
@@ -69,12 +69,13 @@ struct HermesModelsPanel: View {
                             systemImage: "sparkles",
                             provider: companionRuntime.providerModelConfig.provider,
                             model: companionRuntime.providerModelConfig.model,
+                            baseUrl: companionRuntime.providerModelConfig.baseUrl,
                             providerOptions: providerOptions.filter { $0.value != "main" },
-                            onSave: { provider, model in
+                            onSave: { provider, model, baseUrl in
                                 companionRuntime.saveProviderModelConfig(
                                     provider: provider,
                                     model: model,
-                                    baseUrl: companionRuntime.providerModelConfig.baseUrl,
+                                    baseUrl: baseUrl,
                                     settings: companionSettings,
                                     identityState: companionEnrollment.identityState
                                 )
@@ -87,13 +88,15 @@ struct HermesModelsPanel: View {
                             systemImage: "person.2.wave.2",
                             provider: companionRuntime.delegationModelConfig.provider,
                             model: companionRuntime.delegationModelConfig.model,
+                            baseUrl: companionRuntime.delegationModelConfig.baseUrl,
                             providerOptions: providerOptions,
                             allowEmptyProvider: true,
-                            onSave: { provider, model in
+                            onSave: { provider, model, baseUrl in
                                 companionRuntime.saveRuntimeModelSlotConfig(
                                     slot: companionRuntime.delegationModelConfig,
                                     provider: provider,
                                     model: model,
+                                    baseUrl: baseUrl,
                                     settings: companionSettings,
                                     identityState: companionEnrollment.identityState
                                 )
@@ -115,13 +118,15 @@ struct HermesModelsPanel: View {
                                 systemImage: auxiliaryIcon(for: slot.key),
                                 provider: slot.provider,
                                 model: slot.model,
+                                baseUrl: slot.baseUrl,
                                 providerOptions: providerOptions,
                                 allowEmptyProvider: true,
-                                onSave: { provider, model in
+                                onSave: { provider, model, baseUrl in
                                     companionRuntime.saveRuntimeModelSlotConfig(
                                         slot: slot,
                                         provider: provider,
                                         model: model,
+                                        baseUrl: baseUrl,
                                         settings: companionSettings,
                                         identityState: companionEnrollment.identityState
                                     )
@@ -177,13 +182,14 @@ struct HermesRuntimeModelSlotEditorCard: View {
     let systemImage: String
     let provider: String
     let model: String
+    let baseUrl: String
     let providerOptions: [HermesCompanionProviderOption]
     let allowEmptyProvider: Bool
-    let onSave: (String, String) -> Void
+    let onSave: (String, String, String) -> Void
 
     @State private var draftProvider: String
     @State private var draftModel: String
-    @State private var saved = false
+    @State private var draftBaseURL: String
 
     init(
         title: String,
@@ -191,20 +197,23 @@ struct HermesRuntimeModelSlotEditorCard: View {
         systemImage: String,
         provider: String,
         model: String,
+        baseUrl: String,
         providerOptions: [HermesCompanionProviderOption],
         allowEmptyProvider: Bool = false,
-        onSave: @escaping (String, String) -> Void
+        onSave: @escaping (String, String, String) -> Void
     ) {
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
         self.provider = provider
         self.model = model
+        self.baseUrl = baseUrl
         self.providerOptions = providerOptions
         self.allowEmptyProvider = allowEmptyProvider
         self.onSave = onSave
         _draftProvider = State(initialValue: provider.isEmpty && allowEmptyProvider == false ? "auto" : provider)
         _draftModel = State(initialValue: model)
+        _draftBaseURL = State(initialValue: baseUrl)
     }
 
     var body: some View {
@@ -222,11 +231,6 @@ struct HermesRuntimeModelSlotEditorCard: View {
                         .foregroundStyle(.hermesSecondaryText)
                 }
                 Spacer()
-                if saved {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.igOnlineGreen)
-                }
             }
 
             Picker("Provider", selection: $draftProvider) {
@@ -247,22 +251,18 @@ struct HermesRuntimeModelSlotEditorCard: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
 
-            HStack(spacing: 10) {
-                Button("Save") {
-                    onSave(
-                        draftProvider.trimmingCharacters(in: .whitespacesAndNewlines),
-                        draftModel.trimmingCharacters(in: .whitespacesAndNewlines)
-                    )
-                    saved = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
-                }
-                .hermesGlassProminentButton()
+            TextField("Base URL (optional; use Custom for an OpenAI-compatible endpoint)", text: $draftBaseURL)
+                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.06), border: Color.igActionBlue.opacity(0.18))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
 
-                Button("Reset Draft") {
-                    draftProvider = provider.isEmpty && allowEmptyProvider == false ? "auto" : provider
-                    draftModel = model
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    modelActions
                 }
-                .hermesGlassButton()
+                VStack(alignment: .leading, spacing: 10) {
+                    modelActions
+                }
             }
         }
         .padding(18)
@@ -275,5 +275,27 @@ struct HermesRuntimeModelSlotEditorCard: View {
         .onChange(of: model) { _, newValue in
             draftModel = newValue
         }
+        .onChange(of: baseUrl) { _, newValue in
+            draftBaseURL = newValue
+        }
+    }
+
+    @ViewBuilder
+    private var modelActions: some View {
+        Button("Save") {
+            onSave(
+                draftProvider.trimmingCharacters(in: .whitespacesAndNewlines),
+                draftModel.trimmingCharacters(in: .whitespacesAndNewlines),
+                draftBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+        .hermesGlassProminentButton()
+
+        Button("Reset Draft") {
+            draftProvider = provider.isEmpty && allowEmptyProvider == false ? "auto" : provider
+            draftModel = model
+            draftBaseURL = baseUrl
+        }
+        .hermesGlassButton()
     }
 }

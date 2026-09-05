@@ -12,18 +12,15 @@ struct HermesProvidersPanel: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
 
-    @State private var modelProvider = "auto"
-    @State private var modelName = ""
-    @State private var modelBaseURL = ""
-    @State private var savedEnvKey: String?
-    @State private var modelSaved = false
-    @State private var visibleKeys: Set<String> = []
+    @State private var keySearch = ""
     @State private var poolProvider = ""
     @State private var poolNewKey = ""
     @State private var poolNewLabel = ""
     @State private var newEnvKey = ""
     @State private var newEnvCustomKey = ""
     @State private var newEnvValue = ""
+    @State private var providerEnvDrafts: [String: String] = [:]
+    @State private var providerEnvKeyPendingRemoval: String?
 
     private var providerOptions: [HermesCompanionProviderOption] {
         if companionRuntime.providerOptions.isEmpty {
@@ -66,12 +63,14 @@ struct HermesProvidersPanel: View {
     private var configuredProviderEnvFields: [HermesCompanionProviderEnvField] {
         allProviderEnvFields
             .filter { (companionRuntime.providerEnv[$0.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+            .filter { keySearch.isEmpty || $0.label.localizedCaseInsensitiveContains(keySearch) || $0.key.localizedCaseInsensitiveContains(keySearch) }
             .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
     }
 
     private var availableProviderEnvFields: [HermesCompanionProviderEnvField] {
         allProviderEnvFields
             .filter { (companionRuntime.providerEnv[$0.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .filter { keySearch.isEmpty || $0.label.localizedCaseInsensitiveContains(keySearch) || $0.key.localizedCaseInsensitiveContains(keySearch) }
             .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
     }
 
@@ -84,64 +83,6 @@ struct HermesProvidersPanel: View {
                     description: Text("Use Settings → Host Companion to authenticate this iOS device before editing Hermes provider keys, default model configuration, or credential pools on the macOS host.")
                 )
             } else {
-                HermesSectionCard("Provider Model") {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Mirrors the desktop Providers screen: edits `provider`, `default`, and `base_url` in the live Hermes `config.yaml`, enables streaming, and saves the model to the workspace inventory.")
-                            .font(.subheadline)
-                            .foregroundStyle(.hermesSecondaryText)
-
-                        companionSummaryRow(label: "Workspace", value: companionRuntime.resolvedHermesWorkspacePath.isEmpty ? companionSettings.hermesWorkspacePath : companionRuntime.resolvedHermesWorkspacePath)
-                        companionSummaryRow(label: "Config", value: companionRuntime.providerConfigPath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/config.yaml" : companionRuntime.providerConfigPath)
-
-                        if modelSaved {
-                            Label("Saved", systemImage: "checkmark.circle.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.igOnlineGreen)
-                        }
-
-                        Picker("Provider", selection: $modelProvider) {
-                            ForEach(providerOptions) { option in
-                                Text(option.label).tag(option.value)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .onChange(of: modelProvider) { _, newValue in
-                            if newValue == "custom" && modelBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                modelBaseURL = "http://localhost:1234/v1"
-                            }
-                        }
-
-                        Text(modelProvider == "custom" ? "Use a local or OpenAI-compatible custom provider endpoint." : "Choose which provider Hermes should use by default, or keep auto-detect.")
-                            .font(.caption)
-                            .foregroundStyle(.hermesSecondaryText)
-
-                        TextField("Model name, e.g. anthropic/claude-sonnet-4", text: $modelName)
-                            .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-
-                        if modelProvider == "custom" {
-                            TextField("Base URL, e.g. http://localhost:1234/v1", text: $modelBaseURL)
-                                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                        }
-
-                        Button("Save Model Configuration") {
-                            companionRuntime.saveProviderModelConfig(
-                                provider: modelProvider.trimmingCharacters(in: .whitespacesAndNewlines),
-                                model: modelName.trimmingCharacters(in: .whitespacesAndNewlines),
-                                baseUrl: modelBaseURL.trimmingCharacters(in: .whitespacesAndNewlines),
-                                settings: companionSettings,
-                                identityState: companionEnrollment.identityState
-                            )
-                            modelSaved = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { modelSaved = false }
-                        }
-                        .hermesGlassProminentButton()
-                    }
-                }
-
                 HermesSectionCard("Credential Pool") {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Stores multiple API keys per provider in `auth.json`, matching the desktop credential pool.")
@@ -211,6 +152,11 @@ struct HermesProvidersPanel: View {
                             .font(.subheadline)
                             .foregroundStyle(.hermesSecondaryText)
                         companionSummaryRow(label: "Env File", value: companionRuntime.providerEnvFilePath.isEmpty ? "\(companionSettings.hermesWorkspacePath)/.env" : companionRuntime.providerEnvFilePath)
+
+                        TextField("Search keys", text: $keySearch)
+                            .hermesRuntimeInput()
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
 
                         if configuredProviderEnvFields.isEmpty {
                             ContentUnavailableView(
@@ -303,11 +249,31 @@ struct HermesProvidersPanel: View {
             guard companionEnrollment.identityState.isEnrolled else { return }
             companionRuntime.refreshProvidersConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
         }
-        .onChange(of: companionRuntime.providerModelConfig) { _, newValue in
-            syncModelState(newValue)
+        .onDisappear {
+            providerEnvDrafts.removeAll()
         }
-        .onAppear {
-            syncModelState(companionRuntime.providerModelConfig)
+        .alert(
+            "Remove provider key?",
+            isPresented: Binding(
+                get: { providerEnvKeyPendingRemoval != nil },
+                set: { if !$0 { providerEnvKeyPendingRemoval = nil } }
+            ),
+            presenting: providerEnvKeyPendingRemoval
+        ) { key in
+            Button("Remove", role: .destructive) {
+                companionRuntime.removeProviderEnvValue(
+                    key: key,
+                    settings: companionSettings,
+                    identityState: companionEnrollment.identityState
+                )
+                providerEnvDrafts[key] = nil
+                providerEnvKeyPendingRemoval = nil
+            }
+            Button("Cancel", role: .cancel) {
+                providerEnvKeyPendingRemoval = nil
+            }
+        } message: { key in
+            Text("This removes \(key) from the host .env file.")
         }
     }
 
@@ -337,19 +303,16 @@ struct HermesProvidersPanel: View {
                         .foregroundStyle(.hermesSecondaryText.opacity(0.85))
                 }
                 Spacer()
-                if savedEnvKey == field.key {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
+                if isConfigured(field) {
+                    Label("Configured", systemImage: "checkmark.circle.fill")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.igOnlineGreen)
                 }
             }
 
+            let binding = providerEnvDraftBinding(for: field.key)
             HStack(spacing: 8) {
-                let binding = Binding<String>(
-                    get: { companionRuntime.providerEnv[field.key] ?? "" },
-                    set: { companionRuntime.providerEnv[field.key] = $0 }
-                )
-                if field.type == "password" && visibleKeys.contains(field.key) == false {
+                if field.type == "password" {
                     SecureField(field.label, text: binding)
                         .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                         .textInputAutocapitalization(.never)
@@ -360,30 +323,15 @@ struct HermesProvidersPanel: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
-
-                if field.type == "password" {
-                    Button(visibleKeys.contains(field.key) ? "Hide" : "Show") {
-                        if visibleKeys.contains(field.key) { visibleKeys.remove(field.key) } else { visibleKeys.insert(field.key) }
-                    }
-                    .hermesGlassButton()
-                }
             }
 
-            HStack {
-                Button("Save") { saveProviderEnvField(field) }
-                    .hermesGlassProminentButton()
-                Button(role: .destructive) {
-                    companionRuntime.removeProviderEnvValue(
-                        key: field.key,
-                        settings: companionSettings,
-                        identityState: companionEnrollment.identityState
-                    )
-                    savedEnvKey = nil
-                    visibleKeys.remove(field.key)
-                } label: {
-                    Label("Remove", systemImage: "trash")
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    saveAndRemoveActions(for: field)
                 }
-                .hermesGlassButton()
+                VStack(alignment: .leading) {
+                    saveAndRemoveActions(for: field)
+                }
             }
         }
         .padding(12)
@@ -398,19 +346,16 @@ struct HermesProvidersPanel: View {
                 Text(field.label)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.hermesSecondaryText)
-                if savedEnvKey == field.key {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
+                if isConfigured(field) {
+                    Label("Configured", systemImage: "checkmark.circle.fill")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.igOnlineGreen)
                 }
             }
 
+            let binding = providerEnvDraftBinding(for: field.key)
             HStack(spacing: 8) {
-                let binding = Binding<String>(
-                    get: { companionRuntime.providerEnv[field.key] ?? "" },
-                    set: { companionRuntime.providerEnv[field.key] = $0 }
-                )
-                if field.type == "password" && visibleKeys.contains(field.key) == false {
+                if field.type == "password" {
                     SecureField(field.label, text: binding)
                         .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                         .textInputAutocapitalization(.never)
@@ -420,13 +365,6 @@ struct HermesProvidersPanel: View {
                         .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                }
-
-                if field.type == "password" {
-                    Button(visibleKeys.contains(field.key) ? "Hide" : "Show") {
-                        if visibleKeys.contains(field.key) { visibleKeys.remove(field.key) } else { visibleKeys.insert(field.key) }
-                    }
-                    .hermesGlassButton()
                 }
             }
 
@@ -438,6 +376,7 @@ struct HermesProvidersPanel: View {
                 saveProviderEnvField(field)
             }
             .hermesGlassButton()
+            .disabled(providerEnvDraft(for: field.key).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(12)
         .background(Color.hermesSurfaceInput)
@@ -450,14 +389,15 @@ struct HermesProvidersPanel: View {
     }
 
     private func saveProviderEnvField(_ field: HermesCompanionProviderEnvField) {
+        let value = providerEnvDraft(for: field.key).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
         companionRuntime.setProviderEnvValue(
             key: field.key,
-            value: companionRuntime.providerEnv[field.key] ?? "",
+            value: value,
             settings: companionSettings,
             identityState: companionEnrollment.identityState
         )
-        savedEnvKey = field.key
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedEnvKey = nil }
+        providerEnvDrafts[field.key] = nil
     }
 
     private func addProviderEnvKey() {
@@ -470,17 +410,37 @@ struct HermesProvidersPanel: View {
             settings: companionSettings,
             identityState: companionEnrollment.identityState
         )
-        savedEnvKey = key
         newEnvKey = ""
         newEnvCustomKey = ""
         newEnvValue = ""
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedEnvKey = nil }
     }
 
-    private func syncModelState(_ config: HermesCompanionProviderModelConfig) {
-        modelProvider = config.provider
-        modelName = config.model
-        modelBaseURL = config.baseUrl
+    private func providerEnvDraft(for key: String) -> String {
+        providerEnvDrafts[key] ?? ""
+    }
+
+    private func providerEnvDraftBinding(for key: String) -> Binding<String> {
+        Binding(
+            get: { providerEnvDraft(for: key) },
+            set: { providerEnvDrafts[key] = $0 }
+        )
+    }
+
+    private func isConfigured(_ field: HermesCompanionProviderEnvField) -> Bool {
+        (companionRuntime.providerEnv[field.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    @ViewBuilder
+    private func saveAndRemoveActions(for field: HermesCompanionProviderEnvField) -> some View {
+        Button("Save") { saveProviderEnvField(field) }
+            .hermesGlassProminentButton()
+            .disabled(providerEnvDraft(for: field.key).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        Button(role: .destructive) {
+            providerEnvKeyPendingRemoval = field.key
+        } label: {
+            Label("Remove", systemImage: "trash")
+        }
+        .hermesGlassButton()
     }
 
     private func addPoolKey() {

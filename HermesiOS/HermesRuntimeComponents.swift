@@ -182,7 +182,7 @@ struct HermesToolsetToggleRow: View {
         .hermesLiquidGlass(cornerRadius: 18, tint: isEnabled ? .igOnlineGreen.opacity(0.06) : .white.opacity(0.03))
     }
 }
-enum HermesRuntimePanelKind: String, Identifiable {
+enum HermesRuntimePanelKind: String, Identifiable, Hashable {
     case skills
     case companion
     case profiles

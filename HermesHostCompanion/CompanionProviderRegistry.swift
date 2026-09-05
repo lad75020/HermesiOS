@@ -4,11 +4,14 @@ import Foundation
 enum CompanionProviderRegistryError: LocalizedError {
     case invalidWorkspace(String)
     case invalidKey(String)
+    case unsupportedCredentialPoolWrite
 
     var errorDescription: String? {
         switch self {
         case .invalidWorkspace(let path):
             return "The Hermes workspace path '\(path)' is invalid."
+        case .unsupportedCredentialPoolWrite:
+            return "Credential pool editing is disabled: this client cannot safely preserve native Hermes OAuth, refresh, status and inherited credential metadata. Use Hermes auth on the host."
         case .invalidKey(let key):
             return "The environment key '\(key)' is not allowlisted for provider settings."
         }
@@ -106,8 +109,9 @@ final class CompanionProviderRegistry {
     func setEnv(workspacePath: String, key: String, value: String) throws -> SetProviderEnvResult {
         guard isAllowedProviderEnvKey(key) else { throw CompanionProviderRegistryError.invalidKey(key) }
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
+        try CompanionRuntimeConfigSafety.validateEnvReplacement(value)
         try writeEnvValue(workspaceURL: workspaceURL, key: key, value: value)
-        return SetProviderEnvResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, key: key, value: value, envFilePath: envURL(for: workspaceURL).path)
+        return SetProviderEnvResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, key: key, value: readEnv(workspaceURL: workspaceURL)[key] ?? "", envFilePath: envURL(for: workspaceURL).path)
     }
 
     func removeEnv(workspacePath: String, key: String) throws -> RemoveProviderEnvResult {
@@ -129,18 +133,16 @@ final class CompanionProviderRegistry {
         return SetProviderModelConfigResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, configPath: configURL(for: workspaceURL).path, modelConfig: ProviderModelConfig(provider: provider, model: model, baseUrl: baseUrl))
     }
 
-    func setRuntimeModelSlot(workspacePath: String, section: String, key: String, provider: String, model: String) throws -> SetRuntimeModelSlotResult {
+    func setRuntimeModelSlot(workspacePath: String, section: String, key: String, provider: String, model: String, baseUrl: String?) throws -> SetRuntimeModelSlotResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        let slot = try writeRuntimeModelSlot(workspaceURL: workspaceURL, section: section, key: key, provider: provider, model: model)
+        let slot = try writeRuntimeModelSlot(workspaceURL: workspaceURL, section: section, key: key, provider: provider, model: model, baseUrl: baseUrl)
         return SetRuntimeModelSlotResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, configPath: configURL(for: workspaceURL).path, slot: slot)
     }
 
     func setCredentialPool(workspacePath: String, provider: String, entries: [ProviderCredentialEntry]) throws -> SetCredentialPoolResult {
-        let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        var pool = readCredentialPool(workspaceURL: workspaceURL)
-        pool[provider] = entries
-        try writeCredentialPool(workspaceURL: workspaceURL, pool: pool)
-        return SetCredentialPoolResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, authFilePath: authURL(for: workspaceURL).path, credentialPool: pool)
+        // Reject before resolving or opening auth.json. The legacy whole-pool
+        // payload has no opaque IDs/provenance and cannot represent native entries.
+        throw CompanionProviderRegistryError.unsupportedCredentialPoolWrite
     }
 
     private func isAllowedProviderEnvKey(_ key: String) -> Bool {
@@ -188,23 +190,12 @@ final class CompanionProviderRegistry {
 
     private func readEnv(workspaceURL: URL) -> [String: String] {
         guard let content = try? String(contentsOf: envURL(for: workspaceURL), encoding: .utf8) else { return [:] }
-        var result: [String: String] = [:]
-        for line in content.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("#") || !trimmed.contains("=") { continue }
-            let parts = trimmed.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            guard parts.count == 2 else { continue }
-            let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-            var value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            if (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) { value = String(value.dropFirst().dropLast()) }
-            if !value.isEmpty { result[key] = value }
-        }
-        return result
+        return CompanionRuntimeConfigSafety.envMetadata(content: content, allowedKey: isAllowedProviderEnvKey)
     }
 
     private func writeEnvValue(workspaceURL: URL, key: String, value: String) throws {
         let url = envURL(for: workspaceURL)
-        var lines = (try? String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")) ?? []
+        var lines = try CompanionRuntimeConfigSafety.read(url).components(separatedBy: "\n")
         if lines == [""] { lines = [] }
         let keyPattern = NSRegularExpression.escapedPattern(for: key)
         let assignmentPattern = "^#?\\s*" + keyPattern + "\\s*="
@@ -223,7 +214,7 @@ final class CompanionProviderRegistry {
 
     private func removeEnvValue(workspaceURL: URL, key: String) throws {
         let url = envURL(for: workspaceURL)
-        var lines = (try? String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")) ?? []
+        var lines = try CompanionRuntimeConfigSafety.read(url).components(separatedBy: "\n")
         let keyPattern = NSRegularExpression.escapedPattern(for: key)
         let assignmentPattern = "^#?\\s*" + keyPattern + "\\s*="
         lines.removeAll { line in
@@ -254,7 +245,8 @@ final class CompanionProviderRegistry {
             section: "delegation",
             key: "delegation",
             provider: readYAMLScalar(content: content, section: "delegation", key: "provider") ?? "",
-            model: readYAMLScalar(content: content, section: "delegation", key: "model") ?? ""
+            model: readYAMLScalar(content: content, section: "delegation", key: "model") ?? "",
+            baseUrl: readYAMLScalar(content: content, section: "delegation", key: "base_url") ?? ""
         )
     }
 
@@ -267,7 +259,8 @@ final class CompanionProviderRegistry {
                 section: "auxiliary",
                 key: slot.key,
                 provider: readYAMLScalar(content: content, section: "auxiliary", child: slot.key, key: "provider") ?? "",
-                model: readYAMLScalar(content: content, section: "auxiliary", child: slot.key, key: "model") ?? ""
+                model: readYAMLScalar(content: content, section: "auxiliary", child: slot.key, key: "model") ?? "",
+                baseUrl: readYAMLScalar(content: content, section: "auxiliary", child: slot.key, key: "base_url") ?? ""
             )
         }
     }
@@ -329,19 +322,21 @@ final class CompanionProviderRegistry {
         try write(content, to: url)
     }
 
-    private func writeRuntimeModelSlot(workspaceURL: URL, section: String, key: String, provider: String, model: String) throws -> RuntimeModelSlotConfig {
+    private func writeRuntimeModelSlot(workspaceURL: URL, section: String, key: String, provider: String, model: String, baseUrl: String?) throws -> RuntimeModelSlotConfig {
         let url = configURL(for: workspaceURL)
         var content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         let slot: RuntimeModelSlotConfig
         if section == "delegation" {
             content = setYAMLScalar(content: content, section: "delegation", key: "provider", value: provider)
             content = setYAMLScalar(content: content, section: "delegation", key: "model", value: model)
-            slot = RuntimeModelSlotConfig(id: "delegation", label: "Delegation", section: "delegation", key: "delegation", provider: provider, model: model)
+            if let baseUrl { content = setYAMLScalar(content: content, section: "delegation", key: "base_url", value: baseUrl) }
+            slot = RuntimeModelSlotConfig(id: "delegation", label: "Delegation", section: "delegation", key: "delegation", provider: provider, model: model, baseUrl: baseUrl ?? readYAMLScalar(content: content, section: "delegation", key: "base_url") ?? "")
         } else {
             let label = Self.auxiliaryModelSlots.first(where: { $0.key == key })?.label ?? key
             content = setYAMLScalar(content: content, section: "auxiliary", child: key, key: "provider", value: provider)
             content = setYAMLScalar(content: content, section: "auxiliary", child: key, key: "model", value: model)
-            slot = RuntimeModelSlotConfig(id: "auxiliary.\(key)", label: label, section: "auxiliary", key: key, provider: provider, model: model)
+            if let baseUrl { content = setYAMLScalar(content: content, section: "auxiliary", child: key, key: "base_url", value: baseUrl) }
+            slot = RuntimeModelSlotConfig(id: "auxiliary.\(key)", label: label, section: "auxiliary", key: key, provider: provider, model: model, baseUrl: baseUrl ?? readYAMLScalar(content: content, section: "auxiliary", child: key, key: "base_url") ?? "")
         }
         try write(content, to: url)
         return slot
@@ -476,18 +471,9 @@ final class CompanionProviderRegistry {
               let pool = object["credential_pool"] as? [String: [[String: Any]]] else { return [:] }
         var result: [String: [ProviderCredentialEntry]] = [:]
         for (provider, entries) in pool {
-            result[provider] = entries.map { ProviderCredentialEntry(key: $0["key"] as? String ?? "", label: $0["label"] as? String ?? "") }
+            result[provider] = entries.map { ProviderCredentialEntry(key: "", label: $0["label"] as? String ?? "Credential") }
         }
         return result
-    }
-
-    private func writeCredentialPool(workspaceURL: URL, pool: [String: [ProviderCredentialEntry]]) throws {
-        let url = authURL(for: workspaceURL)
-        var object = ((try? Data(contentsOf: url)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) ?? [:]
-        object["credential_pool"] = pool.mapValues { entries in entries.map { ["key": $0.key, "label": $0.label] } }
-        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
-        try data.write(to: url, options: [.atomic])
     }
 
     private func firstMatch(in content: String, pattern: String) -> String? {

@@ -91,6 +91,7 @@
       }
     },
     "Apply Network Target" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -431,12 +432,6 @@
 
     },
     "Rotating expires the displayed QR code. Already approved devices keep working until revoked." : {
-
-    },
-    "Save QR Settings" : {
-
-    },
-    "Save Service Ports" : {
 
     },
     "Saving is immediate; restart HermesiOS or check device approval again to refresh cached ports on iOS." : {

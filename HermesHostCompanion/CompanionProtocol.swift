@@ -363,14 +363,22 @@ struct CompanionHermesSkillSummary: Codable, Identifiable {
 enum MCPServerTransport: String, Codable, CaseIterable {
     case stdio
     case streamableHTTP
+    case openAPI
 }
 
 struct ListMCPServersResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
     let servers: [CompanionMCPServerSummary]
     let output: String
 }
 
+struct ListMCPServersPayload: Codable {
+    let workspacePath: String
+}
+
 struct AddMCPServerPayload: Codable {
+    let workspacePath: String
     let name: String
     let transport: MCPServerTransport
     let command: String
@@ -380,10 +388,13 @@ struct AddMCPServerPayload: Codable {
 }
 
 struct RemoveMCPServerPayload: Codable {
+    let workspacePath: String
     let name: String
 }
 
 struct MCPServerOperationResult: Codable {
+    let workspacePath: String
+    let resolvedWorkspacePath: String
     let serverName: String
     let output: String
     let servers: [CompanionMCPServerSummary]
@@ -610,6 +621,23 @@ struct RuntimeModelSlotConfig: Codable, Identifiable {
     let key: String
     let provider: String
     let model: String
+    let baseUrl: String
+
+    init(id: String, label: String, section: String, key: String, provider: String, model: String, baseUrl: String = "") {
+        self.id = id; self.label = label; self.section = section; self.key = key; self.provider = provider; self.model = model; self.baseUrl = baseUrl
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, label, section, key, provider, model, baseUrl }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        label = try values.decode(String.self, forKey: .label)
+        section = try values.decode(String.self, forKey: .section)
+        key = try values.decode(String.self, forKey: .key)
+        provider = try values.decode(String.self, forKey: .provider)
+        model = try values.decode(String.self, forKey: .model)
+        baseUrl = try values.decodeIfPresent(String.self, forKey: .baseUrl) ?? ""
+    }
 }
 
 struct ProviderCredentialEntry: Codable, Identifiable {
@@ -690,6 +718,8 @@ struct SetRuntimeModelSlotPayload: Codable {
     let key: String
     let provider: String
     let model: String
+    /// Nil means an older client omitted this field; preserve the existing YAML value.
+    let baseUrl: String?
 }
 
 struct SetRuntimeModelSlotResult: Codable {
@@ -960,6 +990,8 @@ struct ScheduleCronJob: Codable, Identifiable {
     let id: String
     let name: String
     let schedule: String
+    /// The scheduler expression, kept separate from the friendly display value.
+    let rawSchedule: String
     let prompt: String
     let state: String
     let enabled: Bool
@@ -971,6 +1003,27 @@ struct ScheduleCronJob: Codable, Identifiable {
     let deliver: [String]
     let skills: [String]
     let script: String?
+    let provider: String?
+    let model: String?
+    let baseUrl: String?
+
+    init(id: String, name: String, schedule: String, rawSchedule: String, prompt: String, state: String, enabled: Bool, nextRunAt: String?, lastRunAt: String?, lastStatus: String?, lastError: String?, repeatInfo: ScheduleRepeatInfo?, deliver: [String], skills: [String], script: String?, provider: String?, model: String?, baseUrl: String?) {
+        self.id = id; self.name = name; self.schedule = schedule; self.rawSchedule = rawSchedule; self.prompt = prompt; self.state = state; self.enabled = enabled; self.nextRunAt = nextRunAt; self.lastRunAt = lastRunAt; self.lastStatus = lastStatus; self.lastError = lastError; self.repeatInfo = repeatInfo; self.deliver = deliver; self.skills = skills; self.script = script; self.provider = provider; self.model = model; self.baseUrl = baseUrl
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, schedule, rawSchedule, prompt, state, enabled, nextRunAt, lastRunAt, lastStatus, lastError, repeatInfo, deliver, skills, script, provider, model, baseUrl }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id); name = try values.decode(String.self, forKey: .name)
+        schedule = try values.decode(String.self, forKey: .schedule)
+        rawSchedule = try values.decodeIfPresent(String.self, forKey: .rawSchedule) ?? schedule
+        prompt = try values.decode(String.self, forKey: .prompt); state = try values.decode(String.self, forKey: .state); enabled = try values.decode(Bool.self, forKey: .enabled)
+        nextRunAt = try values.decodeIfPresent(String.self, forKey: .nextRunAt); lastRunAt = try values.decodeIfPresent(String.self, forKey: .lastRunAt); lastStatus = try values.decodeIfPresent(String.self, forKey: .lastStatus); lastError = try values.decodeIfPresent(String.self, forKey: .lastError)
+        repeatInfo = try values.decodeIfPresent(ScheduleRepeatInfo.self, forKey: .repeatInfo)
+        deliver = try values.decodeIfPresent([String].self, forKey: .deliver) ?? []
+        skills = try values.decodeIfPresent([String].self, forKey: .skills) ?? []
+        script = try values.decodeIfPresent(String.self, forKey: .script); provider = try values.decodeIfPresent(String.self, forKey: .provider); model = try values.decodeIfPresent(String.self, forKey: .model); baseUrl = try values.decodeIfPresent(String.self, forKey: .baseUrl)
+    }
 }
 
 struct ListSchedulesPayload: Codable {
@@ -991,6 +1044,23 @@ struct CreateSchedulePayload: Codable {
     let prompt: String?
     let name: String?
     let deliver: String?
+    let provider: String?
+    let model: String?
+    let baseUrl: String?
+}
+
+/// Optional fields deliberately distinguish an omitted edit from an explicit
+/// empty value, which Hermes CLI interprets as clearing the corresponding pin.
+struct EditSchedulePayload: Codable {
+    let workspacePath: String
+    let jobID: String
+    let schedule: String?
+    let prompt: String?
+    let name: String?
+    let deliver: String?
+    let provider: String?
+    let model: String?
+    let baseUrl: String?
 }
 
 struct ScheduleOperationPayload: Codable {
@@ -1094,6 +1164,11 @@ enum CompanionValidatorSpec: Codable, Equatable {
 enum CompanionWorkspaceSecurity {
     private static let fileManager = FileManager.default
 
+    struct HermesCLIContext {
+        let cliRootURL: URL
+        let selectedHomeURL: URL
+    }
+
     static func resolvedHermesWorkspaceURL(
         from rawPath: String,
         defaultPath: String = "~/.hermes",
@@ -1143,6 +1218,27 @@ enum CompanionWorkspaceSecurity {
             guard seen.insert(url.path).inserted else { return nil }
             return url
         }
+    }
+
+    /// Resolves the executable from an approved Hermes root while retaining a
+    /// selected named profile as HERMES_HOME. A profile is accepted only when it
+    /// is a direct child of that root's `profiles` directory.
+    static func resolvedHermesCLIContext(from rawPath: String) -> HermesCLIContext? {
+        guard let selectedHomeURL = resolvedHermesWorkspaceURL(from: rawPath) else { return nil }
+        for rootURL in approvedHermesRoots(preferredWorkspacePath: nil) {
+            let cliURL = rootURL.appendingPathComponent("hermes-agent/hermes")
+            guard fileManager.fileExists(atPath: cliURL.path) else { continue }
+            if selectedHomeURL == rootURL {
+                return HermesCLIContext(cliRootURL: rootURL, selectedHomeURL: selectedHomeURL)
+            }
+            let profilesURL = rootURL.appendingPathComponent("profiles", isDirectory: true)
+            guard selectedHomeURL.deletingLastPathComponent() == profilesURL,
+                  selectedHomeURL.lastPathComponent.isEmpty == false,
+                  isDescendant(selectedHomeURL, of: profilesURL)
+            else { continue }
+            return HermesCLIContext(cliRootURL: rootURL, selectedHomeURL: selectedHomeURL)
+        }
+        return nil
     }
 
     static func isDescendant(_ url: URL, of root: URL) -> Bool {

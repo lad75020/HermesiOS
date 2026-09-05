@@ -200,24 +200,22 @@ final class CompanionProfileRegistry {
             try FileManager.default.copyItem(at: defaultConfigURL, to: configURL)
         }
         try writeModelFields(configURL: configURL, provider: provider, model: model, baseUrl: baseUrl)
-        try syncOptionalFile(fileName: ".env", enabled: createEnv, profileURL: profileURL, workspaceURL: workspaceURL)
-        try syncOptionalFile(fileName: "SOUL.md", enabled: createSoul, profileURL: profileURL, workspaceURL: workspaceURL)
+        // Editing a profile must never turn an unchecked UI toggle into an
+        // implicit destructive delete. These flags only create a missing file;
+        // existing profile files are always preserved.
+        try Self.createOptionalFileIfMissing(fileName: ".env", enabled: createEnv, profileURL: profileURL)
+        try Self.createOptionalFileIfMissing(fileName: "SOUL.md", enabled: createSoul, profileURL: profileURL)
     }
 
-    private func syncOptionalFile(fileName: String, enabled: Bool, profileURL: URL, workspaceURL: URL) throws {
+    // Create means empty, not clone. Never read the root .env or SOUL here.
+    static func createOptionalFileIfMissing(fileName: String, enabled: Bool, profileURL: URL) throws {
+        guard enabled else { return }
         let destinationURL = profileURL.appendingPathComponent(fileName)
-        if enabled {
-            if !FileManager.default.fileExists(atPath: destinationURL.path) {
-                let sourceURL = workspaceURL.appendingPathComponent(fileName)
-                if FileManager.default.fileExists(atPath: sourceURL.path) {
-                    try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-                } else {
-                    try "".write(to: destinationURL, atomically: true, encoding: .utf8)
-                }
-            }
-        } else if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
-        }
+        // O_EXCL also protects dangling symlinks and a concurrent file creator.
+        let fd = open(destinationURL.path, O_WRONLY | O_CREAT | O_EXCL, mode_t(0o600))
+        if fd >= 0 { close(fd); return }
+        if errno == EEXIST { return }
+        throw CocoaError(.fileWriteUnknown)
     }
 
     private func cloneDefaultSkills(profileURL: URL, workspaceURL: URL) throws {
@@ -300,21 +298,24 @@ final class CompanionProfileRegistry {
     private func normalizedProfileName(_ name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
-        guard !trimmed.isEmpty, trimmed.rangeOfCharacter(from: allowed.inverted) == nil else {
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("."), trimmed.rangeOfCharacter(from: allowed.inverted) == nil else {
             throw CompanionProfileRegistryError.invalidProfileName
         }
         return trimmed
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
-        guard let workspaceURL = CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: workspacePath, requireHermesCLI: true) else {
+        guard let workspaceURL = CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: workspacePath)?.selectedHomeURL else {
             throw CompanionProfileRegistryError.invalidWorkspace(workspacePath)
         }
         return workspaceURL
     }
 
     private func runProfileCommand(args: [String], workspaceURL: URL) -> (success: Bool, output: String, error: String?) {
-        let repoURL = workspaceURL.appendingPathComponent("hermes-agent")
+        guard let cliContext = CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: workspaceURL.path) else {
+            return (false, "", "Hermes CLI root could not be resolved for \(workspaceURL.path)")
+        }
+        let repoURL = cliContext.cliRootURL.appendingPathComponent("hermes-agent")
         let scriptURL = repoURL.appendingPathComponent("hermes")
         let pythonURL = repoURL.appendingPathComponent("venv/bin/python")
         guard FileManager.default.fileExists(atPath: scriptURL.path) else {
@@ -331,9 +332,9 @@ final class CompanionProfileRegistry {
         }
         process.currentDirectoryURL = repoURL
         var env = ProcessInfo.processInfo.environment
-        env["HERMES_HOME"] = workspaceURL.path
+        env["HERMES_HOME"] = cliContext.selectedHomeURL.path
         env["HOME"] = NSHomeDirectory()
-        env["PATH"] = enhancedPath(workspaceURL: workspaceURL, existing: env["PATH"] ?? "")
+        env["PATH"] = enhancedPath(workspaceURL: cliContext.cliRootURL, existing: env["PATH"] ?? "")
         process.environment = env
 
         let stdout = Pipe()

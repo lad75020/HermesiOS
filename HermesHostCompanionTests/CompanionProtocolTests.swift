@@ -3,6 +3,117 @@ import XCTest
 @testable import HermesHostCompanion
 
 final class CompanionProtocolTests: XCTestCase {
+    func testCronEditArgumentsOmitUnchangedPinsAndClearExplicitEmptyPins() throws {
+        let args = try CompanionScheduleRegistry.editArguments(
+            jobID: "job-1",
+            schedule: nil,
+            prompt: nil,
+            name: nil,
+            deliver: "",
+            provider: nil,
+            model: "",
+            baseUrl: nil
+        )
+
+        XCTAssertEqual(args, ["edit", "job-1", "--deliver=", "--model="])
+    }
+
+    func testCronCreateArgumentsKeepHyphenPrefixedValuesAttachedToFlags() throws {
+        let args = try CompanionScheduleRegistry.createArguments(
+            schedule: "0 9 * * *",
+            prompt: "Run the report",
+            name: "-morning",
+            deliver: "local",
+            provider: "-custom",
+            model: "-model",
+            baseUrl: nil
+        )
+
+        XCTAssertEqual(args, [
+            "create", "0 9 * * *", "Run the report",
+            "--name=-morning", "--deliver=local", "--provider=-custom", "--model=-model"
+        ])
+    }
+
+    func testCronArgumentsRejectBaseURLRatherThanInventingAnUnsupportedCLIFlag() {
+        XCTAssertThrowsError(try CompanionScheduleRegistry.editArguments(
+            jobID: "job-1", schedule: nil, prompt: nil, name: nil, deliver: nil,
+            provider: nil, model: nil, baseUrl: "http://127.0.0.1:8000/v1"
+        )) { error in
+            guard case CompanionScheduleRegistryError.unsupportedBaseURLPin = error else {
+                return XCTFail("Expected the unsupported base URL error, got \(error)")
+            }
+        }
+    }
+
+    func testScheduleNormalizationKeepsRawExpressionAndProviderPins() throws {
+        let job = try XCTUnwrap(CompanionScheduleRegistry.normalizeJob([
+            "id": "job-1",
+            "name": "Morning report",
+            "schedule": ["value": "0 9 * * *"],
+            "schedule_display": "Every day at 09:00",
+            "prompt": "Report",
+            "provider": "ollama",
+            "model": "qwen3",
+            "base_url": "http://127.0.0.1:11434/v1",
+            "deliver": "local"
+        ], includeDisabled: true))
+
+        XCTAssertEqual(job.schedule, "Every day at 09:00")
+        XCTAssertEqual(job.rawSchedule, "0 9 * * *")
+        XCTAssertEqual(job.provider, "ollama")
+        XCTAssertEqual(job.model, "qwen3")
+        XCTAssertEqual(job.baseUrl, "http://127.0.0.1:11434/v1")
+    }
+
+    func testRuntimeModelSlotPayloadPreservesBaseURL() throws {
+        let payload = SetRuntimeModelSlotPayload(
+            workspacePath: "/tmp/runtime",
+            section: "auxiliary",
+            key: "vision",
+            provider: "custom",
+            model: "local/vision",
+            baseUrl: "http://127.0.0.1:8000/v1"
+        )
+        let decoded = try JSONDecoder().decode(SetRuntimeModelSlotPayload.self, from: JSONEncoder().encode(payload))
+        XCTAssertEqual(decoded.baseUrl, "http://127.0.0.1:8000/v1")
+    }
+
+    func testOldRuntimeSlotAndSchedulePayloadsDecodeWithCompatibilityDefaults() throws {
+        let oldSlot = try JSONDecoder().decode(RuntimeModelSlotConfig.self, from: Data(#"{"id":"delegation","label":"Delegation","section":"delegation","key":"delegation","provider":"custom","model":"local/model"}"#.utf8))
+        XCTAssertEqual(oldSlot.baseUrl, "")
+
+        let oldSchedule = try JSONDecoder().decode(ScheduleCronJob.self, from: Data(#"{"id":"job","name":"Job","schedule":"0 9 * * *","prompt":"run","state":"active","enabled":true}"#.utf8))
+        XCTAssertEqual(oldSchedule.rawSchedule, "0 9 * * *")
+    }
+
+    func testOldSlotEditPayloadKeepsBaseURLOmitted() throws {
+        let payload = try JSONDecoder().decode(SetRuntimeModelSlotPayload.self, from: Data(#"{"workspacePath":"/tmp/runtime","section":"delegation","key":"delegation","provider":"custom","model":"local/model"}"#.utf8))
+        XCTAssertNil(payload.baseUrl)
+    }
+
+    func testMCPPayloadsCarryTheSelectedProfileWorkspace() throws {
+        let add = AddMCPServerPayload(
+            workspacePath: "/tmp/hermes/profiles/work",
+            name: "fixture",
+            transport: .openAPI,
+            command: "",
+            arguments: "",
+            url: "https://example.test/openapi.json",
+            bearerToken: "fixture-secret"
+        )
+        let decoded = try JSONDecoder().decode(AddMCPServerPayload.self, from: JSONEncoder().encode(add))
+        XCTAssertEqual(decoded.workspacePath, "/tmp/hermes/profiles/work")
+        XCTAssertEqual(decoded.transport, .openAPI)
+    }
+
+    func testMCPInventoryFixtureHasNoCredentialFields() throws {
+        let fixture = Data(#"{"workspacePath":"/tmp/hermes","resolvedWorkspacePath":"/tmp/hermes","output":"Loaded selected Hermes profile.","servers":[{"id":"fixture","name":"fixture","transport":"Streamable HTTP","tools":"all","status":"enabled"}]}"#.utf8)
+        let decoded = try JSONDecoder().decode(ListMCPServersResult.self, from: fixture)
+        XCTAssertEqual(decoded.servers.first?.name, "fixture")
+        XCTAssertEqual(decoded.servers.first?.tools, "all")
+        XCTAssertEqual(decoded.servers.first?.status, "enabled")
+    }
     private struct EchoPayload: Codable, Equatable {
         let message: String
         let count: Int

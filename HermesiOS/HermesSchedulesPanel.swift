@@ -13,6 +13,7 @@ struct HermesSchedulesPanel: View {
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
 
     @State private var showCreateForm = false
+    @State private var editingJob: HermesCompanionScheduleCronJob?
     @State private var confirmDeleteJobID: String?
     @State private var newName = ""
     @State private var newPrompt = ""
@@ -24,6 +25,16 @@ struct HermesSchedulesPanel: View {
     @State private var weeklyDay = "1"
     @State private var weeklyTime = "09:00"
     @State private var customCron = ""
+    @State private var newProvider = ""
+    @State private var newModel = ""
+    @State private var newBaseURL = ""
+    @State private var editName = ""
+    @State private var editRawSchedule = ""
+    @State private var editPrompt = ""
+    @State private var editDeliver = "local"
+    @State private var editProvider = ""
+    @State private var editModel = ""
+    @State private var editBaseURL = ""
 
     private let deliverTargets: [(String, String)] = [
         ("local", "Local"), ("origin", "Origin"), ("telegram", "Telegram"), ("discord", "Discord"),
@@ -116,12 +127,6 @@ struct HermesSchedulesPanel: View {
                     }
                 }
 
-                if showCreateForm {
-                    HermesSectionCard("New Scheduled Task") {
-                        createForm
-                    }
-                }
-
                 HermesSectionCard("Scheduled Jobs") {
                     if companionRuntime.schedules.isEmpty {
                         ContentUnavailableView(
@@ -142,6 +147,35 @@ struct HermesSchedulesPanel: View {
         .onAppear {
             if companionEnrollment.identityState.isEnrolled, companionRuntime.schedules.isEmpty {
                 companionRuntime.refreshSchedules(settings: companionSettings, identityState: companionEnrollment.identityState)
+            }
+        }
+        .sheet(isPresented: $showCreateForm) {
+            NavigationStack {
+                ScrollView {
+                    createForm
+                        .padding()
+                }
+                .navigationTitle("New Scheduled Task")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showCreateForm = false }
+                    }
+                }
+            }
+        }
+        .sheet(item: $editingJob) { job in
+            NavigationStack {
+                ScrollView {
+                    editForm(job)
+                        .padding()
+                }
+                .navigationTitle("Edit Scheduled Task")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { editingJob = nil }
+                    }
+                }
+                .onAppear { loadEditForm(job) }
             }
         }
     }
@@ -227,6 +261,8 @@ struct HermesSchedulesPanel: View {
             }
             .pickerStyle(.menu)
 
+            schedulePinFields(provider: $newProvider, model: $newModel, baseURL: $newBaseURL)
+
             HStack {
                 Button {
                     let prompt = newPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -236,6 +272,9 @@ struct HermesSchedulesPanel: View {
                         prompt: prompt.isEmpty ? nil : prompt,
                         name: name.isEmpty ? nil : name,
                         deliver: newDeliver == "local" ? nil : newDeliver,
+                        provider: optionalNewValue(newProvider),
+                        model: optionalNewValue(newModel),
+                        baseUrl: optionalNewValue(newBaseURL),
                         settings: companionSettings,
                         identityState: companionEnrollment.identityState
                     )
@@ -251,6 +290,86 @@ struct HermesSchedulesPanel: View {
                     .hermesGlassButton()
             }
         }
+    }
+
+    private func editForm(_ job: HermesCompanionScheduleCronJob) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("The card shows Hermes's friendly schedule. This editor always sends the raw scheduler expression.")
+                .font(.caption)
+                .foregroundStyle(.hermesSecondaryText)
+            TextField("Name", text: $editName)
+                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+            TextField("Raw schedule", text: $editRawSchedule)
+                .hermesRuntimeInput(background: Color.igActionBlue.opacity(0.08), border: Color.igActionBlue.opacity(0.28))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextEditor(text: $editPrompt)
+                .frame(minHeight: 92)
+                .scrollContentBackground(.hidden)
+                .background(Color.hermesSurfaceInput)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            Picker("Deliver to", selection: $editDeliver) {
+                ForEach(deliverTargets, id: \.0) { target in
+                    Text(target.1).tag(target.0)
+                }
+            }
+            .pickerStyle(.menu)
+            schedulePinFields(provider: $editProvider, model: $editModel, baseURL: $editBaseURL)
+            Text("Leave a field unchanged to preserve it. Clear a populated pin deliberately to send Hermes an explicit empty value.")
+                .font(.caption)
+                .foregroundStyle(.hermesSecondaryText)
+            Button {
+                companionRuntime.editSchedule(
+                    jobID: job.id,
+                    schedule: changed(editRawSchedule, from: job.rawSchedule),
+                    prompt: changed(editPrompt, from: job.prompt),
+                    name: changed(editName, from: job.name == "(unnamed)" ? "" : job.name),
+                    deliver: changed(editDeliver, from: job.deliver.first ?? "local"),
+                    provider: changed(editProvider, from: job.provider ?? ""),
+                    model: changed(editModel, from: job.model ?? ""),
+                    baseUrl: changed(editBaseURL, from: job.baseUrl ?? ""),
+                    settings: companionSettings,
+                    identityState: companionEnrollment.identityState
+                )
+                editingJob = nil
+            } label: {
+                Label("Save Changes", systemImage: "checkmark.circle.fill")
+            }
+            .hermesGlassProminentButton()
+            .disabled(editRawSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private func schedulePinFields(provider: Binding<String>, model: Binding<String>, baseURL: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Provider pin (optional)", text: provider)
+                .hermesRuntimeInput(background: Color.hermesSurfaceInput, border: Color.white.opacity(0.12))
+            TextField("Model pin (optional)", text: model)
+                .hermesRuntimeInput(background: Color.hermesSurfaceInput, border: Color.white.opacity(0.12))
+            TextField("Base URL pin (optional)", text: baseURL)
+                .hermesRuntimeInput(background: Color.hermesSurfaceInput, border: Color.white.opacity(0.12))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        }
+    }
+
+    private func loadEditForm(_ job: HermesCompanionScheduleCronJob) {
+        editName = job.name == "(unnamed)" ? "" : job.name
+        editRawSchedule = job.rawSchedule
+        editPrompt = job.prompt
+        editDeliver = job.deliver.first ?? "local"
+        editProvider = job.provider ?? ""
+        editModel = job.model ?? ""
+        editBaseURL = job.baseUrl ?? ""
+    }
+
+    private func optionalNewValue(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func changed(_ value: String, from original: String) -> String? {
+        value == original ? nil : value
     }
 
     private func scheduleCard(_ job: HermesCompanionScheduleCronJob) -> some View {
@@ -298,6 +417,15 @@ struct HermesSchedulesPanel: View {
                 if job.skills.isEmpty == false {
                     Label("Skills: \(job.skills.joined(separator: ", "))", systemImage: "square.stack.3d.up")
                 }
+                if let provider = job.provider, !provider.isEmpty {
+                    Label("Provider: \(provider)", systemImage: "network")
+                }
+                if let model = job.model, !model.isEmpty {
+                    Label("Model: \(model)", systemImage: "cpu")
+                }
+                if let baseURL = job.baseUrl, !baseURL.isEmpty {
+                    Label("Base URL: \(baseURL)", systemImage: "link")
+                }
             }
             .font(.caption)
             .foregroundStyle(.hermesSecondaryText)
@@ -334,6 +462,14 @@ struct HermesSchedulesPanel: View {
                     }
                     .hermesGlassButton()
                 }
+
+                Button {
+                    loadEditForm(job)
+                    editingJob = job
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .hermesGlassButton()
 
                 Spacer()
 
@@ -381,6 +517,9 @@ struct HermesSchedulesPanel: View {
         newName = ""
         newPrompt = ""
         newDeliver = "local"
+        newProvider = ""
+        newModel = ""
+        newBaseURL = ""
         frequency = .daily
         minutesInterval = "30"
         hourlyInterval = "1"

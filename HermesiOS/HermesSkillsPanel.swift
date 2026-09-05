@@ -17,7 +17,8 @@ struct HermesSkillsPanel: View {
         let query = agentConfiguration.skillSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.isEmpty == false else { return companionRuntime.hermesSkills }
         return companionRuntime.hermesSkills.filter { skill in
-            skill.name.lowercased().hasPrefix(query.lowercased())
+            let needle = query.lowercased()
+            return skill.name.lowercased().contains(needle) || skill.description.lowercased().contains(needle) || skill.category.lowercased().contains(needle)
         }
     }
 
@@ -39,7 +40,7 @@ struct HermesSkillsPanel: View {
                 }
             }
 
-            TextField("Start with", text: $agentConfiguration.skillSearchQuery)
+            TextField("Search skills", text: $agentConfiguration.skillSearchQuery)
                 .hermesRuntimeInput(background: Color.igOnlineGreen.opacity(0.08), border: Color.igOnlineGreen.opacity(0.28))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

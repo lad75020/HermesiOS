@@ -58,7 +58,7 @@ struct HermesProfilesPanel: View {
 
                 HermesSectionCard("Profile Controls") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Profiles are read from the Hermes workspace and its profiles/ folder. Create and edit profile model settings from the default profile values, then refresh from the macOS host whenever the filesystem changes.")
+                        Text("Profiles are read from the Hermes workspace and its profiles/ folder. Optional files clone from the default only when missing; editing never deletes an existing .env or SOUL.md.")
                             .font(.subheadline)
                             .foregroundStyle(.hermesSecondaryText)
 
@@ -203,9 +203,9 @@ struct HermesProfilesPanel: View {
                 .autocorrectionDisabled()
 
             HStack(spacing: 16) {
-                Toggle(".env file", isOn: draft.createEnv)
+                Toggle("Create missing .env from default", isOn: draft.createEnv)
                     .tint(.igActionBlue)
-                Toggle("SOUL.md", isOn: draft.createSoul)
+                Toggle("Create missing SOUL.md from default", isOn: draft.createSoul)
                     .tint(.igActionBlue)
             }
 

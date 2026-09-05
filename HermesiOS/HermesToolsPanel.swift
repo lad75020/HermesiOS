@@ -11,6 +11,13 @@ struct HermesToolsPanel: View {
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    @State private var searchQuery = ""
+
+    private var visibleToolsets: [HermesCompanionToolsetInfo] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard query.isEmpty == false else { return companionRuntime.hermesToolsets }
+        return companionRuntime.hermesToolsets.filter { $0.label.lowercased().contains(query) || $0.description.lowercased().contains(query) || $0.key.lowercased().contains(query) }
+    }
 
     private var providerSummary: String {
         if companionEnrollment.identityState.isEnrolled == false {
@@ -62,13 +69,18 @@ struct HermesToolsPanel: View {
                                 .foregroundStyle(.igDestructive)
                         }
 
+                        TextField("Search tools", text: $searchQuery)
+                            .hermesRuntimeInput()
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
                         if companionRuntime.hermesToolsets.isEmpty {
                             Text("Open this panel after this device is approved in Host Companion to load the toolsets declared by Hermes desktop semantics.")
                                 .font(.subheadline)
                                 .foregroundStyle(.hermesSecondaryText)
                         } else {
                             VStack(alignment: .leading, spacing: 12) {
-                                ForEach(companionRuntime.hermesToolsets) { toolset in
+                                ForEach(visibleToolsets) { toolset in
                                     HermesToolsetToggleRow(
                                         toolset: toolset,
                                         isEnabled: Binding(

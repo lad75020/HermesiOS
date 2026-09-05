@@ -63,7 +63,7 @@ final class CompanionGatewayRegistry {
             configPath: profileURL.appendingPathComponent("config.yaml").path,
             gatewayRunning: gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
             env: readEnv(profileURL: profileURL),
-            platformEnabled: readPlatformEnabled(profileURL: profileURL),
+            platformEnabled: try readPlatformEnabled(profileURL: profileURL),
             fields: Self.fields,
             platforms: Self.platforms
         )
@@ -142,13 +142,15 @@ final class CompanionGatewayRegistry {
         let profileURL = try profileURL(workspaceURL: workspaceURL, profileName: profileName)
         let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.fieldKeys.contains(normalizedKey) else { throw CompanionGatewayRegistryError.invalidEnvKey(normalizedKey) }
+        try CompanionRuntimeConfigSafety.validateEnvReplacement(value)
         try setEnvValue(profileURL: profileURL, key: normalizedKey, value: value)
         let profile = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
         let shouldRestart = normalizedKey.hasSuffix("_API_KEY") || normalizedKey.hasSuffix("_TOKEN") || normalizedKey == "HF_TOKEN"
         let restartOutput: String?
         if shouldRestart, gatewayStatus(workspacePath: workspacePath, profileName: profile).running {
             let command = runGatewayCommand(["restart"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 30)
-            restartOutput = command.output
+            guard command.success else { throw CompanionGatewayRegistryError.commandFailed("Settings were saved, but the gateway restart failed. Restart it on the host to apply changes.") }
+            restartOutput = "Gateway restart completed."
         } else {
             restartOutput = nil
         }
@@ -159,7 +161,7 @@ final class CompanionGatewayRegistry {
             profilePath: profileURL.path,
             envFilePath: profileURL.appendingPathComponent(".env").path,
             key: normalizedKey,
-            value: value,
+            value: readEnv(profileURL: profileURL)[normalizedKey] ?? "",
             env: readEnv(profileURL: profileURL),
             gatewayRunning: gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
             restartOutput: restartOutput
@@ -179,6 +181,9 @@ final class CompanionGatewayRegistry {
         } else {
             command = nil
         }
+        if let command, !command.success {
+            throw CompanionGatewayRegistryError.commandFailed("Platform settings were saved, but the gateway restart failed. Restart it on the host to apply changes.")
+        }
         return SetGatewayPlatformResult(
             workspacePath: workspacePath,
             resolvedWorkspacePath: workspaceURL.path,
@@ -187,9 +192,9 @@ final class CompanionGatewayRegistry {
             configPath: profileURL.appendingPathComponent("config.yaml").path,
             platform: normalizedPlatform,
             enabled: enabled,
-            platformEnabled: readPlatformEnabled(profileURL: profileURL),
+            platformEnabled: try readPlatformEnabled(profileURL: profileURL),
             gatewayRunning: gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
-            restartOutput: command?.output
+            restartOutput: command == nil ? nil : "Gateway restart completed."
         )
     }
 
@@ -203,7 +208,12 @@ final class CompanionGatewayRegistry {
     private func profileURL(workspaceURL: URL, profileName: String?) throws -> URL {
         let name = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
         if name == "default" { return workspaceURL }
-        return workspaceURL.appendingPathComponent("profiles", isDirectory: true).appendingPathComponent(name, isDirectory: true)
+        guard name.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#, options: .regularExpression) != nil else { throw CompanionGatewayRegistryError.invalidProfileName }
+        let profilesURL = workspaceURL.appendingPathComponent("profiles", isDirectory: true)
+        let selectedURL = profilesURL.appendingPathComponent(name, isDirectory: true)
+        guard selectedURL.resolvingSymlinksInPath().deletingLastPathComponent() == profilesURL.resolvingSymlinksInPath(),
+              CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: selectedURL.path) != nil else { throw CompanionGatewayRegistryError.invalidProfileName }
+        return selectedURL
     }
 
     private func normalizedProfileName(_ name: String?) -> String? {
@@ -221,30 +231,15 @@ final class CompanionGatewayRegistry {
     }
 
     private func readEnv(profileURL: URL) -> [String: String] {
-        let envURL = profileURL.appendingPathComponent(".env")
-        guard let content = try? String(contentsOf: envURL, encoding: .utf8) else { return [:] }
-        var result: [String: String] = [:]
-        for line in content.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.hasPrefix("#"), let equals = trimmed.firstIndex(of: "=") else { continue }
-            let key = trimmed[..<equals].trimmingCharacters(in: .whitespacesAndNewlines)
-            var value = trimmed[trimmed.index(after: equals)...].trimmingCharacters(in: .whitespacesAndNewlines)
-            if (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) {
-                value = String(value.dropFirst().dropLast())
-            }
-            if !key.isEmpty { result[key] = value }
-        }
-        return result
+        guard let content = try? String(contentsOf: profileURL.appendingPathComponent(".env"), encoding: .utf8) else { return [:] }
+        return CompanionRuntimeConfigSafety.envMetadata(content: content, allowedKey: { Self.fieldKeys.contains($0) })
     }
 
     private func setEnvValue(profileURL: URL, key: String, value: String) throws {
         try fileManager.createDirectory(at: profileURL, withIntermediateDirectories: true)
         let envURL = profileURL.appendingPathComponent(".env")
         let safeValue = value.replacingOccurrences(of: "\n", with: "")
-        guard let content = try? String(contentsOf: envURL, encoding: .utf8) else {
-            try "\(key)=\(safeValue)\n".write(to: envURL, atomically: true, encoding: .utf8)
-            return
-        }
+        let content = try CompanionRuntimeConfigSafety.read(envURL)
         var lines = content.components(separatedBy: .newlines)
         var found = false
         let keyPattern = "^#?\\s*\(NSRegularExpression.escapedPattern(for: key))\\s*="
@@ -260,58 +255,18 @@ final class CompanionGatewayRegistry {
         try lines.joined(separator: "\n").write(to: envURL, atomically: true, encoding: .utf8)
     }
 
-    private func readPlatformEnabled(profileURL: URL) -> [String: Bool] {
-        let configURL = profileURL.appendingPathComponent("config.yaml")
-        guard let content = try? String(contentsOf: configURL, encoding: .utf8) else {
-            return Dictionary(uniqueKeysWithValues: Self.platformKeys.map { ($0, false) })
-        }
-        var result: [String: Bool] = [:]
-        for platform in Self.platformKeys {
-            let escaped = NSRegularExpression.escapedPattern(for: platform)
-            let pattern = "(?m)^[ \\t]+\(escaped):\\s*\\n[ \\t]+enabled:\\s*(true|false)"
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..<content.endIndex, in: content)),
-               let range = Range(match.range(at: 1), in: content) {
-                result[platform] = String(content[range]) == "true"
-            } else {
-                result[platform] = false
-            }
-        }
-        return result
+    private func readPlatformEnabled(profileURL: URL) throws -> [String: Bool] {
+        let result = try CompanionRuntimeConfigSafety.apply(
+            configURL: profileURL.appendingPathComponent("config.yaml"),
+            request: ["action": "listPlatforms", "platforms": Self.platformKeys.sorted()])
+        guard let enabled = result["platformEnabled"] as? [String: Bool] else { throw CompanionRuntimeConfigSafety.Failure.rejected }
+        return enabled
     }
 
     private func setPlatformEnabledValue(profileURL: URL, platform: String, enabled: Bool) throws {
-        try fileManager.createDirectory(at: profileURL, withIntermediateDirectories: true)
-        let configURL = profileURL.appendingPathComponent("config.yaml")
-        let enabledText = enabled ? "true" : "false"
-        var content = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
-        let escaped = NSRegularExpression.escapedPattern(for: platform)
-        let existingPattern = "(?m)^([ \\t]+\(escaped):\\s*\\n[ \\t]+enabled:\\s*)(?:true|false)"
-        if let regex = try? NSRegularExpression(pattern: existingPattern), regex.firstMatch(in: content, range: NSRange(content.startIndex..<content.endIndex, in: content)) != nil {
-            content = regex.stringByReplacingMatches(in: content, range: NSRange(content.startIndex..<content.endIndex, in: content), withTemplate: "$1\(enabledText)")
-        } else if let platformsRange = content.range(of: "\nplatforms:") ?? content.range(of: "platforms:") {
-            let insertionIndex = insertionPointForPlatformsBlock(in: content, after: platformsRange.upperBound)
-            let entry = "  \(platform):\n    enabled: \(enabledText)\n"
-            content.insert(contentsOf: entry, at: insertionIndex)
-        } else {
-            if !content.hasSuffix("\n"), !content.isEmpty { content += "\n" }
-            content += "platforms:\n  \(platform):\n    enabled: \(enabledText)\n"
-        }
-        try content.write(to: configURL, atomically: true, encoding: .utf8)
-    }
-
-    private func insertionPointForPlatformsBlock(in content: String, after index: String.Index) -> String.Index {
-        var cursor = index
-        while cursor < content.endIndex {
-            let lineStart = cursor
-            guard let lineEnd = content[cursor...].firstIndex(of: "\n") else { return content.endIndex }
-            let line = String(content[lineStart..<lineEnd])
-            if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, line.first?.isWhitespace == false {
-                return lineStart
-            }
-            cursor = content.index(after: lineEnd)
-        }
-        return content.endIndex
+        _ = try CompanionRuntimeConfigSafety.apply(
+            configURL: profileURL.appendingPathComponent("config.yaml"),
+            request: ["action": "setPlatform", "platform": platform, "enabled": enabled, "platforms": Self.platformKeys.sorted()])
     }
 
     private func isGatewayRunning(profileURL: URL) -> Bool {

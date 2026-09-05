@@ -11,9 +11,8 @@ struct HermesGatewayPanel: View {
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
 
-    @State private var savedKey: String?
-    @State private var visibleKeys: Set<String> = []
     @State private var expandedPlatforms: Set<String> = []
+    @State private var gatewayEnvDrafts: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -37,11 +36,11 @@ struct HermesGatewayPanel: View {
                                 GatewayPlatformCard(
                                     platform: platform,
                                     fields: fields(for: platform),
-                                    env: companionRuntime.gatewayEnv,
+                                    isConfigured: { key in
+                                        (companionRuntime.gatewayEnv[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                                    },
                                     isEnabled: companionRuntime.gatewayPlatformEnabled[platform.key] ?? false,
                                     isExpanded: expandedPlatforms.contains(platform.key),
-                                    visibleKeys: visibleKeys,
-                                    savedKey: savedKey,
                                     isBusy: companionRuntime.isBusy,
                                     onToggleEnabled: { enabled in
                                         companionRuntime.setGatewayPlatformEnabled(platform: platform.key, enabled: enabled, settings: companionSettings, identityState: companionEnrollment.identityState)
@@ -54,19 +53,11 @@ struct HermesGatewayPanel: View {
                                             expandedPlatforms.insert(platform.key)
                                         }
                                     },
-                                    onToggleVisibility: { key in
-                                        if visibleKeys.contains(key) { visibleKeys.remove(key) } else { visibleKeys.insert(key) }
-                                    },
-                                    onChange: { key, value in
-                                        companionRuntime.gatewayEnv[key] = value
+                                    draft: { key in
+                                        gatewayEnvDraftBinding(for: key)
                                     },
                                     onSave: { key in
-                                        companionRuntime.setGatewayEnvValue(key: key, value: companionRuntime.gatewayEnv[key] ?? "", settings: companionSettings, identityState: companionEnrollment.identityState)
-                                        savedKey = key
-                                        Task { @MainActor in
-                                            try? await Task.sleep(for: .seconds(2))
-                                            if savedKey == key { savedKey = nil }
-                                        }
+                                        saveGatewayEnvDraft(for: key)
                                     }
                                 )
                             }
@@ -83,18 +74,10 @@ struct HermesGatewayPanel: View {
                             ForEach(otherFields) { field in
                                 GatewayEnvFieldRow(
                                     field: field,
-                                    value: Binding(
-                                        get: { companionRuntime.gatewayEnv[field.key] ?? "" },
-                                        set: { companionRuntime.gatewayEnv[field.key] = $0 }
-                                    ),
-                                    isVisible: visibleKeys.contains(field.key),
-                                    isSaved: savedKey == field.key,
-                                    onToggleVisibility: {
-                                        if visibleKeys.contains(field.key) { visibleKeys.remove(field.key) } else { visibleKeys.insert(field.key) }
-                                    },
+                                    value: gatewayEnvDraftBinding(for: field.key),
+                                    isConfigured: isGatewayEnvConfigured(field.key),
                                     onSave: {
-                                        companionRuntime.setGatewayEnvValue(key: field.key, value: companionRuntime.gatewayEnv[field.key] ?? "", settings: companionSettings, identityState: companionEnrollment.identityState)
-                                        savedKey = field.key
+                                        saveGatewayEnvDraft(for: field.key)
                                     }
                                 )
                             }
@@ -112,6 +95,9 @@ struct HermesGatewayPanel: View {
             guard companionEnrollment.identityState.isEnrolled else { return }
             companionRuntime.refreshGatewayConfig(settings: companionSettings, identityState: companionEnrollment.identityState)
         }
+        .onDisappear {
+            gatewayEnvDrafts.removeAll()
+        }
     }
 
     private var platformFieldKeys: Set<String> {
@@ -121,21 +107,33 @@ struct HermesGatewayPanel: View {
     private func fields(for platform: HermesCompanionGatewayPlatformDefinition) -> [HermesCompanionGatewayEnvFieldDefinition] {
         platform.fields.compactMap { key in companionRuntime.gatewayFields.first(where: { $0.key == key }) }
     }
+
+    private func gatewayEnvDraftBinding(for key: String) -> Binding<String> {
+        Binding(get: { gatewayEnvDrafts[key] ?? "" }, set: { gatewayEnvDrafts[key] = $0 })
+    }
+
+    private func isGatewayEnvConfigured(_ key: String) -> Bool {
+        (companionRuntime.gatewayEnv[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    private func saveGatewayEnvDraft(for key: String) {
+        let value = (gatewayEnvDrafts[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        companionRuntime.setGatewayEnvValue(key: key, value: value, settings: companionSettings, identityState: companionEnrollment.identityState)
+        gatewayEnvDrafts[key] = nil
+    }
 }
 
 private struct GatewayPlatformCard: View {
     let platform: HermesCompanionGatewayPlatformDefinition
     let fields: [HermesCompanionGatewayEnvFieldDefinition]
-    let env: [String: String]
+    let isConfigured: (String) -> Bool
     let isEnabled: Bool
     let isExpanded: Bool
-    let visibleKeys: Set<String>
-    let savedKey: String?
     let isBusy: Bool
     let onToggleEnabled: (Bool) -> Void
     let onToggleExpanded: () -> Void
-    let onToggleVisibility: (String) -> Void
-    let onChange: (String, String) -> Void
+    let draft: (String) -> Binding<String>
     let onSave: (String) -> Void
 
     var body: some View {
@@ -167,10 +165,8 @@ private struct GatewayPlatformCard: View {
                     ForEach(fields) { field in
                         GatewayEnvFieldRow(
                             field: field,
-                            value: Binding(get: { env[field.key] ?? "" }, set: { onChange(field.key, $0) }),
-                            isVisible: visibleKeys.contains(field.key),
-                            isSaved: savedKey == field.key,
-                            onToggleVisibility: { onToggleVisibility(field.key) },
+                            value: draft(field.key),
+                            isConfigured: isConfigured(field.key),
                             onSave: { onSave(field.key) }
                         )
                     }
@@ -186,9 +182,7 @@ private struct GatewayPlatformCard: View {
 private struct GatewayEnvFieldRow: View {
     let field: HermesCompanionGatewayEnvFieldDefinition
     @Binding var value: String
-    let isVisible: Bool
-    let isSaved: Bool
-    let onToggleVisibility: () -> Void
+    let isConfigured: Bool
     let onSave: () -> Void
 
     var body: some View {
@@ -199,39 +193,44 @@ private struct GatewayEnvFieldRow: View {
                 Text(field.key)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.hermesSecondaryText)
-                if isSaved {
-                    Text("Saved")
+                if isConfigured {
+                    Text("Configured")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(.green)
                 }
                 Spacer()
             }
 
-            HStack(spacing: 8) {
-                if field.isSecret && !isVisible {
-                    SecureField(field.label, text: $value)
-                        .hermesRuntimeInput()
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } else {
-                    TextField(field.label, text: $value)
-                        .hermesRuntimeInput()
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    inputAndSaveAction
                 }
-
-                if field.isSecret {
-                    Button(isVisible ? "Hide" : "Show", action: onToggleVisibility)
-                        .hermesGlassButton()
+                VStack(alignment: .leading, spacing: 8) {
+                    inputAndSaveAction
                 }
-
-                Button("Save", action: onSave)
-                    .hermesGlassProminentButton()
             }
 
             Text(field.hint)
                 .font(.caption)
                 .foregroundStyle(.hermesSecondaryText)
         }
+    }
+
+    @ViewBuilder
+    private var inputAndSaveAction: some View {
+        if field.isSecret {
+                    SecureField(field.label, text: $value)
+                        .hermesRuntimeInput()
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+        } else {
+                    TextField(field.label, text: $value)
+                        .hermesRuntimeInput()
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+        }
+        Button("Save", action: onSave)
+            .hermesGlassProminentButton()
+            .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 }

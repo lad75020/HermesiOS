@@ -264,6 +264,7 @@ private enum CompanionServerParametersFactory {
 }
 
 
+@MainActor
 final class CompanionClientSession {
     let id = UUID()
     var onStop: ((UUID) -> Void)?
@@ -293,6 +294,7 @@ final class CompanionClientSession {
 
     func start() {
         connection.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor in
             guard let self else { return }
             switch state {
             case .ready:
@@ -305,6 +307,7 @@ final class CompanionClientSession {
                 self.stop()
             default:
                 break
+            }
             }
         }
 
@@ -319,6 +322,7 @@ final class CompanionClientSession {
 
     private func receiveNextMessage() {
         connection.receiveMessage { [weak self] data, context, _, error in
+            Task { @MainActor in
             guard let self else { return }
             if let error {
                 Logger.companion.error("Receive error for session \(self.id.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -338,9 +342,9 @@ final class CompanionClientSession {
                 let request = try self.decoder.decode(CompanionIncomingEnvelope.self, from: data)
                 let response: CompanionOutgoingEnvelope
                 if CompanionDeviceAuthorizationStore.isUnauthenticatedOperation(request.type) {
-                    response = self.route(request: request)
+                    response = await self.route(request: request)
                 } else if CompanionDeviceAuthorizationStore.shared.authenticate(deviceID: request.deviceID, deviceSecret: request.deviceSecret) {
-                    response = self.route(request: request)
+                    response = await self.route(request: request)
                 } else {
                     response = .error(id: request.id, code: "device_not_approved", message: "This iOS device is not approved by HermesHostCompanion.")
                 }
@@ -360,6 +364,7 @@ final class CompanionClientSession {
             }
 
             self.receiveNextMessage()
+            }
         }
     }
 
@@ -369,7 +374,7 @@ final class CompanionClientSession {
         connection.send(content: data, contentContext: context, isComplete: true, completion: .idempotent)
     }
 
-    private func route(request: CompanionIncomingEnvelope) -> CompanionOutgoingEnvelope {
+    private func route(request: CompanionIncomingEnvelope) async -> CompanionOutgoingEnvelope {
         switch request.type {
         case "enroll_device":
             do {
@@ -452,6 +457,7 @@ final class CompanionClientSession {
                         "erase_knowledge_items",
                         "list_schedules",
                         "create_schedule",
+                        "edit_schedule",
                         "remove_schedule",
                         "pause_schedule",
                         "resume_schedule",
@@ -713,8 +719,8 @@ final class CompanionClientSession {
                 guard let payload = request.payload else {
                     return .error(id: request.id, code: "missing_payload", message: "The list_skills request requires a payload.")
                 }
-                let listPayload = try payload.decode(ListHermesSkillsPayload.self)
-                let result = try registry.listHermesSkills(workspacePath: listPayload.workspacePath)
+                let listPayload = try payload.decode(ListMCPServersPayload.self)
+                let result = try await registry.listHermesSkills(workspacePath: listPayload.workspacePath)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "list_skills_failed", message: error.localizedDescription)
@@ -725,7 +731,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The set_skill_state request requires a payload.")
                 }
                 let setPayload = try payload.decode(SetHermesSkillStatePayload.self)
-                let result = try registry.setHermesSkillState(
+                let result = try await registry.setHermesSkillState(
                     workspacePath: setPayload.workspacePath,
                     skillID: setPayload.skillID,
                     isEnabled: setPayload.isEnabled
@@ -736,7 +742,9 @@ final class CompanionClientSession {
             }
         case "list_mcp_servers":
             do {
-                return .success(id: request.id, payload: try mcpRegistry.listServers())
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The list_mcp_servers request requires a payload.") }
+                let listPayload = try payload.decode(ListHermesSkillsPayload.self)
+                return .success(id: request.id, payload: try await mcpRegistry.listServers(workspacePath: listPayload.workspacePath))
             } catch {
                 return .error(id: request.id, code: "list_mcp_servers_failed", message: error.localizedDescription)
             }
@@ -746,7 +754,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The add_mcp_server request requires a payload.")
                 }
                 let addPayload = try payload.decode(AddMCPServerPayload.self)
-                return .success(id: request.id, payload: try mcpRegistry.addServer(addPayload))
+                return .success(id: request.id, payload: try await mcpRegistry.addServer(addPayload))
             } catch {
                 return .error(id: request.id, code: "add_mcp_server_failed", message: error.localizedDescription)
             }
@@ -756,7 +764,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The remove_mcp_server request requires a payload.")
                 }
                 let removePayload = try payload.decode(RemoveMCPServerPayload.self)
-                return .success(id: request.id, payload: try mcpRegistry.removeServer(name: removePayload.name))
+                return .success(id: request.id, payload: try await mcpRegistry.removeServer(workspacePath: removePayload.workspacePath, name: removePayload.name))
             } catch {
                 return .error(id: request.id, code: "remove_mcp_server_failed", message: error.localizedDescription)
             }
@@ -911,7 +919,8 @@ final class CompanionClientSession {
                     section: slotPayload.section,
                     key: slotPayload.key,
                     provider: slotPayload.provider,
-                    model: slotPayload.model
+                    model: slotPayload.model,
+                    baseUrl: slotPayload.baseUrl
                 )
                 return .success(id: request.id, payload: result)
             } catch {
@@ -1041,10 +1050,19 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The create_schedule request requires a payload.") }
                 let createPayload = try payload.decode(CreateSchedulePayload.self)
-                let result = try scheduleRegistry.create(workspacePath: createPayload.workspacePath, schedule: createPayload.schedule, prompt: createPayload.prompt, name: createPayload.name, deliver: createPayload.deliver)
+                let result = try scheduleRegistry.create(workspacePath: createPayload.workspacePath, schedule: createPayload.schedule, prompt: createPayload.prompt, name: createPayload.name, deliver: createPayload.deliver, provider: createPayload.provider, model: createPayload.model, baseUrl: createPayload.baseUrl)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "create_schedule_failed", message: error.localizedDescription)
+            }
+        case "edit_schedule":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The edit_schedule request requires a payload.") }
+                let editPayload = try payload.decode(EditSchedulePayload.self)
+                let result = try scheduleRegistry.edit(workspacePath: editPayload.workspacePath, jobID: editPayload.jobID, schedule: editPayload.schedule, prompt: editPayload.prompt, name: editPayload.name, deliver: editPayload.deliver, provider: editPayload.provider, model: editPayload.model, baseUrl: editPayload.baseUrl)
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "edit_schedule_failed", message: error.localizedDescription)
             }
         case "remove_schedule":
             do {

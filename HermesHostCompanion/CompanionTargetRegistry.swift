@@ -40,20 +40,6 @@ struct CompanionBackupRecord: Codable, Identifiable {
     let path: String
 }
 
-private struct CompanionHermesSkillUsageRecord: Codable {
-    var archivedAt: String?
-    var createdAt: String
-    var createdBy: String?
-    var lastPatchedAt: String?
-    var lastUsedAt: String?
-    var lastViewedAt: String?
-    var patchCount: Int
-    var pinned: Bool
-    var state: String
-    var useCount: Int
-    var viewCount: Int
-}
-
 enum CompanionTargetRegistryError: LocalizedError {
     case targetNotFound(String)
     case fileReadFailed(String)
@@ -314,72 +300,71 @@ final class CompanionTargetRegistry {
         )
     }
 
-    func listHermesSkills(workspacePath: String) throws -> ListHermesSkillsResult {
-        let workspaceURL = try resolvedHermesWorkspaceURL(from: workspacePath)
-        let skillsRootURL = workspaceURL.appendingPathComponent("skills", isDirectory: true)
-        let usageRecords = loadHermesSkillUsageRecords(workspaceURL: workspaceURL)
-        let skills = try enumerateHermesSkills(in: skillsRootURL, usageRecords: usageRecords)
-
-        return ListHermesSkillsResult(
-            workspacePath: workspacePath,
-            resolvedWorkspacePath: workspaceURL.path,
-            skills: skills
-        )
+    @MainActor
+    func listHermesSkills(workspacePath: String) async throws -> ListHermesSkillsResult {
+        let result = try await hermesSkillsBridge(workspacePath: workspacePath, request: ["action": "list"])
+        return ListHermesSkillsResult(workspacePath: workspacePath, resolvedWorkspacePath: result.workspacePath, skills: result.skills)
     }
 
+    @MainActor
     func setHermesSkillState(
         workspacePath: String,
         skillID: String,
         isEnabled: Bool
-    ) throws -> SetHermesSkillStateResult {
-        let workspaceURL = try resolvedHermesWorkspaceURL(from: workspacePath)
-        let skillsRootURL = workspaceURL.appendingPathComponent("skills", isDirectory: true)
-        let usageFileURL = workspaceURL.appendingPathComponent("skills/.usage.json")
-        let skills = try enumerateHermesSkills(in: skillsRootURL, usageRecords: loadHermesSkillUsageRecords(workspaceURL: workspaceURL))
-
-        guard let matchedSkill = skills.first(where: { $0.id == skillID }) else {
-            throw CompanionTargetRegistryError.skillNotFound(skillID)
-        }
-
-        var usageRecords = loadHermesSkillUsageRecords(workspaceURL: workspaceURL)
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        var record = usageRecords[skillID] ?? CompanionHermesSkillUsageRecord(
-            archivedAt: nil,
-            createdAt: timestamp,
-            createdBy: "HermesiOS",
-            lastPatchedAt: nil,
-            lastUsedAt: nil,
-            lastViewedAt: nil,
-            patchCount: 0,
-            pinned: false,
-            state: "active",
-            useCount: 0,
-            viewCount: 0
-        )
-        record.state = isEnabled ? "active" : "archived"
-        record.archivedAt = isEnabled ? nil : timestamp
-        record.lastPatchedAt = timestamp
-        usageRecords[skillID] = record
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(usageRecords)
-        try FileManager.default.createDirectory(at: usageFileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: usageFileURL, options: [.atomic])
-
-        return SetHermesSkillStateResult(
-            workspacePath: workspacePath,
-            resolvedWorkspacePath: workspaceURL.path,
-            skill: CompanionHermesSkillSummary(
-                id: matchedSkill.id,
-                name: matchedSkill.name,
-                category: matchedSkill.category,
-                description: matchedSkill.description,
-                path: matchedSkill.path,
-                isEnabled: isEnabled
-            )
-        )
+    ) async throws -> SetHermesSkillStateResult {
+        let result = try await hermesSkillsBridge(workspacePath: workspacePath, request: ["action": "set", "skillID": skillID, "isEnabled": isEnabled])
+        guard let skill = result.skills.first(where: { $0.id == skillID }) else { throw CompanionTargetRegistryError.skillNotFound(skillID) }
+        return SetHermesSkillStateResult(workspacePath: workspacePath, resolvedWorkspacePath: result.workspacePath, skill: skill)
     }
+
+    /// Hermes owns both discovery and the disabled-skills schema.  In particular,
+    /// `_find_all_skills(skip_disabled: true)` covers a root SKILL.md and nested
+    /// category trees, while get/save_disabled_skills preserves unrelated config.
+    private struct HermesSkillsBridgeResult: Decodable {
+        let workspacePath: String
+        let skills: [CompanionHermesSkillSummary]
+    }
+
+    @MainActor
+    private func hermesSkillsBridge(workspacePath: String, request: [String: Any]) async throws -> HermesSkillsBridgeResult {
+        guard let context = CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: workspacePath) else {
+            throw CompanionTargetRegistryError.invalidWorkspacePath(workspacePath)
+        }
+        let venvPython = context.cliRootURL.appendingPathComponent("hermes-agent/venv/bin/python").path
+        let executableURL = FileManager.default.isExecutableFile(atPath: venvPython) ? URL(fileURLWithPath: venvPython) : URL(fileURLWithPath: "/usr/bin/python3")
+        var environment = ProcessInfo.processInfo.environment
+        environment["HERMES_HOME"] = context.selectedHomeURL.path
+        environment["PYTHONPATH"] = context.cliRootURL.appendingPathComponent("hermes-agent").path
+        let output = try await CompanionSubprocess.run(
+            executableURL: executableURL, arguments: ["-c", Self.hermesSkillsBridgeScript],
+            environment: environment, input: JSONSerialization.data(withJSONObject: request))
+        guard output.status == 0, let result = try? JSONDecoder().decode(HermesSkillsBridgeResult.self, from: output.stdout) else {
+            throw CompanionTargetRegistryError.writeFailed("selected Hermes skills configuration")
+        }
+        return result
+    }
+
+    private static let hermesSkillsBridgeScript = #"""
+import json, os, sys
+from hermes_cli.config import load_config
+from hermes_cli.skills_config import get_disabled_skills, save_disabled_skills
+from tools.skills_tool import _find_all_skills
+r = json.load(sys.stdin); config = load_config(); all_skills = _find_all_skills(skip_disabled=True)
+by_id = {str(s.get("name", "")).strip(): s for s in all_skills if str(s.get("name", "")).strip()}
+if r.get("action") == "set":
+    skill_id = str(r.get("skillID", "")).strip()
+    if skill_id not in by_id: raise ValueError("Skill not found")
+    disabled = get_disabled_skills(config)
+    if bool(r.get("isEnabled")): disabled.discard(skill_id)
+    else: disabled.add(skill_id)
+    save_disabled_skills(config, disabled)
+elif r.get("action") != "list": raise ValueError("Unsupported skills operation")
+disabled = get_disabled_skills(load_config())
+def summary(skill_id, skill):
+    category = str(skill.get("category") or "uncategorized")
+    return {"id": skill_id, "name": skill_id, "category": category, "description": str(skill.get("description") or "Skill available in the Hermes workspace."), "path": "", "isEnabled": skill_id not in disabled}
+print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary(k, v) for k, v in sorted(by_id.items(), key=lambda item: (str(item[1].get("category") or ""), item[0]))]}))
+"""#
 
     private static func revision(for data: Data) -> String {
         let digest = SHA256.hash(data: data)
@@ -529,90 +514,6 @@ final class CompanionTargetRegistry {
         let trimmed = (profileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false, trimmed != "default" else { return workspaceURL }
         return workspaceURL.appendingPathComponent("profiles", isDirectory: true).appendingPathComponent(trimmed, isDirectory: true)
-    }
-
-    private func loadHermesSkillUsageRecords(workspaceURL: URL) -> [String: CompanionHermesSkillUsageRecord] {
-        let usageFileURL = workspaceURL.appendingPathComponent("skills/.usage.json")
-        guard
-            let data = try? Data(contentsOf: usageFileURL),
-            let records = try? JSONDecoder().decode([String: CompanionHermesSkillUsageRecord].self, from: data)
-        else {
-            return [:]
-        }
-        return records
-    }
-
-    private func enumerateHermesSkills(
-        in skillsRootURL: URL,
-        usageRecords: [String: CompanionHermesSkillUsageRecord]
-    ) throws -> [CompanionHermesSkillSummary] {
-        let categoryURLs = try FileManager.default.contentsOfDirectory(
-            at: skillsRootURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-
-        var skills: [CompanionHermesSkillSummary] = []
-
-        for categoryURL in categoryURLs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            let values = try categoryURL.resourceValues(forKeys: [.isDirectoryKey])
-            guard values.isDirectory == true else { continue }
-
-            let categoryName = categoryURL.lastPathComponent
-            let skillURLs = try FileManager.default.contentsOfDirectory(
-                at: categoryURL,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
-
-            for skillURL in skillURLs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                let skillValues = try skillURL.resourceValues(forKeys: [.isDirectoryKey])
-                guard skillValues.isDirectory == true else { continue }
-
-                let skillID = skillURL.lastPathComponent
-                let description = firstReadableSkillDescription(skillURL: skillURL, categoryURL: categoryURL)
-                let usageState = usageRecords[skillID]?.state.lowercased()
-
-                skills.append(
-                    CompanionHermesSkillSummary(
-                        id: skillID,
-                        name: skillID,
-                        category: categoryName,
-                        description: description,
-                        path: skillURL.path,
-                        isEnabled: usageState != "archived"
-                    )
-                )
-            }
-        }
-
-        return skills.sorted {
-            if $0.category == $1.category {
-                return $0.name < $1.name
-            }
-            return $0.category < $1.category
-        }
-    }
-
-    private func firstReadableSkillDescription(skillURL: URL, categoryURL: URL) -> String {
-        let candidateURLs = [
-            skillURL.appendingPathComponent("DESCRIPTION.md"),
-            skillURL.appendingPathComponent("SKILL.md"),
-            categoryURL.appendingPathComponent("DESCRIPTION.md")
-        ]
-
-        for candidateURL in candidateURLs {
-            guard let content = try? String(contentsOf: candidateURL, encoding: .utf8) else { continue }
-            for line in content.components(separatedBy: .newlines) {
-                let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard trimmedLine.isEmpty == false, trimmedLine != "---", trimmedLine.hasPrefix("name:") == false else {
-                    continue
-                }
-                return trimmedLine
-            }
-        }
-
-        return "Skill available in the Hermes workspace."
     }
 
     private func validate(

@@ -620,37 +620,52 @@ final class HermesTUIGatewayStore {
         await refreshActiveSessions()
     }
 
-    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, inference: HermesTUIInferenceSelection) async {
+    func submit(_ text: String, attachment: HermesPromptAttachment? = nil, inference: HermesTUIInferenceSelection) async {
         guard canSendPrompt else {
             lastErrorMessage = HermesTUIGatewayError.missingSession.localizedDescription
             return
         }
-
-        let prepared: (payloadText: String, displayText: String, activity: String?)
-        do {
-            prepared = try promptPayload(text: text, attachment: attachment)
-        } catch {
-            lastErrorMessage = error.localizedDescription
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachment != nil else { return }
+        if let attachment, attachment.data.isEmpty || attachment.data.count > 25 * 1024 * 1024 {
+            lastErrorMessage = "Attachments must be nonempty and at most 25 MiB."
             connectionStatus = "Attachment failed"
             return
         }
-
-        let finalText = prepared.payloadText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !finalText.isEmpty else { return }
-        if let activity = prepared.activity, !activity.isEmpty {
+        let target = sessionID
+        let generation = connectionGeneration
+        // Reserve the turn before awaiting upload: no second send/profile change may
+        // consume the session's queued image while this submit is preparing it.
+        isStreaming = true
+        lastErrorMessage = ""
+        connectionStatus = attachment == nil ? "Sending prompt" : "Uploading attachment"
+        let prepared: (payloadText: String, displayText: String, activity: String?)
+        do {
+            prepared = try await promptPayload(text: text, attachment: attachment, session: target)
+        } catch {
+            guard connectionGeneration == generation, sessionID == target else { return }
+            isStreaming = false
+            lastErrorMessage = attachment == nil ? error.localizedDescription : "Attachment upload failed. Check that the gateway supports image.attach_bytes and file.attach, then attach the file again."
+            connectionStatus = "Attachment failed"
+            return
+        }
+        guard connectionGeneration == generation, sessionID == target, isConnected else { return }
+        if let activity = prepared.activity {
             appendEvent(title: "Attachment", content: activity, eventType: "input.attachment")
         }
         resetStreamGrouping()
         messages.append(HermesTUIGatewayMessage(role: .user, title: "You", content: prepared.displayText))
-        isStreaming = true
         connectionStatus = "Sending prompt"
         do {
             var params = inferenceParams(inference)
-            params["session_id"] = .string(sessionID)
-            params["text"] = .string(finalText)
+            params["session_id"] = .string(target)
+            params["text"] = .string(prepared.payloadText)
             _ = try await request("prompt.submit", params: params, timeoutSeconds: 60)
+            guard connectionGeneration == generation, sessionID == target else { return }
             connectionStatus = "Streaming"
         } catch {
+            guard connectionGeneration == generation, sessionID == target else { return }
+            // Do not detach after an ambiguous transport failure: an accepted turn
+            // can still be waiting for its agent build to consume the queued image.
             isStreaming = false
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Prompt failed"
@@ -658,24 +673,42 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func promptPayload(text: String, attachment: HermesPromptAttachment?) throws -> (payloadText: String, displayText: String, activity: String?) {
+    private func promptPayload(text: String, attachment: HermesPromptAttachment?, session: String) async throws -> (payloadText: String, displayText: String, activity: String?) {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let attachment else { return (trimmedText, trimmedText, nil) }
-
         let block: String
-        if attachment.isUTF8Text {
+        if attachment.isUTF8Text, attachment.data.count <= 32 * 1024, attachment.textContent != nil {
+            // Bound inline context; larger text and undecodable text retain all bytes
+            // through file.attach instead of truncation or the legacy base64 fallback.
             block = attachment.textAttachmentBlock
         } else if attachment.isImage {
-            block = "Attached image: \(attachment.filename) (\(attachment.mimeType), \(attachment.formattedByteCount))\n\(attachment.base64DataURL)"
+            let mime = UTType(filenameExtension: attachment.fileExtension)?.preferredMIMEType ?? attachment.mimeType
+            let result = try await request("image.attach_bytes", params: [
+                "session_id": .string(session), "filename": .string(attachment.filename),
+                "content_base64": .string("data:\(mime);base64,\(attachment.data.base64EncodedString())")
+            ], timeoutSeconds: 120).objectValue
+            guard result["attached"]?.boolValue == true,
+                  let path = result["path"]?.stringValue, !path.isEmpty else {
+                throw HermesTUIGatewayError.requestFailed("Gateway did not attach the image.")
+            }
+            block = trimmedText.isEmpty ? "What do you see in this image?" : ""
         } else {
-            block = "Attached file: \(attachment.filename) (\(attachment.mimeType), \(attachment.formattedByteCount))\nThe file is provided as a base64 data URL. Decode it if you need to inspect or process the document bytes:\n\(attachment.base64DataURL)"
+            let result = try await request("file.attach", params: [
+                "session_id": .string(session), "name": .string(attachment.filename),
+                "data_url": .string(attachment.base64DataURL)
+            ], timeoutSeconds: 120).objectValue
+            guard result["attached"]?.boolValue == true,
+                  let reference = result["ref_text"]?.stringValue,
+                  reference.hasPrefix("@file:"), reference.utf8.count <= 4096,
+                  !reference.contains(";base64,") else {
+                throw HermesTUIGatewayError.requestFailed("Gateway did not return a file reference.")
+            }
+            block = reference
         }
         let payload = [trimmedText, block.trimmingCharacters(in: .whitespacesAndNewlines)]
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
+            .filter { !$0.isEmpty }.joined(separator: "\n\n")
         let display = [trimmedText, "Attached: \(attachment.filename) (\(attachment.formattedByteCount))"]
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
+            .filter { !$0.isEmpty }.joined(separator: "\n\n")
         return (payload, display, "Attached file: \(attachment.filename) (\(attachment.formattedByteCount))")
     }
 
@@ -1141,11 +1174,16 @@ final class HermesTUIGatewayStore {
         connectionStatus = label
     }
 
-    private func restoreMessages(from values: [JSONValue]) {
+    func restoreMessages(from values: [JSONValue]) {
         let restored = values.compactMap { value -> HermesTUIGatewayMessage? in
             let object = value.objectValue
             let role = (object["role"]?.stringValue ?? "assistant").lowercased()
-            let text = object["content"]?.stringValue ?? object["text"]?.stringValue ?? ""
+            let rawText = object["content"]?.stringValue ?? object["text"]?.stringValue ?? ""
+            // Native-image history is flattened by the gateway for legacy clients.
+            // Never turn that media sidecar back into a multi-MiB transcript string.
+            let text = rawText.replacingOccurrences(
+                of: #"data:[^\s;,]+;base64,[A-Za-z0-9+/=_-]+"#,
+                with: "[Attached media]", options: [.regularExpression, .caseInsensitive])
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             return HermesTUIGatewayMessage(role: role == "user" ? .user : .assistant, title: role == "user" ? "You" : "Hermes", content: text)
         }
@@ -1345,6 +1383,7 @@ private struct HermesTUIGatewayView: View {
     @State private var isPhoneAttachmentImportPending = false
     @State private var isCompactPadComposerActionsExpanded = false
     @State private var phoneInference = HermesTUIPhoneInferenceDraft()
+    @FocusState private var isPromptFocused: Bool
 
     private var store: HermesTUIGatewayStore { workspace.store }
     private var isPhoneLayout: Bool { horizontalSizeClass == .compact }
@@ -1573,6 +1612,7 @@ private struct HermesTUIGatewayView: View {
                 .padding(.horizontal, isPhoneLayout ? 12 : 22)
                 .padding(.vertical, 16)
             }
+            .tuiPhoneTranscriptTapToDismiss($isPromptFocused)
             .onAppear { scrollToBottom(proxy, animated: false) }
             .onChange(of: store.messages.count) { _, _ in scrollToBottom(proxy) }
             .onChange(of: store.messages.last?.content) { _, _ in scrollToBottom(proxy) }
@@ -1622,6 +1662,7 @@ private struct HermesTUIGatewayView: View {
                     }
 
                     TextEditor(text: $workspace.promptText)
+                        .tuiPhonePromptFocus($isPromptFocused)
                         .scrollContentBackground(.hidden)
                         .frame(minHeight: composerMinHeight, maxHeight: composerMaxHeight)
                         .igFieldBackground()

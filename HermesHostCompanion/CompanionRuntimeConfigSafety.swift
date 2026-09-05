@@ -143,20 +143,46 @@ if action in ('listTools', 'setTool'):
     if not isinstance(names, list) or any(not isinstance(n, str) or n.startswith('hermes-') for n in names):
         raise ValueError('Explicit CLI list required')
     if action == 'setTool':
-        names = list(names)
         key = r['key']
         if not isinstance(key, str) or type(r['enabled']) is not bool: raise ValueError('Invalid toggle')
-        if r['enabled'] and key not in names: names.append(key)
-        if not r['enabled']: names = [n for n in names if n != key]
-        platforms['cli'] = names
+        if key == 'stt':
+            # Hermes treats STT as a configuration-only capability: its switch
+            # is stt.enabled and it must never enter platform_toolsets.cli.
+            child(cfg, 'stt', create=True)['enabled'] = r['enabled']
+        else:
+            names = list(names)
+            if r['enabled'] and key not in names: names.append(key)
+            if not r['enabled']: names = [n for n in names if n != key]
+            platforms['cli'] = names
     result['enabledToolsets'] = names
+    stt = child(cfg, 'stt')
+    stt_value = stt.get('enabled', True)
+    stt_enabled = (stt_value.strip().lower() in ('1', 'true', 'yes', 'on')
+                   if isinstance(stt_value, str) else bool(stt_value))
+    result['configOnlyEnabledToolsets'] = ['stt'] if stt_enabled else []
 elif action in ('listPlatforms', 'setPlatform'):
-    platforms = child(cfg, 'platforms', create=action == 'setPlatform')
+    # Match gateway/config_loader.py merge_platform_sections: nested, root,
+    # then gateway.<platform>. Inspect only raw YAML; never load auth/defaults.
+    gateway = child(cfg, 'gateway')
+    nested = child(gateway, 'platforms')
+    platforms = child(cfg, 'platforms')
+    def blocks(key):
+        return [child(parent, key) for parent in (nested, platforms, gateway) if key in parent]
+    def enabled_value(key):
+        value = False
+        for block in blocks(key):
+            if 'enabled' in block: value = block['enabled'] is True
+        return value
     if action == 'setPlatform':
         key = r['platform']
-        if not isinstance(key, str) or type(r['enabled']) is not bool: raise ValueError('Invalid toggle')
-        child(platforms, key, create=True)['enabled'] = r['enabled']
-    result['platformEnabled'] = {key: child(platforms, key).get('enabled', False) is True for key in r['platforms']}
+        if not isinstance(key, str) or key not in r['platforms'] or type(r['enabled']) is not bool: raise ValueError('Invalid toggle')
+        existing = blocks(key)
+        # Write the highest-precedence existing block, retaining every other
+        # key. Explicit false prevents the plugin env pass from re-enabling it.
+        target = existing[-1] if existing else child(child(cfg, 'platforms', create=True), key, create=True)
+        target['enabled'] = r['enabled']
+        platforms = child(cfg, 'platforms')
+    result['platformEnabled'] = {key: enabled_value(key) for key in r['platforms']}
 else:
     raise ValueError('Unsupported operation')
 if action in ('setTool', 'setPlatform'):

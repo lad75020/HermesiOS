@@ -45,6 +45,7 @@ final class CompanionToolsetRegistry {
         .init(key: "vision", label: "Vision", description: "Allow image understanding and visual analysis."),
         .init(key: "image_gen", label: "Image Generation", description: "Allow image generation tools."),
         .init(key: "tts", label: "Text to Speech", description: "Allow speech synthesis output."),
+        .init(key: "stt", label: "Speech-to-Text", description: "Allow speech transcription for gateway voice messages and voice mode."),
         .init(key: "skills", label: "Skills", description: "Allow loading and applying Hermes skills."),
         .init(key: "memory", label: "Memory", description: "Allow persistent memory and workspace note tools."),
         .init(key: "session_search", label: "Session Search", description: "Allow searching prior sessions and stored traces."),
@@ -59,21 +60,26 @@ final class CompanionToolsetRegistry {
         let configURL = try resolvedConfigURL(from: workspacePath)
         let result = try CompanionRuntimeConfigSafety.apply(configURL: configURL, request: ["action": "listTools"])
         guard let enabled = result["enabledToolsets"] as? [String] else { throw CompanionRuntimeConfigSafety.Failure.rejected }
-        let enabledSet = Set(enabled)
+        let configOnlyEnabled = result["configOnlyEnabledToolsets"] as? [String] ?? []
 
         return ListToolsetsResult(
             workspacePath: workspacePath,
             resolvedWorkspacePath: configURL.deletingLastPathComponent().path,
             configPath: configURL.path,
-            toolsets: Self.definitions.map { definition in
-                CompanionToolsetInfo(
-                    key: definition.key,
-                    label: definition.label,
-                    description: definition.description,
-                    enabled: enabledSet.contains(definition.key)
-                )
-            }
+            toolsets: Self.makeToolsetInfos(enabledToolsets: enabled, configOnlyEnabledToolsets: configOnlyEnabled)
         )
+    }
+
+    static func makeToolsetInfos(enabledToolsets: [String], configOnlyEnabledToolsets: [String]) -> [CompanionToolsetInfo] {
+        let enabledSet = Set(enabledToolsets).union(configOnlyEnabledToolsets)
+        return definitions.map { definition in
+            CompanionToolsetInfo(
+                key: definition.key,
+                label: definition.label,
+                description: definition.description,
+                enabled: enabledSet.contains(definition.key)
+            )
+        }
     }
 
     func setToolsetEnabled(

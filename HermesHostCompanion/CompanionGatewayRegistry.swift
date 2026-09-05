@@ -49,6 +49,15 @@ enum CompanionGatewayRegistryError: LocalizedError {
 
 final class CompanionGatewayRegistry {
     private let fileManager = FileManager.default
+    typealias CommandResult = (success: Bool, output: String, error: String?)
+    typealias CommandRunner = ([String], URL, URL, TimeInterval) -> CommandResult
+    private let commandRunner: CommandRunner?
+
+    /// Fixture tests replace only process execution; profile, metadata and file
+    /// mutations still use the production path without starting a real gateway.
+    init(commandRunner: CommandRunner? = nil) {
+        self.commandRunner = commandRunner
+    }
 
     func config(workspacePath: String, profileName: String?) throws -> GatewayConfigResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
@@ -145,7 +154,13 @@ final class CompanionGatewayRegistry {
         try CompanionRuntimeConfigSafety.validateEnvReplacement(value)
         try setEnvValue(profileURL: profileURL, key: normalizedKey, value: value)
         let profile = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
-        let shouldRestart = normalizedKey.hasSuffix("_API_KEY") || normalizedKey.hasSuffix("_TOKEN") || normalizedKey == "HF_TOKEN"
+        // Photon reads its project credentials and sidecar settings when the
+        // gateway starts, so every Photon setting needs the same running-
+        // gateway reload behavior as conventional token-based platforms.
+        let shouldRestart = normalizedKey.hasPrefix("PHOTON_")
+            || normalizedKey.hasSuffix("_API_KEY")
+            || normalizedKey.hasSuffix("_TOKEN")
+            || normalizedKey == "HF_TOKEN"
         let restartOutput: String?
         if shouldRestart, gatewayStatus(workspacePath: workspacePath, profileName: profile).running {
             let command = runGatewayCommand(["restart"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 30)
@@ -276,7 +291,8 @@ final class CompanionGatewayRegistry {
         return kill(pid, 0) == 0
     }
 
-    private func runGatewayCommand(_ args: [String], workspaceURL: URL, profileURL: URL, timeout: TimeInterval) -> (success: Bool, output: String, error: String?) {
+    private func runGatewayCommand(_ args: [String], workspaceURL: URL, profileURL: URL, timeout: TimeInterval) -> CommandResult {
+        if let commandRunner { return commandRunner(args, workspaceURL, profileURL, timeout) }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["hermes", "gateway", "--accept-hooks"] + args
@@ -331,6 +347,8 @@ final class CompanionGatewayRegistry {
         .init(key: "email", label: "Email", description: "IMAP/SMTP email gateway", fields: ["EMAIL_IMAP_SERVER", "EMAIL_SMTP_SERVER", "EMAIL_ADDRESS", "EMAIL_PASSWORD"]),
         .init(key: "sms", label: "SMS", description: "Twilio/SMS gateway", fields: ["SMS_PROVIDER", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"]),
         .init(key: "bluebubbles", label: "iMessage", description: "BlueBubbles iMessage bridge", fields: ["BLUEBUBBLES_URL", "BLUEBUBBLES_PASSWORD"]),
+        // Bundled plugins/platforms/photon/adapter.py contract; not BlueBubbles credentials.
+        .init(key: "photon", label: "Photon iMessage", description: "Photon Spectrum iMessage gateway. First run hermes photon setup on the host to link your account and install the Node sidecar.", fields: ["PHOTON_PROJECT_ID", "PHOTON_PROJECT_SECRET", "PHOTON_ALLOWED_USERS", "PHOTON_HOME_CHANNEL", "PHOTON_HOME_CHANNEL_NAME", "PHOTON_SIDECAR_PORT", "PHOTON_REQUIRE_MENTION", "PHOTON_MENTION_PATTERNS"]),
         .init(key: "dingtalk", label: "DingTalk", description: "DingTalk bot gateway", fields: ["DINGTALK_APP_KEY", "DINGTALK_APP_SECRET"]),
         .init(key: "feishu", label: "Feishu", description: "Feishu app gateway", fields: ["FEISHU_APP_ID", "FEISHU_APP_SECRET"]),
         .init(key: "wecom", label: "WeCom", description: "WeCom corporate gateway", fields: ["WECOM_CORP_ID", "WECOM_AGENT_ID", "WECOM_SECRET"]),
@@ -364,6 +382,14 @@ final class CompanionGatewayRegistry {
         .init(key: "TWILIO_PHONE_NUMBER", label: "Twilio phone number", type: "text", hint: "Twilio sender phone number."),
         .init(key: "BLUEBUBBLES_URL", label: "BlueBubbles URL", type: "text", hint: "BlueBubbles server URL."),
         .init(key: "BLUEBUBBLES_PASSWORD", label: "BlueBubbles password", type: "password", hint: "BlueBubbles server password."),
+        .init(key: "PHOTON_PROJECT_ID", label: "Spectrum project ID", type: "text", hint: "Spectrum project ID from hermes photon setup, not the dashboard project ID. Restart the gateway after editing."),
+        .init(key: "PHOTON_PROJECT_SECRET", label: "Project secret", type: "password", hint: "Photon Spectrum project secret. Write-only replacement; restart the gateway after editing."),
+        .init(key: "PHOTON_ALLOWED_USERS", label: "Allowed users", type: "text", hint: "Comma-separated E.164 phone numbers. Unknown senders are ignored when an allowlist is set."),
+        .init(key: "PHOTON_HOME_CHANNEL", label: "Home channel", type: "text", hint: "Default Photon space ID or E.164 phone number for cron and notifications."),
+        .init(key: "PHOTON_HOME_CHANNEL_NAME", label: "Home channel name", type: "text", hint: "Human-readable name for the home channel."),
+        .init(key: "PHOTON_SIDECAR_PORT", label: "Sidecar port", type: "text", hint: "Loopback control port, default 8789. Restart the gateway after editing."),
+        .init(key: "PHOTON_REQUIRE_MENTION", label: "Require group mention", type: "text", hint: "true or false (default). DMs still work. YAML require_mention takes precedence."),
+        .init(key: "PHOTON_MENTION_PATTERNS", label: "Group mention patterns", type: "text", hint: "JSON list or comma-separated regular expressions. YAML mention_patterns takes precedence."),
         .init(key: "DINGTALK_APP_KEY", label: "App key", type: "password", hint: "DingTalk application key."),
         .init(key: "DINGTALK_APP_SECRET", label: "App secret", type: "password", hint: "DingTalk application secret."),
         .init(key: "FEISHU_APP_ID", label: "App ID", type: "text", hint: "Feishu app ID."),

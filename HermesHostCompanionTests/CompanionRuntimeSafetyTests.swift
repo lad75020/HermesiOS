@@ -11,6 +11,19 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         try body(root)
     }
 
+    private func transformToolsetFixture(_ content: String, action: String, enabled: Bool? = nil) throws -> [String: Any] {
+        let workspaces = CompanionWorkspaceSecurity.approvedHermesRoots(preferredWorkspacePath: nil)
+        guard let workspace = workspaces.first(where: { CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: $0.path) != nil }) else {
+            throw XCTSkip("A Hermes CLI runtime with PyYAML is required for this host transformer fixture.")
+        }
+        var request: [String: Any] = ["action": action, "content": content]
+        if action == "setTool" {
+            request["key"] = "stt"
+            request["enabled"] = try XCTUnwrap(enabled)
+        }
+        return try CompanionRuntimeConfigSafety.transform(workspacePath: workspace.path, request: request)
+    }
+
     func testCredentialPoolEndpointRejectsBeforeTouchingNativeAuthFixture() throws {
         try fixture { root in
             let auth = root.appendingPathComponent("auth.json")
@@ -111,5 +124,52 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
             XCTAssertThrowsError(try CompanionRuntimeConfigSafety.read(file))
             XCTAssertEqual(try Data(contentsOf: file), Data([0xFF, 0xFE, 0xFF]))
         }
+    }
+
+    func testSpeechToTextUsesConfigOnlyToggleAndPreservesOtherYAML() throws {
+        let fixture = """
+        platform_toolsets:
+          cli: [web, terminal]
+        stt:
+          enabled: false
+          provider: local
+        gateway:
+          api:
+            port: 8642
+        unrelated:
+          retained: [one, two]
+        """
+
+        let listedDisabled = try transformToolsetFixture(fixture, action: "listTools")
+        XCTAssertEqual(listedDisabled["enabledToolsets"] as? [String], ["web", "terminal"])
+        XCTAssertEqual(listedDisabled["configOnlyEnabledToolsets"] as? [String], [])
+        let disabledRows = CompanionToolsetRegistry.makeToolsetInfos(
+            enabledToolsets: try XCTUnwrap(listedDisabled["enabledToolsets"] as? [String]),
+            configOnlyEnabledToolsets: try XCTUnwrap(listedDisabled["configOnlyEnabledToolsets"] as? [String])
+        )
+        XCTAssertEqual(disabledRows.first(where: { $0.key == "stt" })?.enabled, false)
+
+        let enabled = try transformToolsetFixture(fixture, action: "setTool", enabled: true)
+        XCTAssertEqual(enabled["enabledToolsets"] as? [String], ["web", "terminal"])
+        XCTAssertEqual(enabled["configOnlyEnabledToolsets"] as? [String], ["stt"])
+        let enabledRows = CompanionToolsetRegistry.makeToolsetInfos(
+            enabledToolsets: try XCTUnwrap(enabled["enabledToolsets"] as? [String]),
+            configOnlyEnabledToolsets: try XCTUnwrap(enabled["configOnlyEnabledToolsets"] as? [String])
+        )
+        XCTAssertEqual(enabledRows.first(where: { $0.key == "stt" })?.enabled, true)
+        let enabledYAML = try XCTUnwrap(enabled["content"] as? String)
+        XCTAssertFalse(enabledYAML.contains("- stt"))
+        XCTAssertTrue(enabledYAML.contains("provider: local"))
+        XCTAssertTrue(enabledYAML.contains("port: 8642"))
+        XCTAssertTrue(enabledYAML.contains("retained:"))
+
+        let disabled = try transformToolsetFixture(enabledYAML, action: "setTool", enabled: false)
+        XCTAssertEqual(disabled["enabledToolsets"] as? [String], ["web", "terminal"])
+        XCTAssertEqual(disabled["configOnlyEnabledToolsets"] as? [String], [])
+        let disabledYAML = try XCTUnwrap(disabled["content"] as? String)
+        XCTAssertFalse(disabledYAML.contains("- stt"))
+        XCTAssertTrue(disabledYAML.contains("provider: local"))
+        XCTAssertTrue(disabledYAML.contains("port: 8642"))
+        XCTAssertTrue(disabledYAML.contains("retained:"))
     }
 }

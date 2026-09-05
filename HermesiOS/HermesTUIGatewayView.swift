@@ -708,7 +708,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func handleWebSocketText(_ text: String) async {
+    func handleWebSocketText(_ text: String) async {
         guard let data = text.data(using: .utf8), let envelope = try? JSONDecoder().decode(HermesTUIGatewayRPCEnvelope.self, from: data) else { return }
         if let id = envelope.id, let continuation = pendingResponses.removeValue(forKey: id) {
             if let error = envelope.error {
@@ -729,6 +729,10 @@ final class HermesTUIGatewayStore {
             sessionID = eventSessionID
         }
         switch event.type {
+        case "sessions.changed", "cron.changed", "platforms.changed", "pairing.changed", "pet.changed", "skin.changed":
+            // Global dashboard invalidations are not conversation activity. Keep
+            // counting received events without changing the transcript or status.
+            return
         case "gateway.ready":
             connectionStatus = "Gateway ready"
         case "session.info":

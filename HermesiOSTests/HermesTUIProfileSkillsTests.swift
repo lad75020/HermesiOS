@@ -2,217 +2,129 @@ import XCTest
 @testable import HermesiOS
 
 @MainActor
-final class HermesTUIProfileSkillsTests: XCTestCase {
-    private func payload(profileName: String = "research", skills: [JSONValue]) -> JSONValue {
-        .object([
-            "name": .string(profileName),
-            "skills": .array(skills),
-            "model": .string("must-not-be-modelled"),
-            "soul": .object(["private": .string("must-not-be-modelled")])
-        ])
+final class HermesDashboardProfileSkillsTests: XCTestCase {
+    private let settings = HermesAPISettings(baseURL: "https://100.64.0.2:8642/v1")
+
+    private func response(_ request: URLRequest, status: Int = 200, body: String) -> (Data, URLResponse) {
+        let http = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        return (Data(body.utf8), http)
     }
 
-    private func skill(_ name: String, enabled: Bool) -> JSONValue {
-        .object(["name": .string(name), "enabled": .bool(enabled)])
-    }
-
-    private func assertRequestFails(_ operation: () throws -> Void) {
-        XCTAssertThrowsError(try operation()) { error in
-            guard case HermesTUIGatewayError.requestFailed(let message) = error else {
-                return XCTFail("Expected requestFailed, got \(error)")
-            }
-            XCTAssertFalse(message.isEmpty)
-        }
-    }
-
-    func testDecodeActualDescribePayloadAndSortsSkillNames() throws {
-        let value = try JSONDecoder().decode(JSONValue.self, from: Data(#"""
-        {
-          "name": "research",
-          "skills": [
-            {"name": "zeta", "enabled": false},
-            {"name": "alpha", "enabled": true}
-          ],
-          "model": "not-for-this-view",
-          "soul": {"private": "not-for-this-view"}
-        }
+    func testCompactDashboardSkillsDecodeWithoutDescriptions() throws {
+        let skills = try JSONDecoder().decode([HermesDashboardProfileSkill].self, from: Data(#"""
+        [{"name":"terminal","enabled":true,"category":""}]
         """#.utf8))
-
-        let decoded = try HermesTUIProfileSkills.decode(value, profileName: "research")
-
-        XCTAssertEqual(decoded.profileName, "research")
-        XCTAssertEqual(decoded.skills, [
-            HermesTUIProfileSkill(name: "alpha", isEnabled: true),
-            HermesTUIProfileSkill(name: "zeta", isEnabled: false)
-        ])
-        XCTAssertEqual(decoded.skills.map(\.id), ["alpha", "zeta"])
+        XCTAssertEqual(skills, [HermesDashboardProfileSkill(name: "terminal", isEnabled: true)])
+        XCTAssertNil(skills[0].description)
+        XCTAssertFalse(skills[0].category.isEmpty)
     }
 
-    func testDecodeRequiresExactCaseSensitiveProfileName() {
-        let value = payload(profileName: "Research", skills: [])
-        assertRequestFails { _ = try HermesTUIProfileSkills.decode(value, profileName: "research") }
-        assertRequestFails { _ = try HermesTUIProfileSkills.decode(payload(skills: []), profileName: " research ") }
-        assertRequestFails { _ = try HermesTUIProfileSkills.decode(payload(skills: []), profileName: "   ") }
-    }
-
-    func testDecodeRejectsMissingOrInvalidRowsFieldsAndArray() {
-        let invalidPayloads: [JSONValue] = [
-            .null,
-            .object(["skills": .array([])]),
-            .object(["name": .bool(true), "skills": .array([])]),
-            .object(["name": .string("research")]),
-            .object(["name": .string("research"), "skills": .object([:])]),
-            payload(skills: [.string("not an object")]),
-            payload(skills: [.object(["enabled": .bool(true)])]),
-            payload(skills: [.object(["name": .string("   "), "enabled": .bool(true)])]),
-            payload(skills: [.object(["name": .string("terminal")])]),
-            payload(skills: [.object(["name": .string("terminal"), "enabled": .string("true")])]),
-            payload(skills: [.object(["name": .string("terminal"), "enabled": .number(1)])])
-        ]
-
-        for value in invalidPayloads {
-            assertRequestFails { _ = try HermesTUIProfileSkills.decode(value, profileName: "research") }
-        }
-    }
-
-    func testDecodeAllowsEmptyInventory() throws {
-        let decoded = try HermesTUIProfileSkills.decode(payload(skills: []), profileName: "research")
-        XCTAssertEqual(decoded, HermesTUIProfileSkills(profileName: "research", skills: []))
-    }
-
-    func testDecodeRejectsConflictingStatesForRepeatedLeafName() {
-        let value = payload(skills: [skill("terminal", enabled: true), skill("terminal", enabled: false)])
-        assertRequestFails { _ = try HermesTUIProfileSkills.decode(value, profileName: "research") }
-    }
-
-    func testRepeatedLeafNamesKeepEntryTotalsAndStableUniqueRows() throws {
-        let rows = [skill("review", enabled: true), skill("memory", enabled: false), skill("review", enabled: true)]
-        let decoded = try HermesTUIProfileSkills.decode(payload(skills: rows), profileName: "research")
-        let reordered = try HermesTUIProfileSkills.decode(payload(skills: Array(rows.reversed())), profileName: "research")
-        XCTAssertEqual(decoded, reordered)
-        XCTAssertEqual(decoded.skills.map(\.id), ["memory", "review"])
-        XCTAssertEqual(decoded.skills.map(\.occurrenceCount), [1, 2])
-        XCTAssertEqual(decoded.installedCount, 3)
-        XCTAssertEqual(decoded.enabledCount, 2)
-    }
-
-    func testRuntimeProfileSkillsUsesOnlyDescribeForSelectedProfileWithoutSessionMutation() async throws {
-        let store = HermesTUIGatewayStore()
-        store.isConnected = true
-        store.sessionID = "existing-session"
-        var requests: [(String, [String: JSONValue])] = []
-        store.requestOverride = { method, params in
-            requests.append((method, params))
-            return self.payload(skills: [self.skill("terminal", enabled: true)])
+    func testLoadUsesExactSelectedProfileQueryAndSessionToken() async throws {
+        let store = HermesDashboardProfileSkillsStore()
+        var requests: [URLRequest] = []
+        store.transportOverride = { request in
+            requests.append(request)
+            if request.url?.path != "/api/skills" {
+                return self.response(request, body: #"window.__HERMES_SESSION_TOKEN__="token""#)
+            }
+            return self.response(request, body: #"[{"name":"terminal","enabled":true,"category":"system"}]"#)
         }
 
-        let result = try await store.runtimeProfileSkills(profileName: "research")
+        let skills = try await store.load(profile: "Research", dashboardBaseURL: "https://100.64.0.2:8642", apiSettings: settings)
 
-        XCTAssertEqual(requests.map(\.0), ["profiles.describe"])
-        XCTAssertEqual(requests.first?.1, ["name": .string("research")])
-        XCTAssertEqual(store.sessionID, "existing-session")
-        XCTAssertTrue(store.messages.isEmpty)
-        XCTAssertFalse(store.isStreaming)
-        XCTAssertEqual(result.skills.map(\.name), ["terminal"])
+        XCTAssertEqual(skills.map(\.name), ["terminal"])
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(
+            Set(URLComponents(url: requests[1].url!, resolvingAgainstBaseURL: false)?.queryItems ?? []),
+            Set([
+                URLQueryItem(name: "profile", value: "Research"),
+                URLQueryItem(name: "include_descriptions", value: "false")
+            ])
+        )
+        XCTAssertEqual(requests[1].value(forHTTPHeaderField: "X-Hermes-Session-Token"), "token")
     }
 
-    func testDefaultProfileIsExplicitAndMalformedNamesNeverReachTransport() async throws {
-        let store = HermesTUIGatewayStore()
-        store.isConnected = true
-        var calls = 0
-        store.requestOverride = { method, params in
-            calls += 1
-            XCTAssertEqual(method, "profiles.describe")
-            XCTAssertEqual(params, ["name": .string("default")])
-            return self.payload(profileName: "default", skills: [])
+    func testDescriptionLoadsOnlyRequestedSkillWithExactProfile() async throws {
+        let store = HermesDashboardProfileSkillsStore()
+        var requests: [URLRequest] = []
+        store.transportOverride = { request in
+            requests.append(request)
+            if request.url?.path != "/api/skills/description" {
+                return self.response(request, body: #"window.__HERMES_SESSION_TOKEN__="token""#)
+            }
+            return self.response(request, body: #"{"name":"terminal","description":"Run commands"}"#)
         }
-        let result = try await store.runtimeProfileSkills(profileName: "default")
-        XCTAssertEqual(result.profileName, "default")
-        for name in ["", " ", " default", "default\n"] {
-            do {
-                _ = try await store.runtimeProfileSkills(profileName: name)
-                XCTFail("Expected invalid profile rejection")
-            } catch { }
-        }
-        XCTAssertEqual(calls, 1)
-        XCTAssertTrue(store.sessionID.isEmpty)
-        XCTAssertTrue(store.messages.isEmpty)
+
+        let description = try await store.loadDescription(
+            name: "terminal",
+            profile: "Research",
+            dashboardBaseURL: "https://100.64.0.2:8642",
+            apiSettings: settings
+        )
+
+        XCTAssertEqual(description, "Run commands")
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests[1].url?.path, "/api/skills/description")
+        XCTAssertEqual(
+            Set(URLComponents(url: requests[1].url!, resolvingAgainstBaseURL: false)?.queryItems ?? []),
+            Set([
+                URLQueryItem(name: "name", value: "terminal"),
+                URLQueryItem(name: "profile", value: "Research")
+            ])
+        )
+        XCTAssertEqual(requests[1].value(forHTTPHeaderField: "X-Hermes-Session-Token"), "token")
     }
 
-    func testRuntimeProfileSkillsPropagatesTransportError() async {
-        struct FixtureError: LocalizedError { var errorDescription: String? { "describe failed" } }
-        let store = HermesTUIGatewayStore()
-        store.isConnected = true
-        store.requestOverride = { _, _ in throw FixtureError() }
-
-        do {
-            _ = try await store.runtimeProfileSkills(profileName: "research")
-            XCTFail("Expected transport error")
-        } catch {
-            XCTAssertEqual(error.localizedDescription, "describe failed")
-        }
-    }
-
-    func testRuntimeProfileSkillsDoesNotRequestWhenDisconnected() async {
-        let store = HermesTUIGatewayStore()
-        store.requestOverride = { _, _ in
-            XCTFail("Disconnected request must not reach the transport")
-            return .null
-        }
-
-        do {
-            _ = try await store.runtimeProfileSkills(profileName: "research")
-            XCTFail("Expected not connected error")
-        } catch {
-            XCTAssertEqual(error.localizedDescription, HermesTUIGatewayError.notConnected.localizedDescription)
-        }
-    }
-
-    func testRuntimeProfileSkillsRejectsLateResponseAfterDisconnect() async {
-        let store = HermesTUIGatewayStore()
-        store.isConnected = true
-        var pending: CheckedContinuation<JSONValue, Never>?
-        store.requestOverride = { _, _ in
-            await withCheckedContinuation { continuation in pending = continuation }
-        }
-
-        let request = Task { () -> Error? in
-            do {
-                _ = try await store.runtimeProfileSkills(profileName: "research")
-                return nil
-            } catch {
-                return error
+    func testToggleAcknowledgementThenExactProfileReadbackWithoutOptimism() async throws {
+        let store = HermesDashboardProfileSkillsStore()
+        var requests: [URLRequest] = []
+        store.transportOverride = { request in
+            requests.append(request)
+            switch request.httpMethod {
+            case "PUT": return self.response(request, body: #"{"ok":true,"name":"terminal","enabled":false}"#)
+            case "GET" where request.url?.path == "/api/skills":
+                return self.response(request, body: #"[{"name":"terminal","enabled":false,"category":"system"}]"#)
+            default: return self.response(request, body: #"window.__HERMES_SESSION_TOKEN__="token""#)
             }
         }
-        while pending == nil { await Task.yield() }
-        store.disconnect()
-        pending?.resume(returning: payload(skills: []))
 
-        let error = await request.value
-        XCTAssertEqual(error?.localizedDescription, HermesTUIGatewayError.notConnected.localizedDescription)
+        let readback = try await store.setEnabled(name: "terminal", enabled: false, profile: "research", dashboardBaseURL: "https://100.64.0.2:8642", apiSettings: settings)
+
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "PUT", "GET"])
+        let body = try XCTUnwrap(requests[1].httpBody)
+        let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        XCTAssertEqual(json?["name"] as? String, "terminal")
+        XCTAssertEqual(json?["enabled"] as? Bool, false)
+        XCTAssertEqual(json?["profile"] as? String, "research")
+        XCTAssertEqual(
+            Set(URLComponents(url: requests[2].url!, resolvingAgainstBaseURL: false)?.queryItems ?? []),
+            Set([
+                URLQueryItem(name: "profile", value: "research"),
+                URLQueryItem(name: "include_descriptions", value: "false")
+            ])
+        )
+        XCTAssertEqual(readback.first?.isEnabled, false)
     }
 
-    func testRuntimeProfileSkillsRejectsResponseAfterCancellation() async {
-        let store = HermesTUIGatewayStore()
-        store.isConnected = true
-        var pending: CheckedContinuation<JSONValue, Never>?
-        store.requestOverride = { _, _ in
-            await withCheckedContinuation { continuation in pending = continuation }
-        }
-
-        let request = Task { () -> Error? in
-            do {
-                _ = try await store.runtimeProfileSkills(profileName: "research")
-                return nil
-            } catch {
-                return error
+    func testToggleRetriesOnceWithFreshTokenOn401() async throws {
+        let store = HermesDashboardProfileSkillsStore()
+        var tokens: [String] = []
+        var puts = 0
+        var tokenCount = 0
+        store.transportOverride = { request in
+            if request.url?.path != "/api/skills" && request.httpMethod != "PUT" {
+                tokenCount += 1
+                return self.response(request, body: "window.__HERMES_SESSION_TOKEN__=\"token\(tokenCount)\"")
             }
+            if request.httpMethod == "PUT" {
+                puts += 1
+                tokens.append(request.value(forHTTPHeaderField: "X-Hermes-Session-Token") ?? "")
+                return puts == 1 ? self.response(request, status: 401, body: "") : self.response(request, body: #"{"ok":true,"name":"terminal","enabled":false}"#)
+            }
+            return self.response(request, body: #"[{"name":"terminal","enabled":false,"category":"system"}]"#)
         }
-        while pending == nil { await Task.yield() }
-        request.cancel()
-        pending?.resume(returning: payload(skills: []))
 
-        let error = await request.value
-        XCTAssertEqual(error?.localizedDescription, HermesTUIGatewayError.notConnected.localizedDescription)
+        _ = try await store.setEnabled(name: "terminal", enabled: false, profile: "research", dashboardBaseURL: "https://100.64.0.2:8642", apiSettings: settings)
+        XCTAssertEqual(tokens, ["token1", "token2"])
     }
 }

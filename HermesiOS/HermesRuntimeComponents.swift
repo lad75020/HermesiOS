@@ -96,14 +96,22 @@ struct HermesRuntimeAccordionPanel<Content: View>: View {
 struct HermesSkillToggleRow: View {
     let skill: HermesCompanionSkillSummary
     @Binding var isEnabled: Bool
+    @State private var isDescriptionExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .top, spacing: 8) {
-                        Text(skill.name)
-                            .font(.headline)
+                        Button {
+                            isDescriptionExpanded.toggle()
+                        } label: {
+                            Label(skill.name, systemImage: isDescriptionExpanded ? "chevron.down" : "chevron.right")
+                                .font(.headline)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Skill \(skill.name)")
+                        .accessibilityHint(isDescriptionExpanded ? "Collapses the skill description." : "Expands the skill description.")
                         Text(isEnabled ? "On" : "Off")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(isEnabled ? .igOnlineGreen : .secondary)
@@ -113,10 +121,12 @@ struct HermesSkillToggleRow: View {
                             .clipShape(Capsule())
                     }
 
-                    Text(skill.description)
-                        .font(.subheadline)
-                        .foregroundStyle(.hermesSecondaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if isDescriptionExpanded {
+                        Text(skill.description)
+                            .font(.subheadline)
+                            .foregroundStyle(.hermesSecondaryText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
                     HStack(spacing: 8) {
                         Text(skill.category.uppercased())
@@ -135,7 +145,90 @@ struct HermesSkillToggleRow: View {
 
                 Toggle("", isOn: $isEnabled)
                     .labelsHidden()
+                    .accessibilityLabel("\(skill.name) skill")
+                    .accessibilityValue(isEnabled ? "Enabled" : "Disabled")
             }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hermesLiquidGlass(cornerRadius: 18, tint: isEnabled ? .igOnlineGreen.opacity(0.06) : .white.opacity(0.03))
+    }
+}
+
+struct HermesDashboardProfileSkillToggleRow: View {
+    let skill: HermesDashboardProfileSkill
+    let description: String?
+    let isDescriptionLoading: Bool
+    let descriptionError: String?
+    @Binding var isEnabled: Bool
+    let canMutate: Bool
+    let onRequestDescription: () -> Void
+    @State private var isDescriptionExpanded = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    Button {
+                        if !isDescriptionExpanded, description == nil, !isDescriptionLoading {
+                            onRequestDescription()
+                        }
+                        isDescriptionExpanded.toggle()
+                    } label: {
+                        Label(skill.name, systemImage: isDescriptionExpanded ? "chevron.down" : "chevron.right")
+                            .font(.headline)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Skill \(skill.name)")
+                    .accessibilityHint(isDescriptionExpanded ? "Collapses the skill description." : "Expands the skill description.")
+
+                    Text(isEnabled ? "On" : "Off")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(isEnabled ? .igOnlineGreen : .secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background((isEnabled ? Color.igOnlineGreen : Color.secondary).opacity(0.12))
+                        .clipShape(Capsule())
+                }
+
+                if isDescriptionExpanded {
+                    if let description {
+                        Text(description)
+                            .font(.subheadline)
+                            .foregroundStyle(.hermesSecondaryText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if isDescriptionLoading {
+                        ProgressView("Loading description")
+                    } else if let descriptionError {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(descriptionError)
+                                .font(.caption)
+                                .foregroundStyle(.igDestructive)
+                            Button("Retry") { onRequestDescription() }
+                                .buttonStyle(.borderless)
+                        }
+                    } else {
+                        ProgressView("Loading description")
+                    }
+                }
+
+                Text(skill.category.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .hermesLiquidGlass(cornerRadius: 999, tint: .igActionBlue.opacity(0.16))
+
+            }
+
+            Spacer(minLength: 12)
+
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+                .disabled(!canMutate)
+                .accessibilityLabel("\(skill.name) skill")
+                .accessibilityValue(isEnabled ? "Enabled" : "Disabled")
+                .accessibilityHint(canMutate ? "Changes this selected profile's skill setting." : "A selected-profile skill change is already in progress.")
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)

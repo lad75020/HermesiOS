@@ -195,16 +195,79 @@ struct HermesTUIModelOption: Identifiable, Equatable {
     var id: String { "\(provider)::\(model)" }
 }
 
-/// A toolset reported by the existing TUI Gateway `toolsets.list` RPC. This is
+/// A toolset reported by the existing TUI Gateway `tools.list` RPC. This is
 /// separate from Host Companion's file-backed toolset model because the gateway
 /// owns both the configuration semantics and the active runtime scope.
 struct HermesTUIRuntimeToolset: Identifiable, Equatable {
+    enum Configuration: Equatable {
+        case configurable
+        case runtimePreset
+        case profilePinned
+    }
+
     let name: String
     let description: String
     let toolCount: Int
     let enabled: Bool
+    let configuration: Configuration
+
+    init(
+        name: String,
+        description: String,
+        toolCount: Int,
+        enabled: Bool,
+        configuration: Configuration = .configurable
+    ) {
+        self.name = name
+        self.description = description
+        self.toolCount = toolCount
+        self.enabled = enabled
+        self.configuration = configuration
+    }
 
     var id: String { name }
+
+    var isConfigurable: Bool { configuration == .configurable }
+}
+
+struct HermesTUIMCPServerTool: Identifiable, Equatable {
+    let name: String
+    let description: String
+    var id: String { name }
+}
+
+struct HermesTUIMCPServerTestResult: Equatable {
+    let ok: Bool
+    let error: String?
+    let tools: [HermesTUIMCPServerTool]
+
+    static func decode(_ value: JSONValue) throws -> Self {
+        guard case .object(let payload) = value,
+              case .bool(let ok)? = payload["ok"],
+              case .array(let rawTools)? = payload["tools"] else {
+            throw HermesTUIGatewayError.requestFailed("Invalid MCP server test response.")
+        }
+        var toolNames = Set<String>()
+        let tools = try rawTools.map { raw -> HermesTUIMCPServerTool in
+            guard case .object(let row) = raw,
+                  case .string(let name)? = row["name"], !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  case .string(let description)? = row["description"],
+                  toolNames.insert(name).inserted else {
+                throw HermesTUIGatewayError.requestFailed("Invalid MCP server test response.")
+            }
+            return HermesTUIMCPServerTool(name: name, description: description)
+        }
+        if ok {
+            guard payload["error"] == nil || payload["error"] == .null else {
+                throw HermesTUIGatewayError.requestFailed("Invalid MCP server test response.")
+            }
+            return Self(ok: true, error: nil, tools: tools)
+        }
+        guard tools.isEmpty, case .string(let error)? = payload["error"], !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw HermesTUIGatewayError.requestFailed("Invalid MCP server test response.")
+        }
+        return Self(ok: false, error: error, tools: [])
+    }
 }
 
 /// The gateway's `skills.manage` list response is a process-wide, cached catalog.
@@ -412,9 +475,21 @@ final class HermesTUIGatewayStore {
             profileName: profileName,
             authenticatedProfilePath: authenticatedProfilePath
         )
-        let result = try await request("toolsets.list", params: [:], timeoutSeconds: 45)
+        // `tools.list` includes the resolved tool names needed to distinguish
+        // dynamically registered MCP server aliases from ordinary toolsets.
+        let runtimeResult = try await request("tools.list", params: [:], timeoutSeconds: 45)
         try validateRuntimeRequest(generation)
-        return try Self.decodeRuntimeToolsets(result)
+        let configurableResult = try await request(
+            "profiles.describe",
+            params: ["name": .string(profileName)],
+            timeoutSeconds: 45
+        )
+        try validateRuntimeRequest(generation)
+        return try Self.decodeRuntimeToolsets(
+            runtimeResult: runtimeResult,
+            configurableResult: configurableResult,
+            expectedProfileName: profileName
+        )
     }
 
     /// Reads Hermes' existing process-wide skills catalog without a profile or
@@ -443,6 +518,26 @@ final class HermesTUIGatewayStore {
         let result = try await request("profiles.describe", params: ["name": .string(profileName)], timeoutSeconds: 45)
         try validateRuntimeRequest(generation)
         return try HermesTUIProfileSkills.decode(result, profileName: profileName)
+    }
+
+    /// Uses the existing gateway-first, profile-scoped MCP probe. This does not
+    /// create a chat session or change Hermes' active profile.
+    func testMCPServer(name: String, profileName: String) async throws -> HermesTUIMCPServerTestResult {
+        let serverName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !serverName.isEmpty,
+              profileName.isEmpty == false,
+              profileName == profileName.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw HermesTUIGatewayError.requestFailed("An exact MCP server and selected profile are required.")
+        }
+        let generation = connectionGeneration
+        try validateRuntimeRequest(generation)
+        let response = try await request(
+            "mcp.servers.test",
+            params: ["name": .string(serverName), "profile": .string(profileName)],
+            timeoutSeconds: 90
+        )
+        try validateRuntimeRequest(generation)
+        return try HermesTUIMCPServerTestResult.decode(response)
     }
 
     var runtimeConnectionVersion: UUID { connectionGeneration }
@@ -495,8 +590,14 @@ final class HermesTUIGatewayStore {
             authenticatedProfilePath: authenticatedProfilePath
         )
         try validateRuntimeRequest(operationGeneration)
-        guard before.contains(where: { $0.name == name }) else {
+        guard let target = before.first(where: { $0.name == name }) else {
             throw HermesTUIGatewayError.requestFailed("The requested TUI Gateway toolset is not available.")
+        }
+        guard target.configuration != .profilePinned else {
+            throw HermesTUIGatewayError.requestFailed("Toolset settings are pinned for this profile and cannot be changed through the launch-runtime controls.")
+        }
+        guard target.isConfigurable else {
+            throw HermesTUIGatewayError.requestFailed("The requested TUI Gateway toolset is a read-only runtime preset and cannot be changed.")
         }
         // The read above may have taken time; prove the launch scope again directly
         // before the write, then use a fresh generation guard for the acknowledgement.
@@ -522,7 +623,9 @@ final class HermesTUIGatewayStore {
             authenticatedProfilePath: authenticatedProfilePath
         )
         try validateRuntimeRequest(operationGeneration)
-        guard refreshed.first(where: { $0.name == name })?.enabled == enabled else {
+        guard let refreshedTarget = refreshed.first(where: { $0.name == name }),
+              refreshedTarget.isConfigurable,
+              refreshedTarget.enabled == enabled else {
             throw HermesTUIGatewayError.requestFailed("The gateway acknowledged the change, but its refreshed toolset state does not match. Reload before retrying.")
         }
         return refreshed
@@ -1151,13 +1254,53 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private static func decodeRuntimeToolsets(_ result: JSONValue) throws -> [HermesTUIRuntimeToolset] {
+    private static func decodeRuntimeToolsets(
+        runtimeResult: JSONValue,
+        configurableResult: JSONValue,
+        expectedProfileName: String
+    ) throws -> [HermesTUIRuntimeToolset] {
+        let runtimeToolsets = try decodeRuntimeToolsetRows(
+            runtimeResult,
+            configuration: .runtimePreset,
+            excludingMCPServers: true
+        )
+        guard case .object(let configurablePayload) = configurableResult,
+              configurablePayload["name"] == .string(expectedProfileName),
+              case .bool(let toolsetsPinned)? = configurablePayload["toolsets_pinned"] else {
+            throw HermesTUIGatewayError.requestFailed("Invalid or mismatched TUI Gateway profile toolsets response.")
+        }
+        let configurableToolsets = try decodeRuntimeToolsetRows(
+            configurableResult,
+            configuration: toolsetsPinned ? .profilePinned : .configurable
+        )
+        let configurableByName = Dictionary(uniqueKeysWithValues: configurableToolsets.map { ($0.name, $0) })
+        return runtimeToolsets.map { runtimeToolset in
+            guard let configurableToolset = configurableByName[runtimeToolset.name] else {
+                return runtimeToolset
+            }
+            return HermesTUIRuntimeToolset(
+                name: runtimeToolset.name,
+                description: runtimeToolset.description,
+                toolCount: runtimeToolset.toolCount,
+                enabled: configurableToolset.enabled,
+                configuration: configurableToolset.configuration
+            )
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private static func decodeRuntimeToolsetRows(
+        _ result: JSONValue,
+        configuration: HermesTUIRuntimeToolset.Configuration,
+        excludingMCPServers: Bool = false
+    ) throws -> [HermesTUIRuntimeToolset] {
         guard case .object(let payload) = result,
               case .array(let values)? = payload["toolsets"] else {
             throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway toolsets response.")
         }
         var names = Set<String>()
-        let toolsets = try values.map { value -> HermesTUIRuntimeToolset in
+        var toolsets: [HermesTUIRuntimeToolset] = []
+        for value in values {
             guard case .object(let row) = value,
                   case .string(let rawName)? = row["name"],
                   rawName.isEmpty == false,
@@ -1169,9 +1312,38 @@ final class HermesTUIGatewayStore {
                   names.insert(rawName).inserted else {
                 throw HermesTUIGatewayError.requestFailed("Invalid or ambiguous TUI Gateway toolset response.")
             }
-            return HermesTUIRuntimeToolset(name: rawName, description: description, toolCount: toolCount, enabled: enabled)
+
+            if excludingMCPServers {
+                guard case .array(let rawTools)? = row["tools"] else {
+                    throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway tools response.")
+                }
+                let toolNames = try rawTools.map { value -> String in
+                    guard case .string(let name) = value, name.isEmpty == false else {
+                        throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway tools response.")
+                    }
+                    return name
+                }
+                guard toolNames.count == toolCount else {
+                    throw HermesTUIGatewayError.requestFailed("Invalid TUI Gateway tools response.")
+                }
+                // Hermes registers every native MCP server in a dynamic alias
+                // whose resolved tools all use the mcp__<server>__<tool> namespace.
+                // Those servers have their own Agent Runtime section and must not
+                // also be presented as generic toolsets.
+                if !toolNames.isEmpty, toolNames.allSatisfy({ $0.hasPrefix("mcp__") }) {
+                    continue
+                }
+            }
+
+            toolsets.append(HermesTUIRuntimeToolset(
+                name: rawName,
+                description: description,
+                toolCount: toolCount,
+                enabled: enabled,
+                configuration: configuration
+            ))
         }
-        return toolsets.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return toolsets
     }
 
     static func decodeRuntimeSkillsCatalog(_ result: JSONValue) throws -> HermesTUIGatewaySkillsCatalog {

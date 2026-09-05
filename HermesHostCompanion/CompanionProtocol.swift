@@ -392,6 +392,12 @@ struct RemoveMCPServerPayload: Codable {
     let name: String
 }
 
+struct SetMCPServerEnabledPayload: Codable {
+    let workspacePath: String
+    let name: String
+    let enabled: Bool
+}
+
 struct MCPServerOperationResult: Codable {
     let workspacePath: String
     let resolvedWorkspacePath: String
@@ -406,6 +412,20 @@ struct CompanionMCPServerSummary: Codable, Identifiable {
     let transport: String
     let tools: String
     let status: String
+    let enabled: Bool
+
+    enum CodingKeys: String, CodingKey { case id, name, transport, tools, status, enabled }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        transport = try container.decode(String.self, forKey: .transport)
+        tools = try container.decode(String.self, forKey: .tools)
+        status = try container.decode(String.self, forKey: .status)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled)
+            ?? !status.localizedCaseInsensitiveContains("disabled")
+    }
 }
 
 struct GatewayConfigPayload: Codable {

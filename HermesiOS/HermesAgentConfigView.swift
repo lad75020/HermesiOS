@@ -390,7 +390,16 @@ struct HermesAgentConfigView: View {
                 settings: companionSettings,
                 identity: companionEnrollment.identityState
             ))
-        case .mcpServers: HermesMCPServersPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
+        case .mcpServers:
+            HermesMCPServersPanel(
+                companionSettings: scopedCompanionSettings,
+                companionEnrollment: companionEnrollment,
+                companionRuntime: scopedCompanionRuntime,
+                tuiGatewayStore: tuiGatewayStore,
+                apiSettings: apiSettings,
+                dashboardURLString: dashboardURLString,
+                selectedRuntimeProfileName: selectedRuntimeProfileName
+            )
         case .providers: HermesProvidersPanel(companionSettings: scopedCompanionSettings, companionEnrollment: companionEnrollment, companionRuntime: scopedCompanionRuntime)
         case .models:
             HermesGatewayModelsPanel(gatewayStore: tuiGatewayStore, apiSettings: apiSettings,

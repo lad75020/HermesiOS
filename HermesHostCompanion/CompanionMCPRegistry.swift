@@ -49,6 +49,15 @@ final class CompanionMCPRegistry {
         return MCPServerOperationResult(workspacePath: workspacePath, resolvedWorkspacePath: result.workspacePath, serverName: name, output: "Removed MCP server from selected Hermes profile.", servers: result.servers)
     }
 
+    func setServerEnabled(_ payload: SetMCPServerEnabledPayload) async throws -> MCPServerOperationResult {
+        let name = payload.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw CompanionMCPRegistryError.invalidName }
+        let result = try await bridge(workspacePath: payload.workspacePath, request: [
+            "action": "setEnabled", "name": name, "enabled": payload.enabled
+        ])
+        return MCPServerOperationResult(workspacePath: payload.workspacePath, resolvedWorkspacePath: result.workspacePath, serverName: name, output: "Updated MCP server in selected Hermes profile.", servers: result.servers)
+    }
+
     private func validatedURL(_ raw: String) throws -> URL {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased(), ["https", "http"].contains(scheme) else { throw CompanionMCPRegistryError.invalidURL }
@@ -107,6 +116,13 @@ if action == "add":
 elif action == "remove":
     if name not in servers: raise ValueError("MCP server does not exist in the selected profile")
     del servers[name]
+elif action == "setEnabled":
+    if name not in servers or not isinstance(servers[name], dict): raise ValueError("MCP server does not exist in the selected profile")
+    enabled = r.get("enabled")
+    if not isinstance(enabled, bool): raise ValueError("MCP enabled state must be a boolean")
+    # `enabled` is the canonical field. Preserve every other server setting,
+    # including any auth references managed by Hermes itself.
+    servers[name]["enabled"] = enabled
 elif action != "list": raise ValueError("Unsupported MCP operation")
 if action != "list":
     if servers: cfg["mcp_servers"] = servers
@@ -117,7 +133,7 @@ def summary(n, c):
     tools = c.get("tools") if isinstance(c.get("tools"), dict) else {}; include, exclude = tools.get("include"), tools.get("exclude")
     selected = f"{len(include)} selected" if isinstance(include, list) and include else (f"{len(exclude)} excluded" if isinstance(exclude, list) and exclude else "all")
     enabled = c.get("enabled", True); enabled = str(enabled).lower() in ("true", "1", "yes") if isinstance(enabled, str) else bool(enabled)
-    return {"id": n, "name": n, "transport": kind, "tools": selected, "status": "enabled" if enabled else "disabled"}
+    return {"id": n, "name": n, "transport": kind, "tools": selected, "status": "enabled" if enabled else "disabled", "enabled": enabled}
 print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "servers": [summary(n, c) for n, c in sorted(servers.items()) if isinstance(c, dict)]}))
 """#
 }

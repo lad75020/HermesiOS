@@ -431,6 +431,7 @@ final class CompanionClientSession {
                         "list_mcp_servers",
                         "add_mcp_server",
                         "remove_mcp_server",
+                        "set_mcp_server_enabled",
                         "read_hermes_log",
                         "list_toolsets",
                         "set_toolset_enabled",
@@ -767,6 +768,13 @@ final class CompanionClientSession {
                 return .success(id: request.id, payload: try await mcpRegistry.removeServer(workspacePath: removePayload.workspacePath, name: removePayload.name))
             } catch {
                 return .error(id: request.id, code: "remove_mcp_server_failed", message: error.localizedDescription)
+            }
+        case "set_mcp_server_enabled":
+            do {
+                guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_mcp_server_enabled request requires a payload.") }
+                return .success(id: request.id, payload: try await mcpRegistry.setServerEnabled(try payload.decode(SetMCPServerEnabledPayload.self)))
+            } catch {
+                return .error(id: request.id, code: "set_mcp_server_enabled_failed", message: error.localizedDescription)
             }
         case "read_hermes_log":
             do {

@@ -10,6 +10,10 @@ struct HermesMCPServersPanel: View {
     let companionSettings: HermesCompanionSettings
     @Bindable var companionEnrollment: HermesCompanionEnrollmentSession
     @Bindable var companionRuntime: HermesCompanionRuntimeSession
+    let tuiGatewayStore: HermesTUIGatewayStore
+    let apiSettings: HermesAPISettings
+    let dashboardURLString: String
+    let selectedRuntimeProfileName: String
 
     @State private var serverName = ""
     @State private var transport: HermesCompanionMCPServerTransport = .stdio
@@ -18,6 +22,8 @@ struct HermesMCPServersPanel: View {
     @State private var url = ""
     @State private var bearerToken = ""
     @State private var searchQuery = ""
+    @State private var testRequestIDs: [String: UUID] = [:]
+    @State private var testDisplays: [String: MCPServerTestDisplay] = [:]
 
     private var visibleServers: [HermesCompanionMCPServerSummary] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -66,13 +72,28 @@ struct HermesMCPServersPanel: View {
                             )
                         } else {
                             ForEach(visibleServers) { server in
-                                MCPServerRow(server: server) {
-                                    companionRuntime.removeHermesMCPServer(
-                                        name: server.name,
-                                        settings: companionSettings,
-                                        identityState: companionEnrollment.identityState
-                                    )
-                                }
+                                MCPServerRow(
+                                    server: server,
+                                    isTesting: testRequestIDs[server.id] != nil,
+                                    isMutating: companionRuntime.isBusy,
+                                    testDisplay: testDisplays[server.id],
+                                    onEnabledChange: { enabled in
+                                        companionRuntime.setHermesMCPServerEnabled(
+                                            name: server.name,
+                                            enabled: enabled,
+                                            settings: companionSettings,
+                                            identityState: companionEnrollment.identityState
+                                        )
+                                    },
+                                    onTest: { testAvailability(server) },
+                                    onRemove: {
+                                        companionRuntime.removeHermesMCPServer(
+                                            name: server.name,
+                                            settings: companionSettings,
+                                            identityState: companionEnrollment.identityState
+                                        )
+                                    }
+                                )
                             }
                         }
                     }
@@ -151,7 +172,9 @@ struct HermesMCPServersPanel: View {
                 }
             }
         }
-        .task(id: companionEnrollment.identityState.deviceID) {
+        .task(id: "\(companionEnrollment.identityState.deviceID)|\(selectedRuntimeProfileName)") {
+            testRequestIDs = [:]
+            testDisplays = [:]
             guard companionEnrollment.identityState.isEnrolled else { return }
             companionRuntime.refreshHermesMCPServers(settings: companionSettings, identityState: companionEnrollment.identityState)
         }
@@ -180,10 +203,56 @@ struct HermesMCPServersPanel: View {
             return "hermes mcp add \(name) --transport openapi --url \(url.isEmpty ? "<url>" : url)" + (bearerToken.isEmpty ? "" : " --auth header")
         }
     }
+
+    private func testAvailability(_ server: HermesCompanionMCPServerSummary) {
+        let serverID = server.id
+        let serverName = server.name
+        let profileName = selectedRuntimeProfileName
+        let requestID = UUID()
+        testRequestIDs[serverID] = requestID
+        testDisplays.removeValue(forKey: serverID)
+        Task { @MainActor in
+            defer {
+                if profileName == selectedRuntimeProfileName,
+                   testRequestIDs[serverID] == requestID {
+                    testRequestIDs.removeValue(forKey: serverID)
+                }
+            }
+            do {
+                try await tuiGatewayStore.connectForRuntime(
+                    dashboardBaseURL: dashboardURLString,
+                    apiSettings: apiSettings
+                )
+                let result = try await tuiGatewayStore.testMCPServer(name: serverName, profileName: profileName)
+                guard testRequestIDs[serverID] == requestID,
+                      profileName == selectedRuntimeProfileName,
+                      companionRuntime.hermesMCPServers.contains(where: { $0.id == serverID }) else { return }
+                testDisplays[serverID] = result.ok
+                    ? .success(result.tools)
+                    : .failure
+            } catch {
+                guard testRequestIDs[serverID] == requestID,
+                      profileName == selectedRuntimeProfileName else { return }
+                // Gateway or probe errors can include host transport detail. Keep
+                // the UI safe and actionable without rendering untrusted text.
+                testDisplays[serverID] = .failure
+            }
+        }
+    }
+}
+
+private enum MCPServerTestDisplay: Equatable {
+    case success([HermesTUIMCPServerTool])
+    case failure
 }
 
 private struct MCPServerRow: View {
     let server: HermesCompanionMCPServerSummary
+    let isTesting: Bool
+    let isMutating: Bool
+    let testDisplay: MCPServerTestDisplay?
+    let onEnabledChange: (Bool) -> Void
+    let onTest: () -> Void
     let onRemove: () -> Void
 
     var body: some View {
@@ -207,6 +276,26 @@ private struct MCPServerRow: View {
                 Text("Tools: \(server.tools)")
                     .font(.caption)
                     .foregroundStyle(.hermesSecondaryText)
+                Toggle("Enabled", isOn: Binding(
+                    get: { server.enabled },
+                    set: onEnabledChange
+                ))
+                .disabled(isTesting || isMutating)
+                Button {
+                    onTest()
+                } label: {
+                    if isTesting {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Testing Availability")
+                        }
+                    } else {
+                        Label("Test Availability", systemImage: "network")
+                    }
+                }
+                .hermesGlassButton()
+                .disabled(isTesting || isMutating)
+                testResult
             }
             Spacer()
             Button(role: .destructive) {
@@ -216,9 +305,34 @@ private struct MCPServerRow: View {
             }
             .labelStyle(.iconOnly)
             .hermesGlassButton()
+            .disabled(isTesting || isMutating)
         }
         .padding(14)
         .background(Color.hermesSurfaceInput)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var testResult: some View {
+        switch testDisplay {
+        case .success(let tools):
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Available · \(tools.count) tools")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.igOnlineGreen)
+                ForEach(tools) { tool in
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(tool.name).font(.caption.monospaced())
+                        Text(tool.description).font(.caption).foregroundStyle(.hermesSecondaryText)
+                    }
+                }
+            }
+        case .failure:
+            Text("Availability test failed. Check the selected profile’s server configuration and try again.")
+                .font(.caption)
+                .foregroundStyle(.red)
+        case nil:
+            EmptyView()
+        }
     }
 }

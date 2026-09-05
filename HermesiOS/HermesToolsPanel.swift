@@ -187,9 +187,15 @@ struct HermesToolsPanel: View {
                 HStack(spacing: 8) {
                     Text(toolset.name)
                         .font(.headline)
-                    Text(toolset.enabled ? "On" : "Off")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(toolset.enabled ? .igOnlineGreen : .secondary)
+                    if toolset.isConfigurable {
+                        Text(toolset.enabled ? "On" : "Off")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(toolset.enabled ? .igOnlineGreen : .secondary)
+                    } else {
+                        Text(toolset.configuration == .profilePinned ? "Profile pinned" : "Runtime preset")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.igActionBlue)
+                    }
                 }
                 Text(toolset.description)
                     .font(.subheadline)
@@ -199,16 +205,27 @@ struct HermesToolsPanel: View {
                     .foregroundStyle(.hermesSecondaryText)
             }
             Spacer(minLength: 8)
-            Toggle("", isOn: Binding(
-                get: { tuiToolsets.first(where: { $0.name == toolset.name })?.enabled ?? toolset.enabled },
-                set: { setTUIToolsetEnabled(toolset.name, enabled: $0) }
-            ))
-            .labelsHidden()
-            .disabled(isLoadingTUIToolsets || isMutatingTUIToolsets)
+            if toolset.isConfigurable {
+                Toggle("", isOn: Binding(
+                    get: { tuiToolsets.first(where: { $0.name == toolset.name })?.enabled ?? toolset.enabled },
+                    set: { setTUIToolsetEnabled(toolset.name, enabled: $0) }
+                ))
+                .labelsHidden()
+                .disabled(isLoadingTUIToolsets || isMutatingTUIToolsets)
+            } else {
+                Label("Read-only", systemImage: "lock.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.hermesSecondaryText)
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .hermesLiquidGlass(cornerRadius: 18, tint: toolset.enabled ? .igOnlineGreen.opacity(0.06) : .white.opacity(0.03))
+        .hermesLiquidGlass(
+            cornerRadius: 18,
+            tint: toolset.isConfigurable && toolset.enabled
+                ? Color.igOnlineGreen.opacity(0.06)
+                : Color.white.opacity(0.03)
+        )
     }
 
     private func refreshTUIToolsets() async {

@@ -540,6 +540,12 @@ struct HermesCompanionRemoveMCPServerPayload: Codable {
     let name: String
 }
 
+struct HermesCompanionSetMCPServerEnabledPayload: Codable {
+    let workspacePath: String
+    let name: String
+    let enabled: Bool
+}
+
 struct HermesCompanionMCPOperationResult: Codable {
     let workspacePath: String
     let resolvedWorkspacePath: String
@@ -554,6 +560,20 @@ struct HermesCompanionMCPServerSummary: Codable, Identifiable, Equatable {
     let transport: String
     let tools: String
     let status: String
+    let enabled: Bool
+
+    enum CodingKeys: String, CodingKey { case id, name, transport, tools, status, enabled }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        transport = try container.decode(String.self, forKey: .transport)
+        tools = try container.decode(String.self, forKey: .tools)
+        status = try container.decode(String.self, forKey: .status)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled)
+            ?? !status.localizedCaseInsensitiveContains("disabled")
+    }
 }
 
 enum HermesCompanionLogKind: String, Codable, CaseIterable, Identifiable {
@@ -2681,6 +2701,24 @@ final class HermesCompanionRuntimeSession {
             self.mcpOperationOutput = result.output
             self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
             self.connectionStatus = "MCP Server Removed"
+        }
+    }
+
+    /// Request-backed only: the inventory is replaced with the Host Companion's
+    /// refreshed selected-profile response after a successful mutation.
+    func setHermesMCPServerEnabled(name: String, enabled: Bool, settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState) {
+        run(category: "mcpServers") {
+            self.connectionStatus = "Updating MCP Server"
+            let result: HermesCompanionMCPOperationResult = try await HermesCompanionSessionFactory.request(
+                settings: settings,
+                state: identityState,
+                type: "set_mcp_server_enabled",
+                payload: HermesCompanionSetMCPServerEnabledPayload(workspacePath: settings.hermesWorkspacePath, name: name, enabled: enabled)
+            )
+            self.hermesMCPServers = result.servers
+            self.mcpOperationOutput = result.output
+            self.resolvedHermesWorkspacePath = result.resolvedWorkspacePath
+            self.connectionStatus = "MCP Server Updated"
         }
     }
 

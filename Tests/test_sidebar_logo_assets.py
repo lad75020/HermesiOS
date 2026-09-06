@@ -21,8 +21,10 @@ class SidebarLogoAssetTests(unittest.TestCase):
                     for image in contents["images"]
                     if "filename" in image
                 }
-                self.assertEqual(filenames, {f"{name}.png"})
-                self.assertTrue((image_set / f"{name}.png").is_file())
+                self.assertEqual({image["scale"] for image in contents["images"]}, {"1x", "2x", "3x"})
+                self.assertEqual(len(filenames), 3)
+                for filename in filenames:
+                    self.assertTrue((image_set / filename).is_file())
 
 
 if __name__ == "__main__":

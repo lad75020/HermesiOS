@@ -33,40 +33,40 @@ final class CompanionGitRegistry {
     private let pendingConflictsConfigKey = "hermesios.pendingUpdateConflicts"
     private let lastUpdateOutputConfigKey = "hermesios.lastUpdateOutput"
 
-    func hermesInstallationStatus(workspacePath: String) throws -> HermesInstallationStatusResult {
+    func hermesInstallationStatus(workspacePath: String) async throws -> HermesInstallationStatusResult {
         let repoURL = try hermesRepoURL(workspacePath: workspacePath)
-        _ = try runGit(["fetch", "--quiet", officialRepositoryURL, "main:\(officialMainRef)"], repoURL: repoURL, timeout: 60)
-        return try status(workspacePath: workspacePath, repoURL: repoURL)
+        _ = try await runGit(["fetch", "--quiet", officialRepositoryURL, "main:\(officialMainRef)"], repoURL: repoURL, timeout: 60)
+        return try await status(workspacePath: workspacePath, repoURL: repoURL)
     }
 
-    func updateHermesInstallation(workspacePath: String) throws -> HermesInstallationOperationResult {
+    func updateHermesInstallation(workspacePath: String) async throws -> HermesInstallationOperationResult {
         let repoURL = try hermesRepoURL(workspacePath: workspacePath)
         try ensureNoMergeInProgress(repoURL: repoURL)
-        try ensureCleanWorkingTree(repoURL: repoURL)
-        try ensureLocalMainBranchExists(repoURL: repoURL)
+        try await ensureCleanWorkingTree(repoURL: repoURL)
+        try await ensureLocalMainBranchExists(repoURL: repoURL)
 
         var output: [String] = []
-        let startingBranch = try runGit(["branch", "--show-current"], repoURL: repoURL, timeout: 10).trimmedOutput
+        let startingBranch = try await runGit(["branch", "--show-current"], repoURL: repoURL, timeout: 10).trimmedOutput
         if startingBranch != localMainBranch {
-            _ = try runGit(["switch", localMainBranch], repoURL: repoURL, timeout: 30)
+            _ = try await runGit(["switch", localMainBranch], repoURL: repoURL, timeout: 30)
             output.append("Switched from \(startingBranch.isEmpty ? "detached HEAD" : startingBranch) to local main.")
         }
 
-        let fetchOutput = try runGit([
+        let fetchOutput = try await runGit([
             "fetch",
             officialRepositoryURL,
             "+main:refs/heads/\(upstreamLatestBranch)",
             "+main:\(officialMainRef)"
         ], repoURL: repoURL, timeout: 120).trimmedOutput
-        let upstreamCommit = try runGit(["rev-parse", "--short", upstreamLatestBranch], repoURL: repoURL, timeout: 10).trimmedOutput
+        let upstreamCommit = try await runGit(["rev-parse", "--short", upstreamLatestBranch], repoURL: repoURL, timeout: 10).trimmedOutput
         output.append("Pulled NousResearch/hermes-agent main into local \(upstreamLatestBranch) at \(upstreamCommit).")
         if fetchOutput.isEmpty == false {
             output.append(fetchOutput)
         }
 
-        let mergeResult = try runGitAllowingFailure(["merge", "--no-ff", upstreamLatestBranch], repoURL: repoURL, timeout: 180)
+        let mergeResult = try await runGitAllowingFailure(["merge", "--no-ff", upstreamLatestBranch], repoURL: repoURL, timeout: 180)
         if mergeResult.exitCode != 0 {
-            let conflictFiles = try unresolvedConflictFiles(repoURL: repoURL)
+            let conflictFiles = try await unresolvedConflictFiles(repoURL: repoURL)
             let conflictMessage: String
             if conflictFiles.isEmpty {
                 conflictMessage = "Merge stopped before push. Resolve the local git state on the Mac, then refresh."
@@ -75,12 +75,12 @@ final class CompanionGitRegistry {
             }
             output.append(mergeResult.output)
             output.append(conflictMessage)
-            try setGitConfig(pendingBranchConfigKey, value: localMainBranch, repoURL: repoURL)
-            try setGitConfig(pendingCommitConfigKey, value: upstreamCommit, repoURL: repoURL)
-            try setGitConfig(pendingConflictsConfigKey, value: conflictFiles.joined(separator: "\n"), repoURL: repoURL)
+            try await setGitConfig(pendingBranchConfigKey, value: localMainBranch, repoURL: repoURL)
+            try await setGitConfig(pendingCommitConfigKey, value: upstreamCommit, repoURL: repoURL)
+            try await setGitConfig(pendingConflictsConfigKey, value: conflictFiles.joined(separator: "\n"), repoURL: repoURL)
             let operationMessage = output.filter { $0.isEmpty == false }.joined(separator: "\n\n")
-            try setGitConfig(lastUpdateOutputConfigKey, value: operationMessage, repoURL: repoURL)
-            let currentStatus = try status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
+            try await setGitConfig(lastUpdateOutputConfigKey, value: operationMessage, repoURL: repoURL)
+            let currentStatus = try await status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
             return HermesInstallationOperationResult(status: currentStatus, output: operationMessage)
         }
 
@@ -90,17 +90,17 @@ final class CompanionGitRegistry {
             output.append("Merged \(upstreamLatestBranch) into local main.")
         }
 
-        let pushTarget = try pushRemoteTarget(repoURL: repoURL)
-        let pushOutput = try runGit(["push", pushTarget, "main:main"], repoURL: repoURL, timeout: 180).trimmedOutput
+        let pushTarget = try await pushRemoteTarget(repoURL: repoURL)
+        let pushOutput = try await runGit(["push", pushTarget, "main:main"], repoURL: repoURL, timeout: 180).trimmedOutput
         output.append("Pushed local main to lad75020/hermes-agent main.")
         if pushOutput.isEmpty == false {
             output.append(pushOutput)
         }
 
-        try clearPendingUpdateConfig(repoURL: repoURL)
+        try await clearPendingUpdateConfig(repoURL: repoURL)
         let operationMessage = output.filter { $0.isEmpty == false }.joined(separator: "\n\n")
-        try setGitConfig(lastUpdateOutputConfigKey, value: operationMessage, repoURL: repoURL)
-        let currentStatus = try status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
+        try await setGitConfig(lastUpdateOutputConfigKey, value: operationMessage, repoURL: repoURL)
+        let currentStatus = try await status(workspacePath: workspacePath, repoURL: repoURL, skipFetch: true)
         return HermesInstallationOperationResult(status: currentStatus, output: operationMessage)
     }
 
@@ -112,25 +112,25 @@ final class CompanionGitRegistry {
         throw CompanionGitRegistryError.gitCommandFailed("The separate merge step was removed. Use Update Hermes to fetch, merge, and push in one workflow.")
     }
 
-    private func status(workspacePath: String, repoURL: URL, skipFetch: Bool = false) throws -> HermesInstallationStatusResult {
+    private func status(workspacePath: String, repoURL: URL, skipFetch: Bool = false) async throws -> HermesInstallationStatusResult {
         if skipFetch == false {
-            _ = try runGit(["fetch", "--quiet", officialRepositoryURL, "main:\(officialMainRef)"], repoURL: repoURL, timeout: 60)
+            _ = try await runGit(["fetch", "--quiet", officialRepositoryURL, "main:\(officialMainRef)"], repoURL: repoURL, timeout: 60)
         }
-        let branch = try runGit(["branch", "--show-current"], repoURL: repoURL, timeout: 10).trimmedOutput
-        let currentCommit = try runGit(["rev-parse", "--short", localMainBranch], repoURL: repoURL, timeout: 10).trimmedOutput
-        let upstreamCommit = try runGit(["rev-parse", "--short", officialMainRef], repoURL: repoURL, timeout: 10).trimmedOutput
-        let behindOutput = try runGit(["rev-list", "--count", "\(localMainBranch)..\(officialMainRef)"], repoURL: repoURL, timeout: 10).trimmedOutput
-        let remoteURL = (try? runGit(["remote", "get-url", "origin"], repoURL: repoURL, timeout: 10).trimmedOutput) ?? ""
-        let conflictFiles = try unresolvedConflictFiles(repoURL: repoURL)
+        let branch = try await runGit(["branch", "--show-current"], repoURL: repoURL, timeout: 10).trimmedOutput
+        let currentCommit = try await runGit(["rev-parse", "--short", localMainBranch], repoURL: repoURL, timeout: 10).trimmedOutput
+        let upstreamCommit = try await runGit(["rev-parse", "--short", officialMainRef], repoURL: repoURL, timeout: 10).trimmedOutput
+        let behindOutput = try await runGit(["rev-list", "--count", "\(localMainBranch)..\(officialMainRef)"], repoURL: repoURL, timeout: 10).trimmedOutput
+        let remoteURL = (try? await runGit(["remote", "get-url", "origin"], repoURL: repoURL, timeout: 10).trimmedOutput) ?? ""
+        let conflictFiles = try await unresolvedConflictFiles(repoURL: repoURL)
         let mergeInProgress = isMergeInProgress(repoURL: repoURL)
         var pendingBranch = mergeInProgress ? localMainBranch : ""
         var pendingCommit = mergeInProgress ? upstreamCommit : ""
-        var lastUpdateOutput = try gitConfigValue(lastUpdateOutputConfigKey, repoURL: repoURL)
+        var lastUpdateOutput = try await gitConfigValue(lastUpdateOutputConfigKey, repoURL: repoURL)
         if mergeInProgress == false {
-            try clearPendingUpdateConfig(repoURL: repoURL)
+            try await clearPendingUpdateConfig(repoURL: repoURL)
             if conflictFiles.isEmpty == false {
                 lastUpdateOutput = "Unresolved conflict files were found, but no merge is marked in progress. Resolve them on the Mac before updating again."
-                try setGitConfig(lastUpdateOutputConfigKey, value: lastUpdateOutput, repoURL: repoURL)
+                try await setGitConfig(lastUpdateOutputConfigKey, value: lastUpdateOutput, repoURL: repoURL)
             }
         }
 
@@ -160,32 +160,32 @@ final class CompanionGitRegistry {
         return repoURL
     }
 
-    private func ensureCleanWorkingTree(repoURL: URL) throws {
-        let status = try runGit(["status", "--porcelain"], repoURL: repoURL, timeout: 10).trimmedOutput
+    private func ensureCleanWorkingTree(repoURL: URL) async throws {
+        let status = try await runGit(["status", "--porcelain"], repoURL: repoURL, timeout: 10).trimmedOutput
         guard status.isEmpty else {
             throw CompanionGitRegistryError.gitCommandFailed("Commit, stash, or discard local working-tree changes before updating Hermes Agent.")
         }
     }
 
-    private func unresolvedConflictFiles(repoURL: URL) throws -> [String] {
-        try runGit(["diff", "--name-only", "--diff-filter=U"], repoURL: repoURL, timeout: 10)
+    private func unresolvedConflictFiles(repoURL: URL) async throws -> [String] {
+        try await runGit(["diff", "--name-only", "--diff-filter=U"], repoURL: repoURL, timeout: 10)
             .split(separator: "\n")
             .map(String.init)
             .filter { $0.isEmpty == false }
     }
 
-    private func isAncestor(_ ancestor: String, of descendant: String, repoURL: URL) throws -> Bool {
-        let result = try runGitAllowingFailure(["merge-base", "--is-ancestor", ancestor, descendant], repoURL: repoURL, timeout: 10)
+    private func isAncestor(_ ancestor: String, of descendant: String, repoURL: URL) async throws -> Bool {
+        let result = try await runGitAllowingFailure(["merge-base", "--is-ancestor", ancestor, descendant], repoURL: repoURL, timeout: 10)
         return result.exitCode == 0
     }
 
-    private func hasStagedChanges(repoURL: URL) throws -> Bool {
-        let result = try runGitAllowingFailure(["diff", "--cached", "--quiet"], repoURL: repoURL, timeout: 10)
+    private func hasStagedChanges(repoURL: URL) async throws -> Bool {
+        let result = try await runGitAllowingFailure(["diff", "--cached", "--quiet"], repoURL: repoURL, timeout: 10)
         return result.exitCode != 0
     }
 
-    private func gitBlobContent(ref: String, file: String, repoURL: URL) throws -> String {
-        let result = try runGitAllowingFailure(["show", "\(ref):\(file)"], repoURL: repoURL, timeout: 30)
+    private func gitBlobContent(ref: String, file: String, repoURL: URL) async throws -> String {
+        let result = try await runGitAllowingFailure(["show", "\(ref):\(file)"], repoURL: repoURL, timeout: 30)
         if result.exitCode == 0 {
             return result.output
         }
@@ -212,8 +212,8 @@ final class CompanionGitRegistry {
         """
     }
 
-    private func runHermesAgent(prompt: String, repoURL: URL, timeout: TimeInterval) throws -> String {
-        try runProcess(executable: "/usr/bin/env", arguments: ["hermes", "chat", "-q", prompt], workingDirectory: repoURL, timeout: timeout)
+    private func runHermesAgent(prompt: String, repoURL: URL, timeout: TimeInterval) async throws -> String {
+        try await runProcess(executable: "/usr/bin/env", arguments: ["hermes", "chat", "-q", prompt], workingDirectory: repoURL, timeout: timeout)
     }
 
     private func ensureFileHasNoConflictMarkers(_ file: String, repoURL: URL) throws {
@@ -225,14 +225,14 @@ final class CompanionGitRegistry {
         }
     }
 
-    private func clearPendingUpdateConfig(repoURL: URL) throws {
-        try unsetGitConfig(pendingBranchConfigKey, repoURL: repoURL)
-        try unsetGitConfig(pendingCommitConfigKey, repoURL: repoURL)
-        try unsetGitConfig(pendingConflictsConfigKey, repoURL: repoURL)
+    private func clearPendingUpdateConfig(repoURL: URL) async throws {
+        try await unsetGitConfig(pendingBranchConfigKey, repoURL: repoURL)
+        try await unsetGitConfig(pendingCommitConfigKey, repoURL: repoURL)
+        try await unsetGitConfig(pendingConflictsConfigKey, repoURL: repoURL)
     }
 
-    private func commitWorkingTreeChangesIfNeeded(repoURL: URL, branch: String) throws -> String {
-        let status = try runGit(["status", "--porcelain"], repoURL: repoURL, timeout: 10).trimmedOutput
+    private func commitWorkingTreeChangesIfNeeded(repoURL: URL, branch: String) async throws -> String {
+        let status = try await runGit(["status", "--porcelain"], repoURL: repoURL, timeout: 10).trimmedOutput
         guard status.isEmpty == false else {
             return ""
         }
@@ -240,9 +240,9 @@ final class CompanionGitRegistry {
             throw CompanionGitRegistryError.gitCommandFailed("Hermes Agent has local changes, but the checkout is detached. Check out a local branch before updating so changes can be committed safely.")
         }
 
-        _ = try runGit(["add", "-A"], repoURL: repoURL, timeout: 30)
-        let commitOutput = try runGit(["commit", "-m", "chore: save local changes before Hermes update"], repoURL: repoURL, timeout: 60).trimmedOutput
-        let commitHash = try runGit(["rev-parse", "--short", "HEAD"], repoURL: repoURL, timeout: 10).trimmedOutput
+        _ = try await runGit(["add", "-A"], repoURL: repoURL, timeout: 30)
+        let commitOutput = try await runGit(["commit", "-m", "chore: save local changes before Hermes update"], repoURL: repoURL, timeout: 60).trimmedOutput
+        let commitHash = try await runGit(["rev-parse", "--short", "HEAD"], repoURL: repoURL, timeout: 10).trimmedOutput
         if commitOutput.isEmpty {
             return "Committed local Hermes Agent changes to \(branch) as \(commitHash) before fetching official main."
         }
@@ -260,15 +260,15 @@ final class CompanionGitRegistry {
         return FileManager.default.fileExists(atPath: mergeHead)
     }
 
-    private func ensureLocalMainBranchExists(repoURL: URL) throws {
-        let result = try runGitAllowingFailure(["rev-parse", "--verify", localMainBranch], repoURL: repoURL, timeout: 10)
+    private func ensureLocalMainBranchExists(repoURL: URL) async throws {
+        let result = try await runGitAllowingFailure(["rev-parse", "--verify", localMainBranch], repoURL: repoURL, timeout: 10)
         guard result.exitCode == 0 else {
             throw CompanionGitRegistryError.gitCommandFailed("Local Hermes Agent branch 'main' was not found. Create or restore local main before updating.")
         }
     }
 
-    private func pushRemoteTarget(repoURL: URL) throws -> String {
-        let originURL = (try? runGit(["remote", "get-url", "origin"], repoURL: repoURL, timeout: 10).trimmedOutput) ?? ""
+    private func pushRemoteTarget(repoURL: URL) async throws -> String {
+        let originURL = (try? await runGit(["remote", "get-url", "origin"], repoURL: repoURL, timeout: 10).trimmedOutput) ?? ""
         let normalizedOrigin = originURL.lowercased()
         if normalizedOrigin.contains("lad75020/hermes-agent") || normalizedOrigin.contains("lad75020:hermes-agent") {
             return "origin"
@@ -294,16 +294,16 @@ final class CompanionGitRegistry {
             }
     }
 
-    private func setGitConfig(_ key: String, value: String, repoURL: URL) throws {
-        _ = try runGit(["config", "--local", key, value], repoURL: repoURL, timeout: 10)
+    private func setGitConfig(_ key: String, value: String, repoURL: URL) async throws {
+        _ = try await runGit(["config", "--local", key, value], repoURL: repoURL, timeout: 10)
     }
 
-    private func unsetGitConfig(_ key: String, repoURL: URL) throws {
-        _ = try? runGit(["config", "--local", "--unset", key], repoURL: repoURL, timeout: 10)
+    private func unsetGitConfig(_ key: String, repoURL: URL) async throws {
+        _ = try? await runGit(["config", "--local", "--unset", key], repoURL: repoURL, timeout: 10)
     }
 
-    private func gitConfigValue(_ key: String, repoURL: URL) throws -> String {
-        (try? runGit(["config", "--local", "--get", key], repoURL: repoURL, timeout: 10).trimmedOutput) ?? ""
+    private func gitConfigValue(_ key: String, repoURL: URL) async throws -> String {
+        (try? await runGit(["config", "--local", "--get", key], repoURL: repoURL, timeout: 10).trimmedOutput) ?? ""
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
@@ -313,55 +313,46 @@ final class CompanionGitRegistry {
         return workspaceURL
     }
 
-    private func runGit(_ arguments: [String], repoURL: URL, timeout: TimeInterval) throws -> String {
-        let result = try runGitAllowingFailure(arguments, repoURL: repoURL, timeout: timeout)
+    private func runGit(_ arguments: [String], repoURL: URL, timeout: TimeInterval) async throws -> String {
+        let result = try await runGitAllowingFailure(arguments, repoURL: repoURL, timeout: timeout)
         guard result.exitCode == 0 else {
             throw CompanionGitRegistryError.gitCommandFailed(result.output)
         }
         return result.output
     }
 
-    private func runGitAllowingFailure(_ arguments: [String], repoURL: URL, timeout: TimeInterval) throws -> (output: String, exitCode: Int32) {
-        let result = try runProcessAllowingFailure(executable: "/usr/bin/env", arguments: ["git", "-C", repoURL.path] + arguments, workingDirectory: repoURL, timeout: timeout)
+    private func runGitAllowingFailure(_ arguments: [String], repoURL: URL, timeout: TimeInterval) async throws -> (output: String, exitCode: Int32) {
+        let result = try await runProcessAllowingFailure(executable: "/usr/bin/env", arguments: ["git", "-C", repoURL.path] + arguments, workingDirectory: repoURL, timeout: timeout)
         return (result.output, result.exitCode)
     }
 
-    private func runProcess(executable: String, arguments: [String], workingDirectory: URL, timeout: TimeInterval) throws -> String {
-        let result = try runProcessAllowingFailure(executable: executable, arguments: arguments, workingDirectory: workingDirectory, timeout: timeout)
+    private func runProcess(executable: String, arguments: [String], workingDirectory: URL, timeout: TimeInterval) async throws -> String {
+        let result = try await runProcessAllowingFailure(executable: executable, arguments: arguments, workingDirectory: workingDirectory, timeout: timeout)
         guard result.exitCode == 0 else {
             throw CompanionGitRegistryError.gitCommandFailed(result.output)
         }
         return result.output
     }
 
-    private func runProcessAllowingFailure(executable: String, arguments: [String], workingDirectory: URL, timeout: TimeInterval) throws -> (output: String, exitCode: Int32) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.currentDirectoryURL = workingDirectory
+    private func runProcessAllowingFailure(executable: String, arguments: [String], workingDirectory: URL, timeout: TimeInterval) async throws -> (output: String, exitCode: Int32) {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        process.environment = environment
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
 
         do {
-            try process.run()
-            let deadline = Date().addingTimeInterval(timeout)
-            while process.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-            if process.isRunning {
-                process.terminate()
-                throw CompanionGitRegistryError.gitCommandFailed("\(executable) \(arguments.joined(separator: " ")) timed out.")
-            }
-            let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let result = try await CompanionSubprocess.run(
+                executableURL: URL(fileURLWithPath: executable),
+                arguments: arguments,
+                environment: environment,
+                currentDirectoryURL: workingDirectory,
+                timeout: timeout,
+                maxOutputBytes: CompanionSubprocess.defaultMaxOutputBytes
+            )
+            let out = String(data: result.stdout, encoding: .utf8) ?? ""
+            let err = String(data: result.stderr, encoding: .utf8) ?? ""
             let output = err.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? out : [out, err].joined(separator: "\n")
-            return (output.trimmedOutput, process.terminationStatus)
+            return (output.trimmedOutput, result.status)
+        } catch CompanionSubprocess.Failure.timedOut {
+            throw CompanionGitRegistryError.gitCommandFailed("\(executable) \(arguments.joined(separator: " ")) timed out.")
         } catch let error as CompanionGitRegistryError {
             throw error
         } catch {

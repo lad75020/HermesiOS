@@ -1217,11 +1217,6 @@ enum CompanionWorkspaceSecurity {
 
     static func approvedHermesRoots(preferredWorkspacePath: String?) -> [URL] {
         var candidates: [String] = []
-        if let preferredWorkspacePath,
-           let preferredURL = resolvedHermesWorkspaceURL(from: preferredWorkspacePath) {
-            candidates.append(preferredURL.path)
-        }
-
         let environment = ProcessInfo.processInfo.environment
         if let hermesHome = environment["HERMES_HOME"], hermesHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             candidates.append(hermesHome)
@@ -1233,11 +1228,18 @@ enum CompanionWorkspaceSecurity {
         candidates.append("/Volumes/WDBlack4TB/Code/HermesiOS/.hermes")
 
         var seen = Set<String>()
-        return candidates.compactMap { candidate in
+        let trustedRoots: [URL] = candidates.compactMap { candidate in
             guard let url = resolvedHermesWorkspaceURL(from: candidate) else { return nil }
             guard seen.insert(url.path).inserted else { return nil }
             return url
         }
+
+        guard let preferredWorkspacePath,
+              let preferredURL = resolvedHermesWorkspaceURL(from: preferredWorkspacePath),
+              trustedRoots.contains(where: { isDescendant(preferredURL, of: $0) }) else {
+            return trustedRoots
+        }
+        return [preferredURL] + trustedRoots.filter { $0 != preferredURL }
     }
 
     /// Resolves the executable from an approved Hermes root while retaining a
@@ -1265,6 +1267,35 @@ enum CompanionWorkspaceSecurity {
         let path = url.resolvingSymlinksInPath().standardizedFileURL.path
         let rootPath = root.resolvingSymlinksInPath().standardizedFileURL.path
         return path == rootPath || path.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/")
+    }
+
+    static func resolvedProfileURL(workspaceURL: URL, profileName: String?) -> URL? {
+        let workspaceURL = workspaceURL.resolvingSymlinksInPath().standardizedFileURL
+        let trimmed = (profileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false, trimmed != "default" else { return workspaceURL }
+
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        guard !trimmed.hasPrefix("."), trimmed.rangeOfCharacter(from: allowed.inverted) == nil else { return nil }
+
+        guard let profilesURL = resolvedProfilesDirectoryURL(workspaceURL: workspaceURL) else { return nil }
+        let profileURL = profilesURL.appendingPathComponent(trimmed, isDirectory: true)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        guard profileURL.deletingLastPathComponent() == profilesURL,
+              isDescendant(profileURL, of: profilesURL),
+              directoryExists(profileURL) else { return nil }
+        return profileURL
+    }
+
+    static func resolvedProfilesDirectoryURL(workspaceURL: URL) -> URL? {
+        let workspaceURL = workspaceURL.resolvingSymlinksInPath().standardizedFileURL
+        let directURL = workspaceURL.appendingPathComponent("profiles", isDirectory: true).standardizedFileURL
+        let resolvedURL = directURL.resolvingSymlinksInPath().standardizedFileURL
+        guard resolvedURL == directURL,
+              resolvedURL.deletingLastPathComponent() == workspaceURL,
+              isDescendant(resolvedURL, of: workspaceURL),
+              directoryExists(resolvedURL) else { return nil }
+        return resolvedURL
     }
 
     private static func isAllowedWorkspaceShape(_ url: URL) -> Bool {

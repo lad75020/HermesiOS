@@ -375,7 +375,7 @@ final class HermesChatSession {
         }
 
         let historyMessages = history.map { HermesChatRequestMessage(role: $0.role, content: .text($0.content)) }
-        let userMessage = HermesChatRequestMessage(role: "user", content: HermesChatMessageContentPayload(prompt: draft.userPrompt, attachment: attachment))
+        let userMessage = HermesChatRequestMessage(role: "user", content: try HermesChatMessageContentPayload(prompt: draft.userPrompt, attachment: attachment))
         let requestMessages = draft.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? historyMessages + [userMessage]
             : [HermesChatRequestMessage(role: "system", content: .text(draft.systemPrompt))] + historyMessages + [userMessage]
@@ -847,11 +847,13 @@ private enum HermesChatMessageContentPayload: Encodable {
     case text(String)
     case parts([HermesChatRequestContentPart])
 
-    init(prompt: String, attachment: HermesPromptAttachment?) {
+    init(prompt: String, attachment: HermesPromptAttachment?) throws {
         guard let attachment else {
             self = .text(prompt)
             return
         }
+
+        try attachment.validateForHTTPTransport()
 
         if attachment.isImage {
             let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Please inspect the attached image." : prompt
@@ -862,7 +864,10 @@ private enum HermesChatMessageContentPayload: Encodable {
         } else {
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
             let basePrompt = trimmedPrompt.isEmpty ? "Please inspect the attached file." : trimmedPrompt
-            self = .text(basePrompt + attachment.textAttachmentBlock)
+            guard let block = attachment.httpTextAttachmentBlock else {
+                throw HermesAttachmentError.unsupportedHTTPAttachment(attachment.filename)
+            }
+            self = .text(basePrompt + block)
         }
     }
 

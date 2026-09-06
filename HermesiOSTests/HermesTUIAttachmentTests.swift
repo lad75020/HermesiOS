@@ -166,14 +166,72 @@ final class HermesTUIAttachmentTests: XCTestCase {
         XCTAssertEqual(store.messages.map(\.content), ["Describe\n[Attached media]", "Read\n[Attached media]"])
     }
 
-    func testEmptyAndOversizeAttachmentsFailBeforeAnyRPC() async throws {
-        for data in [Data(), Data(repeating: 1, count: 25 * 1024 * 1024 + 1)] {
-            let attachment = try HermesPromptAttachment(filename: "large.png", contentType: nil, data: data)
-            let store = store()
-            store.requestOverride = { _, _ in XCTFail("Invalid size reached transport"); return .object([:]) }
-            await store.submit("Describe", attachment: attachment, inference: .init())
-            XCTAssertFalse(store.isStreaming)
-            XCTAssertFalse(store.lastErrorMessage.isEmpty)
+    func testEmptyAttachmentFailsBeforeAnyRPC() async throws {
+        let attachment = try HermesPromptAttachment(filename: "empty.png", contentType: nil, data: Data())
+        let store = store()
+        store.requestOverride = { _, _ in XCTFail("Invalid size reached transport"); return .object([:]) }
+        await store.submit("Describe", attachment: attachment, inference: .init())
+        XCTAssertFalse(store.isStreaming)
+        XCTAssertFalse(store.lastErrorMessage.isEmpty)
+    }
+
+    func testOversizeAttachmentCannotBeConstructed() {
+        XCTAssertThrowsError(
+            try HermesPromptAttachment(
+                filename: "large.png",
+                contentType: nil,
+                data: Data(repeating: 1, count: HermesPromptAttachment.maxFileBytes + 1)
+            )
+        ) { error in
+            guard case HermesAttachmentError.fileTooLarge = error else {
+                return XCTFail("Expected fileTooLarge, got \(error)")
+            }
+        }
+    }
+
+    func testHTTPPromptEmbeddingAcceptsOnlyBoundedUTF8Text() throws {
+        let boundedText = try HermesPromptAttachment(
+            filename: "notes.txt",
+            contentType: .plainText,
+            data: Data(repeating: 65, count: 32 * 1024)
+        )
+        let oversizedText = try HermesPromptAttachment(
+            filename: "notes.txt",
+            contentType: .plainText,
+            data: Data(repeating: 65, count: 32 * 1024 + 1)
+        )
+        let binary = try HermesPromptAttachment(
+            filename: "report.pdf",
+            contentType: .pdf,
+            data: Data([0xFF, 0x00])
+        )
+
+        XCTAssertNotNil(boundedText.httpTextAttachmentBlock)
+        XCTAssertNil(oversizedText.httpTextAttachmentBlock)
+        XCTAssertNil(binary.httpTextAttachmentBlock)
+    }
+
+    func testFileImportRejectsOversizedAttachmentBeforeLoadingIt() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("oversized-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: 65, count: 25 * 1024 * 1024 + 1).write(to: url)
+
+        XCTAssertThrowsError(try HermesPromptAttachment.load(from: url)) { error in
+            guard case HermesAttachmentError.fileTooLarge = error else {
+                return XCTFail("Expected fileTooLarge, got \(error)")
+            }
+        }
+    }
+
+    func testBoundedFileReadNeverReturnsMoreThanAttachmentLimit() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bounded-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: 65, count: HermesPromptAttachment.maxFileBytes + 1).write(to: url)
+
+        XCTAssertThrowsError(try HermesPromptAttachment.readBoundedData(from: url)) { error in
+            guard case HermesAttachmentError.fileTooLarge = error else {
+                return XCTFail("Expected fileTooLarge, got \(error)")
+            }
         }
     }
 

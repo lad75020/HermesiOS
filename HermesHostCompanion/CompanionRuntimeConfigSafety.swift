@@ -50,11 +50,11 @@ enum CompanionRuntimeConfigSafety {
         catch CocoaError.fileReadNoSuchFile { return "" }
     }
 
-    static func apply(configURL: URL, request: [String: Any]) throws -> [String: Any] {
+    static func apply(configURL: URL, request: [String: Any]) async throws -> [String: Any] {
         let original = try read(configURL)
         var payload = request
         payload["content"] = original
-        let result = try transform(workspacePath: configURL.deletingLastPathComponent().path, request: payload)
+        let result = try await transform(workspacePath: configURL.deletingLastPathComponent().path, request: payload)
         if let content = result["content"] as? String {
             // Optimistic conflict detection protects edits while parsing. Atomic
             // replacement protects readers (not a cross-process writer lock).
@@ -65,38 +65,32 @@ enum CompanionRuntimeConfigSafety {
         return result
     }
 
-    static func transform(workspacePath: String, request: [String: Any]) throws -> [String: Any] {
+    static func transform(workspacePath: String, request: [String: Any]) async throws -> [String: Any] {
         guard let context = CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: workspacePath) else { throw Failure.unavailable }
         let python = context.cliRootURL.appendingPathComponent("hermes-agent/venv/bin/python")
         guard FileManager.default.isExecutableFile(atPath: python.path) else { throw Failure.unavailable }
         let data = try JSONSerialization.data(withJSONObject: request)
         guard data.count <= 2_000_000 else { throw Failure.rejected }
-        // Files instead of pipes avoid deadlocking on large YAML input/output.
-        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        let inputURL = temporary.appendingPathComponent("input")
-        let outputURL = temporary.appendingPathComponent("output")
-        try data.write(to: inputURL)
-        FileManager.default.createFile(atPath: outputURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
-        let input = try FileHandle(forReadingFrom: inputURL)
-        let output = try FileHandle(forWritingTo: outputURL)
-        defer { try? input.close(); try? output.close() }
-        let process = Process()
-        process.executableURL = python
-        process.arguments = ["-I", "-c", yamlScript]
-        // The transformer imports only PyYAML, never Hermes config/auth APIs.
-        process.environment = ["PATH": "/usr/bin:/bin", "HOME": temporary.path, "HERMES_HOME": temporary.path]
-        process.standardInput = input
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice // Parser errors may quote secrets.
-        do { try process.run() } catch { throw Failure.unavailable }
-        let deadline = Date().addingTimeInterval(10)
-        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
-        if process.isRunning { process.terminate(); kill(process.processIdentifier, SIGKILL) }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0,
-              let response = try JSONSerialization.jsonObject(with: Data(contentsOf: outputURL)) as? [String: Any] else { throw Failure.rejected }
+        let temporaryHome = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryHome, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: temporaryHome) }
+        let output: CompanionSubprocess.Output
+        do {
+            output = try await CompanionSubprocess.run(
+                executableURL: python,
+                arguments: ["-I", "-c", yamlScript],
+                environment: ["PATH": "/usr/bin:/bin", "HOME": temporaryHome.path, "HERMES_HOME": temporaryHome.path],
+                input: data,
+                timeout: 10,
+                maxOutputBytes: 2_000_001
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw Failure.unavailable
+        }
+        guard output.status == 0,
+              let response = try JSONSerialization.jsonObject(with: output.stdout) as? [String: Any] else { throw Failure.rejected }
         return response
     }
 

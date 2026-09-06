@@ -85,7 +85,7 @@ final class HermesStatusMonitor {
     }
 
     private func checkAPIServer(settings: HermesAPISettings) async -> Bool {
-        guard let url = statusURL(from: settings.baseURL) else { return false }
+        guard let url = Self.statusURL(from: settings.baseURL) else { return false }
         isAPIProbeActive = true
         defer { isAPIProbeActive = false }
 
@@ -142,11 +142,8 @@ final class HermesStatusMonitor {
         }
     }
 
-    private func statusURL(from baseURL: String) -> URL? {
-        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.isEmpty == false else { return nil }
-        let normalized = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
-        return URL(string: normalized + "/models") ?? URL(string: normalized)
+    static func statusURL(from baseURL: String) -> URL? {
+        HermesAPISettings.modelsURL(from: baseURL)
     }
 }
 

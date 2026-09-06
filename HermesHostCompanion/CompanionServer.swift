@@ -508,7 +508,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The validate_target request requires a payload.")
                 }
                 let validatePayload = try payload.decode(ValidateTargetPayload.self)
-                let result = try registry.validateTarget(
+                let result = try await registry.validateTarget(
                     id: validatePayload.targetID,
                     proposedContent: validatePayload.content,
                     workspacePath: validatePayload.workspacePath,
@@ -524,7 +524,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The write_target request requires a payload.")
                 }
                 let writePayload = try payload.decode(WriteTargetPayload.self)
-                let result = try registry.writeTarget(
+                let result = try await registry.writeTarget(
                     id: writePayload.targetID,
                     expectedRevision: writePayload.expectedRevision,
                     content: writePayload.content,
@@ -550,7 +550,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The restore_backup request requires a payload.")
                 }
                 let restorePayload = try payload.decode(RestoreBackupPayload.self)
-                let result = try registry.restoreBackup(id: restorePayload.backupID)
+                let result = try await registry.restoreBackup(id: restorePayload.backupID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "restore_backup_failed", message: error.localizedDescription)
@@ -611,7 +611,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The service_status request requires a payload.")
                 }
                 let statusPayload = try payload.decode(ServiceStatusPayload.self)
-                let result = try serviceRegistry.status(for: statusPayload.serviceID)
+                let result = try await serviceRegistry.status(for: statusPayload.serviceID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "service_status_failed", message: error.localizedDescription)
@@ -622,7 +622,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The service_start request requires a payload.")
                 }
                 let startPayload = try payload.decode(ServiceStartPayload.self)
-                let result = try serviceRegistry.start(serviceID: startPayload.serviceID)
+                let result = try await serviceRegistry.start(serviceID: startPayload.serviceID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "service_start_failed", message: error.localizedDescription)
@@ -633,7 +633,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The service_stop request requires a payload.")
                 }
                 let stopPayload = try payload.decode(ServiceStopPayload.self)
-                let result = try serviceRegistry.stop(serviceID: stopPayload.serviceID)
+                let result = try await serviceRegistry.stop(serviceID: stopPayload.serviceID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "service_stop_failed", message: error.localizedDescription)
@@ -644,7 +644,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The service_restart request requires a payload.")
                 }
                 let restartPayload = try payload.decode(ServiceRestartPayload.self)
-                let result = try serviceRegistry.restart(serviceID: restartPayload.serviceID)
+                let result = try await serviceRegistry.restart(serviceID: restartPayload.serviceID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "service_restart_failed", message: error.localizedDescription)
@@ -657,7 +657,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The tailscale_serve_status request requires a payload.")
                 }
                 let statusPayload = try payload.decode(TailscaleServeStatusPayload.self)
-                return .success(id: request.id, payload: try tailscaleServeRegistry.status(port: statusPayload.port))
+                return .success(id: request.id, payload: try await tailscaleServeRegistry.status(port: statusPayload.port))
             } catch {
                 return .error(id: request.id, code: "tailscale_serve_status_failed", message: error.localizedDescription)
             }
@@ -667,7 +667,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The set_tailscale_serve request requires a payload.")
                 }
                 let setPayload = try payload.decode(TailscaleServeSetPayload.self)
-                return .success(id: request.id, payload: try tailscaleServeRegistry.set(port: setPayload.port, enabled: setPayload.enabled))
+                return .success(id: request.id, payload: try await tailscaleServeRegistry.set(port: setPayload.port, enabled: setPayload.enabled))
             } catch {
                 return .error(id: request.id, code: "set_tailscale_serve_failed", message: error.localizedDescription)
             }
@@ -677,7 +677,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The hermes_installation_status request requires a payload.")
                 }
                 let statusPayload = try payload.decode(HermesInstallationStatusPayload.self)
-                let result = try gitRegistry.hermesInstallationStatus(workspacePath: statusPayload.workspacePath)
+                let result = try await gitRegistry.hermesInstallationStatus(workspacePath: statusPayload.workspacePath)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "hermes_installation_status_failed", message: error.localizedDescription)
@@ -688,7 +688,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The hermes_installation_update request requires a payload.")
                 }
                 let updatePayload = try payload.decode(HermesInstallationUpdatePayload.self)
-                let result = try gitRegistry.updateHermesInstallation(workspacePath: updatePayload.workspacePath)
+                let result = try await gitRegistry.updateHermesInstallation(workspacePath: updatePayload.workspacePath)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "hermes_installation_update_failed", message: error.localizedDescription)
@@ -792,7 +792,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The list_toolsets request requires a payload.")
                 }
                 let listPayload = try payload.decode(ListToolsetsPayload.self)
-                let result = try toolsetRegistry.listToolsets(workspacePath: listPayload.workspacePath)
+                let result = try await toolsetRegistry.listToolsets(workspacePath: listPayload.workspacePath)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "list_toolsets_failed", message: error.localizedDescription)
@@ -803,7 +803,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The set_toolset_enabled request requires a payload.")
                 }
                 let setPayload = try payload.decode(SetToolsetEnabledPayload.self)
-                let result = try toolsetRegistry.setToolsetEnabled(
+                let result = try await toolsetRegistry.setToolsetEnabled(
                     workspacePath: setPayload.workspacePath,
                     key: setPayload.key,
                     enabled: setPayload.enabled
@@ -951,7 +951,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The get_memory_config request requires a payload.")
                 }
                 let memoryPayload = try payload.decode(MemoryConfigPayload.self)
-                let result = try memoryRegistry.load(workspacePath: memoryPayload.workspacePath)
+                let result = try await memoryRegistry.load(workspacePath: memoryPayload.workspacePath)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "get_memory_config_failed", message: error.localizedDescription)
@@ -960,7 +960,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The add_memory_entry request requires a payload.") }
                 let addPayload = try payload.decode(AddMemoryEntryPayload.self)
-                let result = try memoryRegistry.addEntry(workspacePath: addPayload.workspacePath, content: addPayload.content)
+                let result = try await memoryRegistry.addEntry(workspacePath: addPayload.workspacePath, content: addPayload.content)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "add_memory_entry_failed", message: error.localizedDescription)
@@ -969,7 +969,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The update_memory_entry request requires a payload.") }
                 let updatePayload = try payload.decode(UpdateMemoryEntryPayload.self)
-                let result = try memoryRegistry.updateEntry(workspacePath: updatePayload.workspacePath, index: updatePayload.index, content: updatePayload.content)
+                let result = try await memoryRegistry.updateEntry(workspacePath: updatePayload.workspacePath, index: updatePayload.index, content: updatePayload.content)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "update_memory_entry_failed", message: error.localizedDescription)
@@ -978,7 +978,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The remove_memory_entry request requires a payload.") }
                 let removePayload = try payload.decode(RemoveMemoryEntryPayload.self)
-                let result = try memoryRegistry.removeEntry(workspacePath: removePayload.workspacePath, index: removePayload.index)
+                let result = try await memoryRegistry.removeEntry(workspacePath: removePayload.workspacePath, index: removePayload.index)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "remove_memory_entry_failed", message: error.localizedDescription)
@@ -987,7 +987,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The write_user_profile request requires a payload.") }
                 let userPayload = try payload.decode(WriteUserProfilePayload.self)
-                let result = try memoryRegistry.writeUserProfile(workspacePath: userPayload.workspacePath, content: userPayload.content)
+                let result = try await memoryRegistry.writeUserProfile(workspacePath: userPayload.workspacePath, content: userPayload.content)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "write_user_profile_failed", message: error.localizedDescription)
@@ -1014,7 +1014,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The export_supermemory_delta request requires a payload.") }
                 let exportPayload = try payload.decode(SupermemoryManagementPayload.self)
-                let result = try memoryRegistry.exportSupermemoryDelta(workspacePath: exportPayload.workspacePath)
+                let result = try await memoryRegistry.exportSupermemoryDelta(workspacePath: exportPayload.workspacePath)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "export_supermemory_delta_failed", message: error.localizedDescription)
@@ -1023,7 +1023,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The import_supermemory_delta request requires a payload.") }
                 let importPayload = try payload.decode(SupermemoryManagementPayload.self)
-                let result = try memoryRegistry.importSupermemoryDelta(workspacePath: importPayload.workspacePath)
+                let result = try await memoryRegistry.importSupermemoryDelta(workspacePath: importPayload.workspacePath)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "import_supermemory_delta_failed", message: error.localizedDescription)
@@ -1058,7 +1058,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The create_schedule request requires a payload.") }
                 let createPayload = try payload.decode(CreateSchedulePayload.self)
-                let result = try scheduleRegistry.create(workspacePath: createPayload.workspacePath, schedule: createPayload.schedule, prompt: createPayload.prompt, name: createPayload.name, deliver: createPayload.deliver, provider: createPayload.provider, model: createPayload.model, baseUrl: createPayload.baseUrl)
+                let result = try await scheduleRegistry.create(workspacePath: createPayload.workspacePath, schedule: createPayload.schedule, prompt: createPayload.prompt, name: createPayload.name, deliver: createPayload.deliver, provider: createPayload.provider, model: createPayload.model, baseUrl: createPayload.baseUrl)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "create_schedule_failed", message: error.localizedDescription)
@@ -1067,7 +1067,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The edit_schedule request requires a payload.") }
                 let editPayload = try payload.decode(EditSchedulePayload.self)
-                let result = try scheduleRegistry.edit(workspacePath: editPayload.workspacePath, jobID: editPayload.jobID, schedule: editPayload.schedule, prompt: editPayload.prompt, name: editPayload.name, deliver: editPayload.deliver, provider: editPayload.provider, model: editPayload.model, baseUrl: editPayload.baseUrl)
+                let result = try await scheduleRegistry.edit(workspacePath: editPayload.workspacePath, jobID: editPayload.jobID, schedule: editPayload.schedule, prompt: editPayload.prompt, name: editPayload.name, deliver: editPayload.deliver, provider: editPayload.provider, model: editPayload.model, baseUrl: editPayload.baseUrl)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "edit_schedule_failed", message: error.localizedDescription)
@@ -1076,7 +1076,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The remove_schedule request requires a payload.") }
                 let opPayload = try payload.decode(ScheduleOperationPayload.self)
-                let result = try scheduleRegistry.remove(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
+                let result = try await scheduleRegistry.remove(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "remove_schedule_failed", message: error.localizedDescription)
@@ -1085,7 +1085,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The pause_schedule request requires a payload.") }
                 let opPayload = try payload.decode(ScheduleOperationPayload.self)
-                let result = try scheduleRegistry.pause(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
+                let result = try await scheduleRegistry.pause(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "pause_schedule_failed", message: error.localizedDescription)
@@ -1094,7 +1094,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The resume_schedule request requires a payload.") }
                 let opPayload = try payload.decode(ScheduleOperationPayload.self)
-                let result = try scheduleRegistry.resume(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
+                let result = try await scheduleRegistry.resume(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "resume_schedule_failed", message: error.localizedDescription)
@@ -1103,7 +1103,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The trigger_schedule request requires a payload.") }
                 let opPayload = try payload.decode(ScheduleOperationPayload.self)
-                let result = try scheduleRegistry.trigger(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
+                let result = try await scheduleRegistry.trigger(workspacePath: opPayload.workspacePath, jobID: opPayload.jobID)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "trigger_schedule_failed", message: error.localizedDescription)
@@ -1139,7 +1139,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The delete_profile request requires a payload.") }
                 let opPayload = try payload.decode(ProfileOperationPayload.self)
-                let result = try profileRegistry.remove(workspacePath: opPayload.workspacePath, name: opPayload.name)
+                let result = try await profileRegistry.remove(workspacePath: opPayload.workspacePath, name: opPayload.name)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "delete_profile_failed", message: error.localizedDescription)
@@ -1148,7 +1148,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_active_profile request requires a payload.") }
                 let opPayload = try payload.decode(ProfileOperationPayload.self)
-                let result = try profileRegistry.activate(workspacePath: opPayload.workspacePath, name: opPayload.name)
+                let result = try await profileRegistry.activate(workspacePath: opPayload.workspacePath, name: opPayload.name)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "set_active_profile_failed", message: error.localizedDescription)
@@ -1157,7 +1157,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The get_gateway_config request requires a payload.") }
                 let gatewayPayload = try payload.decode(GatewayConfigPayload.self)
-                let result = try gatewayRegistry.config(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
+                let result = try await gatewayRegistry.config(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "get_gateway_config_failed", message: error.localizedDescription)
@@ -1166,7 +1166,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The gateway_status request requires a payload.") }
                 let gatewayPayload = try payload.decode(GatewayStatusPayload.self)
-                let result = gatewayRegistry.gatewayStatus(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
+                let result = await gatewayRegistry.gatewayStatus(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "gateway_status_failed", message: error.localizedDescription)
@@ -1175,7 +1175,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_gateway_running request requires a payload.") }
                 let gatewayPayload = try payload.decode(SetGatewayRunningPayload.self)
-                let result = try gatewayRegistry.setGatewayRunning(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, running: gatewayPayload.running)
+                let result = try await gatewayRegistry.setGatewayRunning(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, running: gatewayPayload.running)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "set_gateway_running_failed", message: error.localizedDescription)
@@ -1184,7 +1184,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The restart_gateway request requires a payload.") }
                 let gatewayPayload = try payload.decode(RestartGatewayPayload.self)
-                let result = try gatewayRegistry.restartGateway(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
+                let result = try await gatewayRegistry.restartGateway(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "restart_gateway_failed", message: error.localizedDescription)
@@ -1193,7 +1193,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_gateway_env request requires a payload.") }
                 let gatewayPayload = try payload.decode(SetGatewayEnvPayload.self)
-                let result = try gatewayRegistry.setEnv(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, key: gatewayPayload.key, value: gatewayPayload.value)
+                let result = try await gatewayRegistry.setEnv(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, key: gatewayPayload.key, value: gatewayPayload.value)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "set_gateway_env_failed", message: error.localizedDescription)
@@ -1202,7 +1202,7 @@ final class CompanionClientSession {
             do {
                 guard let payload = request.payload else { return .error(id: request.id, code: "missing_payload", message: "The set_gateway_platform request requires a payload.") }
                 let gatewayPayload = try payload.decode(SetGatewayPlatformPayload.self)
-                let result = try gatewayRegistry.setPlatformEnabled(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, platform: gatewayPayload.platform, enabled: gatewayPayload.enabled)
+                let result = try await gatewayRegistry.setPlatformEnabled(workspacePath: gatewayPayload.workspacePath, profileName: gatewayPayload.profileName, platform: gatewayPayload.platform, enabled: gatewayPayload.enabled)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "set_gateway_platform_failed", message: error.localizedDescription)

@@ -40,14 +40,16 @@ final class CompanionProfileRegistry {
         var profiles = [defaultProfile]
 
         let profilesURL = workspaceURL.appendingPathComponent("profiles", isDirectory: true)
-        if let names = try? FileManager.default.contentsOfDirectory(atPath: profilesURL.path) {
+        if let resolvedProfilesURL = CompanionWorkspaceSecurity.resolvedProfilesDirectoryURL(workspaceURL: workspaceURL),
+           let names = try? FileManager.default.contentsOfDirectory(atPath: resolvedProfilesURL.path) {
             let namedProfiles = names
                 .filter { !$0.hasPrefix(".") }
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
                 .compactMap { name -> ProfileInfo? in
-                    let profileURL = profilesURL.appendingPathComponent(name, isDirectory: true)
-                    var isDirectory: ObjCBool = false
-                    guard FileManager.default.fileExists(atPath: profileURL.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+                    guard let profileURL = CompanionWorkspaceSecurity.resolvedProfileURL(
+                        workspaceURL: workspaceURL,
+                        profileName: name
+                    ) else { return nil }
                     return profileInfo(name: name, profileURL: profileURL, workspaceURL: workspaceURL, isDefault: false, isActive: activeName == name)
                 }
             profiles.append(contentsOf: namedProfiles)
@@ -66,7 +68,7 @@ final class CompanionProfileRegistry {
         let trimmedName = try normalizedProfileName(name)
         guard trimmedName != "default" else { throw CompanionProfileRegistryError.profileAlreadyExists(trimmedName) }
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        let profileURL = profileURL(for: trimmedName, workspaceURL: workspaceURL)
+        let profileURL = try profileURLForCreation(name: trimmedName, workspaceURL: workspaceURL)
         var isDirectory: ObjCBool = false
         guard !FileManager.default.fileExists(atPath: profileURL.path, isDirectory: &isDirectory) else {
             throw CompanionProfileRegistryError.profileAlreadyExists(trimmedName)
@@ -81,10 +83,13 @@ final class CompanionProfileRegistry {
         let oldName = try normalizedProfileName(originalName)
         let newName = try normalizedProfileName(name)
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        var currentProfileURL = profileURL(for: oldName, workspaceURL: workspaceURL)
+        guard var currentProfileURL = CompanionWorkspaceSecurity.resolvedProfileURL(
+            workspaceURL: workspaceURL,
+            profileName: oldName
+        ) else { throw CompanionProfileRegistryError.invalidProfileName }
         if oldName == "default" && newName != "default" { throw CompanionProfileRegistryError.cannotEditDefaultName }
         if oldName != newName {
-            let destinationURL = profileURL(for: newName, workspaceURL: workspaceURL)
+            let destinationURL = try profileURLForCreation(name: newName, workspaceURL: workspaceURL)
             guard !FileManager.default.fileExists(atPath: destinationURL.path) else { throw CompanionProfileRegistryError.profileAlreadyExists(newName) }
             try FileManager.default.moveItem(at: currentProfileURL, to: destinationURL)
             currentProfileURL = destinationURL
@@ -96,18 +101,26 @@ final class CompanionProfileRegistry {
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, output: "Saved profile \(newName) at \(currentProfileURL.path)", error: nil)
     }
 
-    func remove(workspacePath: String, name: String) throws -> ProfileOperationResult {
+    func remove(workspacePath: String, name: String) async throws -> ProfileOperationResult {
         let trimmedName = try normalizedProfileName(name)
         guard trimmedName != "default" else { throw CompanionProfileRegistryError.cannotDeleteDefault }
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        let result = runProfileCommand(args: ["delete", trimmedName, "--yes"], workspaceURL: workspaceURL)
+        guard CompanionWorkspaceSecurity.resolvedProfileURL(
+            workspaceURL: workspaceURL,
+            profileName: trimmedName
+        ) != nil else { throw CompanionProfileRegistryError.invalidProfileName }
+        let result = await runProfileCommand(args: ["delete", trimmedName, "--yes"], workspaceURL: workspaceURL)
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: result.success, output: result.output, error: result.error)
     }
 
-    func activate(workspacePath: String, name: String) throws -> ProfileOperationResult {
+    func activate(workspacePath: String, name: String) async throws -> ProfileOperationResult {
         let trimmedName = try normalizedProfileName(name)
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        let result = runProfileCommand(args: ["use", trimmedName], workspaceURL: workspaceURL)
+        guard CompanionWorkspaceSecurity.resolvedProfileURL(
+            workspaceURL: workspaceURL,
+            profileName: trimmedName
+        ) != nil else { throw CompanionProfileRegistryError.invalidProfileName }
+        let result = await runProfileCommand(args: ["use", trimmedName], workspaceURL: workspaceURL)
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: result.success, output: result.output, error: result.error)
     }
 
@@ -188,8 +201,16 @@ final class CompanionProfileRegistry {
         line.prefix { $0 == " " }.count
     }
 
-    private func profileURL(for name: String, workspaceURL: URL) -> URL {
-        name == "default" ? workspaceURL : workspaceURL.appendingPathComponent("profiles", isDirectory: true).appendingPathComponent(name, isDirectory: true)
+    private func profileURLForCreation(name: String, workspaceURL: URL) throws -> URL {
+        guard name != "default" else { return workspaceURL }
+        let directProfilesURL = workspaceURL.appendingPathComponent("profiles", isDirectory: true)
+        if FileManager.default.fileExists(atPath: directProfilesURL.path) == false {
+            try FileManager.default.createDirectory(at: directProfilesURL, withIntermediateDirectories: false)
+        }
+        guard let profilesURL = CompanionWorkspaceSecurity.resolvedProfilesDirectoryURL(workspaceURL: workspaceURL) else {
+            throw CompanionProfileRegistryError.invalidProfileName
+        }
+        return profilesURL.appendingPathComponent(name, isDirectory: true).standardizedFileURL
     }
 
     private func seedProfileFiles(profileURL: URL, workspaceURL: URL, provider: String, model: String, baseUrl: String, createEnv: Bool, createSoul: Bool) throws {
@@ -311,7 +332,7 @@ final class CompanionProfileRegistry {
         return workspaceURL
     }
 
-    private func runProfileCommand(args: [String], workspaceURL: URL) -> (success: Bool, output: String, error: String?) {
+    private func runProfileCommand(args: [String], workspaceURL: URL) async -> (success: Bool, output: String, error: String?) {
         guard let cliContext = CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: workspaceURL.path) else {
             return (false, "", "Hermes CLI root could not be resolved for \(workspaceURL.path)")
         }
@@ -322,32 +343,31 @@ final class CompanionProfileRegistry {
             return (false, "", "Hermes CLI script not found at \(scriptURL.path)")
         }
 
-        let process = Process()
+        let executableURL: URL
+        let arguments: [String]
         if FileManager.default.fileExists(atPath: pythonURL.path) {
-            process.executableURL = pythonURL
-            process.arguments = [scriptURL.path, "profile"] + args
+            executableURL = pythonURL
+            arguments = [scriptURL.path, "profile"] + args
         } else {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["python3", scriptURL.path, "profile"] + args
+            executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            arguments = ["python3", scriptURL.path, "profile"] + args
         }
-        process.currentDirectoryURL = repoURL
         var env = ProcessInfo.processInfo.environment
         env["HERMES_HOME"] = cliContext.selectedHomeURL.path
         env["HOME"] = NSHomeDirectory()
         env["PATH"] = enhancedPath(workspaceURL: cliContext.cliRootURL, existing: env["PATH"] ?? "")
-        process.environment = env
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
         do {
-            try process.run()
-            process.waitUntilExit()
-            let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let result = try await CompanionSubprocess.run(
+                executableURL: executableURL,
+                arguments: arguments,
+                environment: env,
+                currentDirectoryURL: repoURL,
+                timeout: 30
+            )
+            let out = String(data: result.stdout, encoding: .utf8) ?? ""
+            let err = String(data: result.stderr, encoding: .utf8) ?? ""
             let combined = [out, err].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: "\n")
-            return (process.terminationStatus == 0, combined, process.terminationStatus == 0 ? nil : (combined.isEmpty ? "hermes profile command failed with exit code \(process.terminationStatus)." : combined))
+            return (result.status == 0, combined, result.status == 0 ? nil : (combined.isEmpty ? "hermes profile command failed with exit code \(result.status)." : combined))
         } catch {
             return (false, "", error.localizedDescription)
         }

@@ -58,8 +58,21 @@ extension HermesPromptAttachment {
 
         let resourceValues = try url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey, .nameKey])
         let filename = resourceValues.name ?? url.lastPathComponent
-        let data = try Data(contentsOf: url)
+        if let byteCount = resourceValues.fileSize, byteCount > HermesPromptAttachment.maxFileBytes {
+            throw HermesAttachmentError.fileTooLarge(byteCount: byteCount, limit: HermesPromptAttachment.maxFileBytes)
+        }
+        let data = try readBoundedData(from: url)
         return try HermesPromptAttachment(filename: filename, contentType: resourceValues.contentType, data: data)
+    }
+
+    static func readBoundedData(from url: URL) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: maxFileBytes + 1) ?? Data()
+        guard data.count <= maxFileBytes else {
+            throw HermesAttachmentError.fileTooLarge(byteCount: data.count, limit: maxFileBytes)
+        }
+        return data
     }
 }
 

@@ -42,6 +42,18 @@ final class HermesHostEndpointsTests: XCTestCase {
         XCTAssertThrowsError(try HermesEndpointSecurity.validateSensitiveURL(remote))
         XCTAssertNoThrow(try HermesEndpointSecurity.validateSensitiveURL(tailnet))
     }
+
+    func testStatusProbeURLRejectsRemotePlaintextBeforeAuthorizationCanBeAdded() {
+        XCTAssertNil(HermesStatusMonitor.statusURL(from: "http://example.com/v1"))
+        XCTAssertEqual(
+            HermesStatusMonitor.statusURL(from: "http://127.0.0.1:8642/v1"),
+            URL(string: "http://127.0.0.1:8642/v1/models")
+        )
+        XCTAssertEqual(
+            HermesStatusMonitor.statusURL(from: "https://api.example.com/v1"),
+            URL(string: "https://api.example.com/v1/models")
+        )
+    }
 }
 
 final class HermesPhonePrimaryTabTests: XCTestCase {

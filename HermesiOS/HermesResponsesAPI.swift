@@ -199,12 +199,17 @@ struct HermesPromptAttachment: Equatable {
 
     static let imageFileExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
     static let utf8FileExtensions: Set<String> = ["txt", "text", "json", "yaml", "yml", "toml", "swift"]
+    static let maxFileBytes = 25 * 1024 * 1024
+    static let maxHTTPInlineTextBytes = 32 * 1024
 
     init(filename: String, contentType: UTType?, data: Data) throws {
         let normalizedName = filename.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "attachment" : filename
         let ext = URL(fileURLWithPath: normalizedName).pathExtension.lowercased()
         guard Self.supportedFileExtensions.contains(ext) else {
             throw HermesAttachmentError.unsupportedFileType(ext.isEmpty ? normalizedName : ".\(ext)")
+        }
+        guard data.count <= Self.maxFileBytes else {
+            throw HermesAttachmentError.fileTooLarge(byteCount: data.count, limit: Self.maxFileBytes)
         }
 
         self.filename = normalizedName
@@ -234,23 +239,24 @@ struct HermesPromptAttachment: Equatable {
         return String(data: data, encoding: .utf8)
     }
 
-    var textAttachmentBlock: String {
-        if let textContent {
-            return """
+    var httpTextAttachmentBlock: String? {
+        guard data.count <= Self.maxHTTPInlineTextBytes, let textContent else { return nil }
+        return """
 
 Attached file: \(filename) (\(mimeType), \(formattedByteCount))
 ```\(fileExtension)
 \(textContent)
 ```
 """
+    }
+
+    func validateForHTTPTransport() throws {
+        guard data.count <= Self.maxFileBytes else {
+            throw HermesAttachmentError.fileTooLarge(byteCount: data.count, limit: Self.maxFileBytes)
         }
-
-        return """
-
-Attached file: \(filename) (\(mimeType), \(formattedByteCount))
-The file is provided as a base64 data URL. Decode it if you need to inspect or process the document bytes:
-\(base64DataURL)
-"""
+        guard isImage || httpTextAttachmentBlock != nil else {
+            throw HermesAttachmentError.unsupportedHTTPAttachment(filename)
+        }
     }
 
     private static func mimeType(forExtension ext: String, contentType: UTType?) -> String {
@@ -278,11 +284,17 @@ The file is provided as a base64 data URL. Decode it if you need to inspect or p
 
 enum HermesAttachmentError: LocalizedError {
     case unsupportedFileType(String)
+    case fileTooLarge(byteCount: Int, limit: Int)
+    case unsupportedHTTPAttachment(String)
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFileType(let type):
             return "Unsupported attachment type: \(type). Choose an image, PDF, Office document, text, JSON, YAML, TOML, or Swift file."
+        case .fileTooLarge(let byteCount, let limit):
+            return "Attachment is too large (\(ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file))). The limit is \(ByteCountFormatter.string(fromByteCount: Int64(limit), countStyle: .file))."
+        case .unsupportedHTTPAttachment(let filename):
+            return "\(filename) cannot be embedded safely in an HTTP API prompt. Use TUI Gateway file attachment for binary documents or text larger than 32 KB."
         }
     }
 }
@@ -844,7 +856,7 @@ final class HermesResponsesSession {
         let reasoningPayload = draft.reasoningEffort == .off ? nil : HermesReasoningPayload(effort: draft.reasoningEffort)
         let payload = HermesResponsesRequestBody(
             model: "hermes-agent",
-            input: HermesResponsesInput(prompt: draft.userPrompt, attachment: attachment),
+            input: try HermesResponsesInput(prompt: draft.userPrompt, attachment: attachment),
             stream: stream,
             store: true,
             previousResponseID: previousResponseID.isEmpty ? nil : previousResponseID,
@@ -1283,11 +1295,13 @@ private enum HermesResponsesInput: Encodable {
     case text(String)
     case message([HermesResponsesInputMessage])
 
-    init(prompt: String, attachment: HermesPromptAttachment?) {
+    init(prompt: String, attachment: HermesPromptAttachment?) throws {
         guard let attachment else {
             self = .text(prompt)
             return
         }
+
+        try attachment.validateForHTTPTransport()
 
         if attachment.isImage {
             self = .message([
@@ -1302,7 +1316,10 @@ private enum HermesResponsesInput: Encodable {
         } else {
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
             let basePrompt = trimmedPrompt.isEmpty ? "Please inspect the attached file." : trimmedPrompt
-            self = .text(basePrompt + attachment.textAttachmentBlock)
+            guard let block = attachment.httpTextAttachmentBlock else {
+                throw HermesAttachmentError.unsupportedHTTPAttachment(attachment.filename)
+            }
+            self = .text(basePrompt + block)
         }
     }
 

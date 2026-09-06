@@ -43,6 +43,11 @@ final class CompanionServiceRegistry {
     private let fileURL: URL
     private var document: CompanionServiceRegistryDocument
 
+    init(document: CompanionServiceRegistryDocument) {
+        fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("unused-services-\(UUID().uuidString).json")
+        self.document = document
+    }
+
     private init() {
         let supportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -62,9 +67,9 @@ final class CompanionServiceRegistry {
         }
     }
 
-    func status(for serviceID: String) throws -> ServiceStatusResult {
+    func status(for serviceID: String) async throws -> ServiceStatusResult {
         let service = try serviceRecord(for: serviceID)
-        let output = try runStatus(command: service.statusCommand)
+        let output = try await runStatus(command: service.statusCommand)
         return ServiceStatusResult(
             serviceID: serviceID,
             status: inferStatus(from: output),
@@ -72,10 +77,10 @@ final class CompanionServiceRegistry {
         )
     }
 
-    func start(serviceID: String) throws -> ServiceStartResult {
+    func start(serviceID: String) async throws -> ServiceStartResult {
         let service = try serviceRecord(for: serviceID)
         let command = service.startCommand ?? service.restartCommand
-        let output = try run(command: command)
+        let output = try await run(command: command)
         return ServiceStartResult(
             serviceID: serviceID,
             status: .started,
@@ -83,12 +88,12 @@ final class CompanionServiceRegistry {
         )
     }
 
-    func stop(serviceID: String) throws -> ServiceStopResult {
+    func stop(serviceID: String) async throws -> ServiceStopResult {
         let service = try serviceRecord(for: serviceID)
         guard let command = service.stopCommand else {
             throw CompanionServiceRegistryError.commandMissing("No stop command configured for \(serviceID).")
         }
-        let output = try run(command: command)
+        let output = try await run(command: command)
         return ServiceStopResult(
             serviceID: serviceID,
             status: .stopped,
@@ -96,9 +101,9 @@ final class CompanionServiceRegistry {
         )
     }
 
-    func restart(serviceID: String) throws -> ServiceRestartResult {
+    func restart(serviceID: String) async throws -> ServiceRestartResult {
         let service = try serviceRecord(for: serviceID)
-        let output = try run(command: service.restartCommand)
+        let output = try await run(command: service.restartCommand)
         return ServiceRestartResult(
             serviceID: serviceID,
             status: .restarted,
@@ -113,73 +118,59 @@ final class CompanionServiceRegistry {
         return service
     }
 
-    private func run(command: [String]) throws -> String {
+    private func run(command: [String]) async throws -> String {
         guard let executable = command.first, !executable.isEmpty else {
             throw CompanionServiceRegistryError.commandMissing(command.joined(separator: " "))
         }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = Array(command.dropFirst())
-        process.environment = Self.commandEnvironment()
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
+        let result: CompanionSubprocess.Output
         do {
-            try process.run()
-            process.waitUntilExit()
+            result = try await CompanionSubprocess.run(
+                executableURL: URL(fileURLWithPath: executable),
+                arguments: Array(command.dropFirst()),
+                environment: Self.commandEnvironment(),
+                timeout: 30
+            )
         } catch {
             throw CompanionServiceRegistryError.commandFailed(error.localizedDescription)
         }
-
-        let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stdout = String(data: result.stdout, encoding: .utf8) ?? ""
+        let stderr = String(data: result.stderr, encoding: .utf8) ?? ""
         let combined = [stdout, stderr]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n")
 
-        if process.terminationStatus != 0 {
+        if result.status != 0 {
             throw CompanionServiceRegistryError.commandFailed(
-                combined.isEmpty ? "Service command failed with exit code \(process.terminationStatus)." : combined
+                combined.isEmpty ? "Service command failed with exit code \(result.status)." : combined
             )
         }
 
         return combined.isEmpty ? "Command completed successfully." : combined
     }
 
-    private func runStatus(command: [String]) throws -> String {
+    private func runStatus(command: [String]) async throws -> String {
         guard let executable = command.first, !executable.isEmpty else {
             throw CompanionServiceRegistryError.commandMissing(command.joined(separator: " "))
         }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = Array(command.dropFirst())
-        process.environment = Self.commandEnvironment()
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
+        let result: CompanionSubprocess.Output
         do {
-            try process.run()
-            process.waitUntilExit()
+            result = try await CompanionSubprocess.run(
+                executableURL: URL(fileURLWithPath: executable),
+                arguments: Array(command.dropFirst()),
+                environment: Self.commandEnvironment(),
+                timeout: 15
+            )
         } catch {
             throw CompanionServiceRegistryError.commandFailed(error.localizedDescription)
         }
-
-        let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stdout = String(data: result.stdout, encoding: .utf8) ?? ""
+        let stderr = String(data: result.stderr, encoding: .utf8) ?? ""
         let combined = [stdout, stderr]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n")
 
-        if combined.isEmpty, process.terminationStatus != 0 {
-            return "Service status command exited with code \(process.terminationStatus)."
+        if combined.isEmpty, result.status != 0 {
+            return "Service status command exited with code \(result.status)."
         }
         return combined.isEmpty ? "Command completed successfully." : combined
     }

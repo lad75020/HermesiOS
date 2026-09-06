@@ -50,7 +50,7 @@ enum CompanionGatewayRegistryError: LocalizedError {
 final class CompanionGatewayRegistry {
     private let fileManager = FileManager.default
     typealias CommandResult = (success: Bool, output: String, error: String?)
-    typealias CommandRunner = ([String], URL, URL, TimeInterval) -> CommandResult
+    typealias CommandRunner = ([String], URL, URL, TimeInterval) async -> CommandResult
     private let commandRunner: CommandRunner?
 
     /// Fixture tests replace only process execution; profile, metadata and file
@@ -59,7 +59,7 @@ final class CompanionGatewayRegistry {
         self.commandRunner = commandRunner
     }
 
-    func config(workspacePath: String, profileName: String?) throws -> GatewayConfigResult {
+    func config(workspacePath: String, profileName: String?) async throws -> GatewayConfigResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let profileURL = try profileURL(workspaceURL: workspaceURL, profileName: profileName)
         let profile = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
@@ -70,21 +70,21 @@ final class CompanionGatewayRegistry {
             profilePath: profileURL.path,
             envFilePath: profileURL.appendingPathComponent(".env").path,
             configPath: profileURL.appendingPathComponent("config.yaml").path,
-            gatewayRunning: gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
+            gatewayRunning: await gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
             env: readEnv(profileURL: profileURL),
-            platformEnabled: try readPlatformEnabled(profileURL: profileURL),
+            platformEnabled: try await readPlatformEnabled(profileURL: profileURL),
             fields: Self.fields,
             platforms: Self.platforms
         )
     }
 
-    func gatewayStatus(workspacePath: String, profileName: String?) -> GatewayStatusResult {
+    func gatewayStatus(workspacePath: String, profileName: String?) async -> GatewayStatusResult {
         do {
             let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
             let profileURL = try profileURL(workspaceURL: workspaceURL, profileName: profileName)
             let profile = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
             let pidRunning = isGatewayRunning(profileURL: profileURL)
-            let command = runGatewayCommand(["status"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 5)
+            let command = await runGatewayCommand(["status"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 5)
             let commandRunning = command.output.localizedCaseInsensitiveContains("running") && !command.output.localizedCaseInsensitiveContains("not running")
             return GatewayStatusResult(
                 workspacePath: workspacePath,
@@ -108,12 +108,12 @@ final class CompanionGatewayRegistry {
         }
     }
 
-    func setGatewayRunning(workspacePath: String, profileName: String?, running: Bool) throws -> GatewayOperationResult {
+    func setGatewayRunning(workspacePath: String, profileName: String?, running: Bool) async throws -> GatewayOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let profileURL = try profileURL(workspaceURL: workspaceURL, profileName: profileName)
         let profile = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
-        let command = runGatewayCommand([running ? "start" : "stop"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 25)
-        let status = gatewayStatus(workspacePath: workspacePath, profileName: profile)
+        let command = await runGatewayCommand([running ? "start" : "stop"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 25)
+        let status = await gatewayStatus(workspacePath: workspacePath, profileName: profile)
         return GatewayOperationResult(
             workspacePath: workspacePath,
             resolvedWorkspacePath: workspaceURL.path,
@@ -123,16 +123,16 @@ final class CompanionGatewayRegistry {
             gatewayRunning: status.running,
             output: command.output,
             error: command.error,
-            config: try? config(workspacePath: workspacePath, profileName: profile)
+            config: try? await config(workspacePath: workspacePath, profileName: profile)
         )
     }
 
-    func restartGateway(workspacePath: String, profileName: String?) throws -> GatewayOperationResult {
+    func restartGateway(workspacePath: String, profileName: String?) async throws -> GatewayOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let profileURL = try profileURL(workspaceURL: workspaceURL, profileName: profileName)
         let profile = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
-        let command = runGatewayCommand(["restart"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 30)
-        let status = gatewayStatus(workspacePath: workspacePath, profileName: profile)
+        let command = await runGatewayCommand(["restart"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 30)
+        let status = await gatewayStatus(workspacePath: workspacePath, profileName: profile)
         return GatewayOperationResult(
             workspacePath: workspacePath,
             resolvedWorkspacePath: workspaceURL.path,
@@ -142,11 +142,11 @@ final class CompanionGatewayRegistry {
             gatewayRunning: status.running,
             output: command.output,
             error: command.error,
-            config: try? config(workspacePath: workspacePath, profileName: profile)
+            config: try? await config(workspacePath: workspacePath, profileName: profile)
         )
     }
 
-    func setEnv(workspacePath: String, profileName: String?, key: String, value: String) throws -> SetGatewayEnvResult {
+    func setEnv(workspacePath: String, profileName: String?, key: String, value: String) async throws -> SetGatewayEnvResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let profileURL = try profileURL(workspaceURL: workspaceURL, profileName: profileName)
         let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -162,8 +162,8 @@ final class CompanionGatewayRegistry {
             || normalizedKey.hasSuffix("_TOKEN")
             || normalizedKey == "HF_TOKEN"
         let restartOutput: String?
-        if shouldRestart, gatewayStatus(workspacePath: workspacePath, profileName: profile).running {
-            let command = runGatewayCommand(["restart"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 30)
+        if shouldRestart, await gatewayStatus(workspacePath: workspacePath, profileName: profile).running {
+            let command = await runGatewayCommand(["restart"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 30)
             guard command.success else { throw CompanionGatewayRegistryError.commandFailed("Settings were saved, but the gateway restart failed. Restart it on the host to apply changes.") }
             restartOutput = "Gateway restart completed."
         } else {
@@ -178,21 +178,21 @@ final class CompanionGatewayRegistry {
             key: normalizedKey,
             value: readEnv(profileURL: profileURL)[normalizedKey] ?? "",
             env: readEnv(profileURL: profileURL),
-            gatewayRunning: gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
+            gatewayRunning: await gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
             restartOutput: restartOutput
         )
     }
 
-    func setPlatformEnabled(workspacePath: String, profileName: String?, platform: String, enabled: Bool) throws -> SetGatewayPlatformResult {
+    func setPlatformEnabled(workspacePath: String, profileName: String?, platform: String, enabled: Bool) async throws -> SetGatewayPlatformResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let profileURL = try profileURL(workspaceURL: workspaceURL, profileName: profileName)
         let normalizedPlatform = platform.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.platformKeys.contains(normalizedPlatform) else { throw CompanionGatewayRegistryError.invalidPlatform(normalizedPlatform) }
-        try setPlatformEnabledValue(profileURL: profileURL, platform: normalizedPlatform, enabled: enabled)
+        try await setPlatformEnabledValue(profileURL: profileURL, platform: normalizedPlatform, enabled: enabled)
         let profile = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
         let command: (success: Bool, output: String, error: String?)?
-        if gatewayStatus(workspacePath: workspacePath, profileName: profile).running {
-            command = runGatewayCommand(["restart"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 30)
+        if await gatewayStatus(workspacePath: workspacePath, profileName: profile).running {
+            command = await runGatewayCommand(["restart"], workspaceURL: workspaceURL, profileURL: profileURL, timeout: 30)
         } else {
             command = nil
         }
@@ -207,8 +207,8 @@ final class CompanionGatewayRegistry {
             configPath: profileURL.appendingPathComponent("config.yaml").path,
             platform: normalizedPlatform,
             enabled: enabled,
-            platformEnabled: try readPlatformEnabled(profileURL: profileURL),
-            gatewayRunning: gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
+            platformEnabled: try await readPlatformEnabled(profileURL: profileURL),
+            gatewayRunning: await gatewayStatus(workspacePath: workspacePath, profileName: profile).running,
             restartOutput: command == nil ? nil : "Gateway restart completed."
         )
     }
@@ -222,12 +222,10 @@ final class CompanionGatewayRegistry {
 
     private func profileURL(workspaceURL: URL, profileName: String?) throws -> URL {
         let name = normalizedProfileName(profileName) ?? activeProfileName(workspaceURL: workspaceURL)
-        if name == "default" { return workspaceURL }
-        guard name.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#, options: .regularExpression) != nil else { throw CompanionGatewayRegistryError.invalidProfileName }
-        let profilesURL = workspaceURL.appendingPathComponent("profiles", isDirectory: true)
-        let selectedURL = profilesURL.appendingPathComponent(name, isDirectory: true)
-        guard selectedURL.resolvingSymlinksInPath().deletingLastPathComponent() == profilesURL.resolvingSymlinksInPath(),
-              CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: selectedURL.path) != nil else { throw CompanionGatewayRegistryError.invalidProfileName }
+        guard let selectedURL = CompanionWorkspaceSecurity.resolvedProfileURL(
+            workspaceURL: workspaceURL,
+            profileName: name
+        ) else { throw CompanionGatewayRegistryError.invalidProfileName }
         return selectedURL
     }
 
@@ -270,16 +268,16 @@ final class CompanionGatewayRegistry {
         try lines.joined(separator: "\n").write(to: envURL, atomically: true, encoding: .utf8)
     }
 
-    private func readPlatformEnabled(profileURL: URL) throws -> [String: Bool] {
-        let result = try CompanionRuntimeConfigSafety.apply(
+    private func readPlatformEnabled(profileURL: URL) async throws -> [String: Bool] {
+        let result = try await CompanionRuntimeConfigSafety.apply(
             configURL: profileURL.appendingPathComponent("config.yaml"),
             request: ["action": "listPlatforms", "platforms": Self.platformKeys.sorted()])
         guard let enabled = result["platformEnabled"] as? [String: Bool] else { throw CompanionRuntimeConfigSafety.Failure.rejected }
         return enabled
     }
 
-    private func setPlatformEnabledValue(profileURL: URL, platform: String, enabled: Bool) throws {
-        _ = try CompanionRuntimeConfigSafety.apply(
+    private func setPlatformEnabledValue(profileURL: URL, platform: String, enabled: Bool) async throws {
+        _ = try await CompanionRuntimeConfigSafety.apply(
             configURL: profileURL.appendingPathComponent("config.yaml"),
             request: ["action": "setPlatform", "platform": platform, "enabled": enabled, "platforms": Self.platformKeys.sorted()])
     }
@@ -291,28 +289,23 @@ final class CompanionGatewayRegistry {
         return kill(pid, 0) == 0
     }
 
-    private func runGatewayCommand(_ args: [String], workspaceURL: URL, profileURL: URL, timeout: TimeInterval) -> CommandResult {
-        if let commandRunner { return commandRunner(args, workspaceURL, profileURL, timeout) }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["hermes", "gateway", "--accept-hooks"] + args
-        process.environment = commandEnvironment(workspaceURL: workspaceURL, profileURL: profileURL)
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
+    private func runGatewayCommand(_ args: [String], workspaceURL: URL, profileURL: URL, timeout: TimeInterval) async -> CommandResult {
+        if let commandRunner { return await commandRunner(args, workspaceURL, profileURL, timeout) }
         do {
-            try process.run()
-            let deadline = Date().addingTimeInterval(timeout)
-            while process.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
-            }
-            if process.isRunning { process.terminate() }
-            process.waitUntilExit()
-            let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            let combined = [out, err].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: "\n")
-            let success = process.terminationStatus == 0
+            let result = try await CompanionSubprocess.run(
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: ["hermes", "gateway", "--accept-hooks"] + args,
+                environment: commandEnvironment(workspaceURL: workspaceURL, profileURL: profileURL),
+                currentDirectoryURL: workspaceURL,
+                timeout: timeout,
+                maxOutputBytes: 2_000_000
+            )
+            let out = String(data: result.stdout, encoding: .utf8) ?? ""
+            let err = String(data: result.stderr, encoding: .utf8) ?? ""
+            let combined = [out, err]
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .joined(separator: "\n")
+            let success = result.status == 0
             return (success, combined.isEmpty ? "Command completed." : combined, success ? nil : combined)
         } catch {
             return (false, "", error.localizedDescription)

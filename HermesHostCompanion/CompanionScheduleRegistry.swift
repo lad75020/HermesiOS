@@ -32,41 +32,41 @@ final class CompanionScheduleRegistry {
         )
     }
 
-    func create(workspacePath: String, schedule: String, prompt: String?, name: String?, deliver: String?, provider: String?, model: String?, baseUrl: String?) throws -> ScheduleOperationResult {
+    func create(workspacePath: String, schedule: String, prompt: String?, name: String?, deliver: String?, provider: String?, model: String?, baseUrl: String?) async throws -> ScheduleOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let args = try Self.createArguments(schedule: schedule, prompt: prompt, name: name, deliver: deliver, provider: provider, model: model, baseUrl: baseUrl)
-        let result = runCronCommand(args: args, workspaceURL: workspaceURL)
+        let result = await runCronCommand(args: args, workspaceURL: workspaceURL)
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, result: result)
     }
 
-    func edit(workspacePath: String, jobID: String, schedule: String?, prompt: String?, name: String?, deliver: String?, provider: String?, model: String?, baseUrl: String?) throws -> ScheduleOperationResult {
+    func edit(workspacePath: String, jobID: String, schedule: String?, prompt: String?, name: String?, deliver: String?, provider: String?, model: String?, baseUrl: String?) async throws -> ScheduleOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let args = try Self.editArguments(jobID: jobID, schedule: schedule, prompt: prompt, name: name, deliver: deliver, provider: provider, model: model, baseUrl: baseUrl)
-        let result = runCronCommand(args: args, workspaceURL: workspaceURL)
+        let result = await runCronCommand(args: args, workspaceURL: workspaceURL)
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, result: result)
     }
 
-    func remove(workspacePath: String, jobID: String) throws -> ScheduleOperationResult {
-        try runJobAction(workspacePath: workspacePath, jobID: jobID, action: "remove")
+    func remove(workspacePath: String, jobID: String) async throws -> ScheduleOperationResult {
+        try await runJobAction(workspacePath: workspacePath, jobID: jobID, action: "remove")
     }
 
-    func pause(workspacePath: String, jobID: String) throws -> ScheduleOperationResult {
-        try runJobAction(workspacePath: workspacePath, jobID: jobID, action: "pause")
+    func pause(workspacePath: String, jobID: String) async throws -> ScheduleOperationResult {
+        try await runJobAction(workspacePath: workspacePath, jobID: jobID, action: "pause")
     }
 
-    func resume(workspacePath: String, jobID: String) throws -> ScheduleOperationResult {
-        try runJobAction(workspacePath: workspacePath, jobID: jobID, action: "resume")
+    func resume(workspacePath: String, jobID: String) async throws -> ScheduleOperationResult {
+        try await runJobAction(workspacePath: workspacePath, jobID: jobID, action: "resume")
     }
 
-    func trigger(workspacePath: String, jobID: String) throws -> ScheduleOperationResult {
-        try runJobAction(workspacePath: workspacePath, jobID: jobID, action: "run")
+    func trigger(workspacePath: String, jobID: String) async throws -> ScheduleOperationResult {
+        try await runJobAction(workspacePath: workspacePath, jobID: jobID, action: "run")
     }
 
-    private func runJobAction(workspacePath: String, jobID: String, action: String) throws -> ScheduleOperationResult {
+    private func runJobAction(workspacePath: String, jobID: String, action: String) async throws -> ScheduleOperationResult {
         let trimmedJobID = jobID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedJobID.isEmpty == false else { throw CompanionScheduleRegistryError.missingJobID }
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
-        let result = runCronCommand(args: [action, trimmedJobID], workspaceURL: workspaceURL)
+        let result = await runCronCommand(args: [action, trimmedJobID], workspaceURL: workspaceURL)
         return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, result: result)
     }
 
@@ -207,7 +207,7 @@ final class CompanionScheduleRegistry {
         return value
     }
 
-    private func runCronCommand(args: [String], workspaceURL: URL) -> (success: Bool, output: String, error: String?) {
+    private func runCronCommand(args: [String], workspaceURL: URL) async -> (success: Bool, output: String, error: String?) {
         guard let cliContext = CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: workspaceURL.path) else {
             return (false, "", "Hermes CLI root could not be resolved for \(workspaceURL.path)")
         }
@@ -218,30 +218,29 @@ final class CompanionScheduleRegistry {
             return (false, "", "Hermes CLI script not found at \(scriptURL.path)")
         }
 
-        let process = Process()
+        let executableURL: URL
+        let arguments: [String]
         if FileManager.default.fileExists(atPath: pythonURL.path) {
-            process.executableURL = pythonURL
-            process.arguments = [scriptURL.path, "cron"] + args
+            executableURL = pythonURL
+            arguments = [scriptURL.path, "cron"] + args
         } else {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["python3", scriptURL.path, "cron"] + args
+            executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            arguments = ["python3", scriptURL.path, "cron"] + args
         }
-        process.currentDirectoryURL = repoURL
         var env = ProcessInfo.processInfo.environment
         env["HERMES_HOME"] = cliContext.selectedHomeURL.path
         env["PATH"] = enhancedPath(cliRootURL: cliContext.cliRootURL, existing: env["PATH"] ?? "")
-        process.environment = env
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
         do {
-            try process.run()
-            process.waitUntilExit()
-            let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            return (process.terminationStatus == 0, out, process.terminationStatus == 0 ? nil : (err.isEmpty ? out : err))
+            let result = try await CompanionSubprocess.run(
+                executableURL: executableURL,
+                arguments: arguments,
+                environment: env,
+                currentDirectoryURL: repoURL,
+                timeout: 60
+            )
+            let out = String(data: result.stdout, encoding: .utf8) ?? ""
+            let err = String(data: result.stderr, encoding: .utf8) ?? ""
+            return (result.status == 0, out, result.status == 0 ? nil : (err.isEmpty ? out : err))
         } catch {
             return (false, "", error.localizedDescription)
         }

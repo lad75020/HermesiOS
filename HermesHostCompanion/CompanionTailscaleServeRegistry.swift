@@ -25,12 +25,12 @@ enum CompanionTailscaleServeRegistryError: LocalizedError {
 final class CompanionTailscaleServeRegistry {
     private let companionPorts = Set(["9112", "9212", "9312"])
 
-    func status(port rawPort: String) throws -> TailscaleServeStatusResult {
+    func status(port rawPort: String) async throws -> TailscaleServeStatusResult {
         let port = try normalizedPort(rawPort)
-        let output = try runTailscale(arguments: ["serve", "status", "--json"], allowNonZero: true)
+        let output = try await runTailscale(arguments: ["serve", "status", "--json"], allowNonZero: true)
         let fallbackOutput: String
         if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || output.localizedLowercase.contains("unknown flag") {
-            fallbackOutput = try runTailscale(arguments: ["serve", "status"], allowNonZero: true)
+            fallbackOutput = try await runTailscale(arguments: ["serve", "status"], allowNonZero: true)
         } else {
             fallbackOutput = output
         }
@@ -42,7 +42,7 @@ final class CompanionTailscaleServeRegistry {
         )
     }
 
-    func set(port rawPort: String, enabled: Bool) throws -> TailscaleServeStatusResult {
+    func set(port rawPort: String, enabled: Bool) async throws -> TailscaleServeStatusResult {
         let port = try normalizedPort(rawPort)
         let arguments: [String]
         if enabled {
@@ -50,8 +50,8 @@ final class CompanionTailscaleServeRegistry {
         } else {
             arguments = ["serve", "--https=\(port)", "off"]
         }
-        let operationOutput = try runTailscale(arguments: arguments, allowNonZero: false)
-        let refreshed = try status(port: port)
+        let operationOutput = try await runTailscale(arguments: arguments, allowNonZero: false)
+        let refreshed = try await status(port: port)
         let combinedOutput = [operationOutput, refreshed.output]
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -76,34 +76,29 @@ final class CompanionTailscaleServeRegistry {
         return port
     }
 
-    private func runTailscale(arguments: [String], allowNonZero: Bool) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", (["tailscale"] + arguments.map(Self.shellQuote)).joined(separator: " ")]
-        process.environment = Self.commandEnvironment()
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
+    private func runTailscale(arguments: [String], allowNonZero: Bool) async throws -> String {
+        let result: CompanionSubprocess.Output
         do {
-            try process.run()
-            process.waitUntilExit()
+            result = try await CompanionSubprocess.run(
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: ["tailscale"] + arguments,
+                environment: Self.commandEnvironment(),
+                timeout: 15
+            )
         } catch {
             throw CompanionTailscaleServeRegistryError.commandFailed(error.localizedDescription)
         }
 
-        let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stdout = String(data: result.stdout, encoding: .utf8) ?? ""
+        let stderr = String(data: result.stderr, encoding: .utf8) ?? ""
         let combined = [stdout, stderr]
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if process.terminationStatus != 0 && allowNonZero == false {
+        if result.status != 0 && allowNonZero == false {
             throw CompanionTailscaleServeRegistryError.commandFailed(
-                combined.isEmpty ? "tailscale command failed with exit code \(process.terminationStatus)." : combined
+                combined.isEmpty ? "tailscale command failed with exit code \(result.status)." : combined
             )
         }
         return combined
@@ -140,10 +135,4 @@ final class CompanionTailscaleServeRegistry {
         return environment
     }
 
-    private static func shellQuote(_ value: String) -> String {
-        if value.range(of: #"^[A-Za-z0-9_@%+=:,./-]+$"#, options: .regularExpression) != nil {
-            return value
-        }
-        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }

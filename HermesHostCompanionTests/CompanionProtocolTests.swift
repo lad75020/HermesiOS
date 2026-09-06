@@ -182,4 +182,47 @@ final class CompanionConfigurationAndWorkspaceSecurityTests: XCTestCase {
         XCTAssertTrue(CompanionWorkspaceSecurity.isDescendant(root, of: root))
         XCTAssertFalse(CompanionWorkspaceSecurity.isDescendant(URL(fileURLWithPath: "/tmp/hermes-workspace-other", isDirectory: true), of: root))
     }
+
+    func testProfileResolutionAllowsOnlyExistingDirectChildren() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let profiles = root.appendingPathComponent("profiles", isDirectory: true)
+        let work = profiles.appendingPathComponent("work", isDirectory: true)
+        let outside = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: profiles.appendingPathComponent("linked", isDirectory: true),
+            withDestinationURL: outside
+        )
+
+        XCTAssertEqual(
+            CompanionWorkspaceSecurity.resolvedProfileURL(workspaceURL: root, profileName: "default"),
+            root.resolvingSymlinksInPath().standardizedFileURL
+        )
+        XCTAssertEqual(
+            CompanionWorkspaceSecurity.resolvedProfileURL(workspaceURL: root, profileName: "work"),
+            work.resolvingSymlinksInPath().standardizedFileURL
+        )
+        for invalid in ["../outside", "nested/profile", ".hidden", "linked", "missing"] {
+            XCTAssertNil(CompanionWorkspaceSecurity.resolvedProfileURL(workspaceURL: root, profileName: invalid))
+        }
+    }
+
+    func testCallerSuppliedHermesShapedDirectoryIsNotPromotedToApprovedRoot() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try "model: fixture\n".write(
+            to: root.appendingPathComponent("config.yaml"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let roots = CompanionWorkspaceSecurity.approvedHermesRoots(preferredWorkspacePath: root.path)
+        XCTAssertFalse(roots.contains(root.resolvingSymlinksInPath().standardizedFileURL))
+    }
 }

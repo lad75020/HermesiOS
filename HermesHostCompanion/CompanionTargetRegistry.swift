@@ -38,6 +38,7 @@ struct CompanionBackupRecord: Codable, Identifiable {
     let targetID: String
     let createdAt: Date
     let path: String
+    let targetPath: String?
 }
 
 enum CompanionTargetRegistryError: LocalizedError {
@@ -47,8 +48,10 @@ enum CompanionTargetRegistryError: LocalizedError {
     case validationFailed([CompanionValidationDiagnostic])
     case backupCreationFailed(String)
     case backupNotFound(String)
+    case backupTargetUnavailable(String)
     case writeFailed(String)
     case invalidWorkspacePath(String)
+    case invalidProfileName(String)
     case skillNotFound(String)
 
     var errorDescription: String? {
@@ -65,10 +68,14 @@ enum CompanionTargetRegistryError: LocalizedError {
             "Unable to create a backup for \(path)."
         case .backupNotFound(let id):
             "No backup exists for identifier '\(id)'."
+        case .backupTargetUnavailable(let id):
+            "Backup '\(id)' is not bound to a valid original target path."
         case .writeFailed(let path):
             "Unable to write the target file at \(path)."
         case .invalidWorkspacePath(let path):
             "The Hermes workspace path '\(path)' is invalid or does not contain a skills directory."
+        case .invalidProfileName(let name):
+            "The Hermes profile name '\(name)' is invalid or does not identify an existing profile."
         case .skillNotFound(let skillID):
             "No Hermes skill named '\(skillID)' exists in the configured workspace."
         }
@@ -84,20 +91,27 @@ final class CompanionTargetRegistry {
     private var document: CompanionTargetRegistryDocument
     private var backups: [CompanionBackupRecord]
 
-    private init() {
+    private convenience init() {
         let supportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let directory = supportDirectory.appendingPathComponent("HermesHostCompanion", isDirectory: true)
+        self.init(storageDirectoryURL: directory)
+    }
+
+    init(storageDirectoryURL directory: URL) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         fileURL = directory.appendingPathComponent("targets.json")
         backupsDirectoryURL = directory.appendingPathComponent("backups", isDirectory: true)
         backupsIndexURL = directory.appendingPathComponent("backups.json")
         try? FileManager.default.createDirectory(at: backupsDirectoryURL, withIntermediateDirectories: true)
 
+        let loadedDocument: CompanionTargetRegistryDocument?
         if let data = try? Data(contentsOf: fileURL),
            let document = try? JSONDecoder().decode(CompanionTargetRegistryDocument.self, from: data) {
+            loadedDocument = document
             self.document = Self.migratedDocument(from: document)
         } else {
+            loadedDocument = nil
             let seeded = Self.seededDocument()
             self.document = seeded
             if let data = try? JSONEncoder().encode(seeded) {
@@ -107,17 +121,33 @@ final class CompanionTargetRegistry {
 
         if let data = try? Data(contentsOf: backupsIndexURL),
            let backups = try? JSONDecoder().decode([CompanionBackupRecord].self, from: data) {
-            self.backups = backups
+            let loadedTargets = loadedDocument?.targets ?? []
+            self.backups = backups.map { backup in
+                guard backup.targetPath == nil,
+                      let targetPath = Self.unambiguousLegacyTargetPath(
+                          for: backup.targetID,
+                          targets: loadedTargets
+                      ) else {
+                    return backup
+                }
+                return CompanionBackupRecord(
+                    id: backup.id,
+                    targetID: backup.targetID,
+                    createdAt: backup.createdAt,
+                    path: backup.path,
+                    targetPath: targetPath
+                )
+            }
         } else {
             self.backups = []
         }
 
+        persistBackups()
         ensureSeededTargetFilesExist()
     }
 
     func listTargets(workspacePath: String? = nil, profileName: String? = nil) throws -> [CompanionTargetSummary] {
-        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath, profileName: profileName)
-        return document.targets.map {
+        try targetRecords(workspacePath: workspacePath, profileName: profileName).map {
             CompanionTargetSummary(
                 id: $0.id,
                 displayName: $0.displayName,
@@ -130,10 +160,7 @@ final class CompanionTargetRegistry {
     }
 
     func readTarget(id: String, workspacePath: String? = nil, profileName: String? = nil) throws -> ReadTargetResult {
-        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath, profileName: profileName)
-        guard let target = document.targets.first(where: { $0.id == id }) else {
-            throw CompanionTargetRegistryError.targetNotFound(id)
-        }
+        let target = try targetRecord(id: id, workspacePath: workspacePath, profileName: profileName)
 
         let url = URL(fileURLWithPath: target.path)
         guard let data = try? Data(contentsOf: url), let content = String(data: data, encoding: .utf8) else {
@@ -160,11 +187,8 @@ final class CompanionTargetRegistry {
         )
     }
 
-    func validateTarget(id: String, proposedContent: String?, workspacePath: String? = nil, profileName: String? = nil) throws -> ValidateTargetResult {
-        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath, profileName: profileName)
-        guard let target = document.targets.first(where: { $0.id == id }) else {
-            throw CompanionTargetRegistryError.targetNotFound(id)
-        }
+    func validateTarget(id: String, proposedContent: String?, workspacePath: String? = nil, profileName: String? = nil) async throws -> ValidateTargetResult {
+        let target = try targetRecord(id: id, workspacePath: workspacePath, profileName: profileName)
 
         let content: String
         let revision: String?
@@ -178,8 +202,14 @@ final class CompanionTargetRegistry {
             revision = current.revision
         }
 
-        let diagnostics = target.validators.flatMap { validator in
-            validate(validator: validator, format: target.format, content: content, targetPath: target.path)
+        var diagnostics: [CompanionValidationDiagnostic] = []
+        for validator in target.validators {
+            diagnostics.append(contentsOf: try await validate(
+                validator: validator,
+                format: target.format,
+                content: content,
+                targetPath: target.path
+            ))
         }
 
         return ValidateTargetResult(
@@ -219,38 +249,59 @@ final class CompanionTargetRegistry {
         createBackup shouldCreateBackup: Bool,
         workspacePath: String? = nil,
         profileName: String? = nil
-    ) throws -> WriteTargetResult {
-        try updateHermesConfigTargetIfNeeded(workspacePath: workspacePath, profileName: profileName)
-        guard let target = document.targets.first(where: { $0.id == id }) else {
-            throw CompanionTargetRegistryError.targetNotFound(id)
-        }
+    ) async throws -> WriteTargetResult {
+        let target = try targetRecord(id: id, workspacePath: workspacePath, profileName: profileName)
 
         let current = try readTarget(id: id, workspacePath: workspacePath, profileName: profileName)
         guard current.revision == expectedRevision else {
             throw CompanionTargetRegistryError.revisionMismatch(expected: expectedRevision, actual: current.revision)
         }
 
-        let validation = try validateTarget(id: id, proposedContent: content, workspacePath: workspacePath, profileName: profileName)
+        let validation = try await validateTarget(
+            id: id,
+            proposedContent: content,
+            workspacePath: workspacePath,
+            profileName: profileName
+        )
         guard validation.valid else {
             throw CompanionTargetRegistryError.validationFailed(validation.diagnostics)
         }
 
-        let targetURL = URL(fileURLWithPath: target.path)
+        // Validation can suspend while an external parser runs. Re-resolve and
+        // re-read the exact request-scoped target before creating a backup or
+        // replacing the file so a stale revision cannot win after that await.
+        let recheckedTarget = try targetRecord(id: id, workspacePath: workspacePath, profileName: profileName)
+        let recheckedCurrent = try readTarget(id: id, workspacePath: workspacePath, profileName: profileName)
+        let originalTargetPath = Self.canonicalPath(target.path)
+        guard Self.canonicalPath(recheckedTarget.path) == originalTargetPath,
+              Self.canonicalPath(recheckedCurrent.path) == originalTargetPath,
+              recheckedCurrent.revision == expectedRevision else {
+            throw CompanionTargetRegistryError.revisionMismatch(
+                expected: expectedRevision,
+                actual: recheckedCurrent.revision
+            )
+        }
+
+        let targetURL = URL(fileURLWithPath: recheckedTarget.path)
         let targetDirectory = targetURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true, attributes: nil)
 
         var backupID: String?
         if shouldCreateBackup {
-            backupID = try makeBackup(for: target, existingContent: current.content, targetPath: target.path)
+            backupID = try makeBackup(
+                for: recheckedTarget,
+                existingContent: recheckedCurrent.content,
+                targetPath: recheckedTarget.path
+            )
         }
 
-        let temporaryURL = targetDirectory.appendingPathComponent(".\(targetURL.lastPathComponent).tmp")
+        let temporaryURL = uniqueTemporaryURL(for: targetURL, operation: "write")
         do {
             try content.write(to: temporaryURL, atomically: true, encoding: .utf8)
             _ = try FileManager.default.replaceItemAt(targetURL, withItemAt: temporaryURL)
         } catch {
             try? FileManager.default.removeItem(at: temporaryURL)
-            throw CompanionTargetRegistryError.writeFailed(target.path)
+            throw CompanionTargetRegistryError.writeFailed(recheckedTarget.path)
         }
 
         return WriteTargetResult(
@@ -261,30 +312,63 @@ final class CompanionTargetRegistry {
         )
     }
 
-    func restoreBackup(id backupID: String) throws -> RestoreBackupResult {
+    func restoreBackup(id backupID: String) async throws -> RestoreBackupResult {
         guard let backup = backups.first(where: { $0.id == backupID }) else {
             throw CompanionTargetRegistryError.backupNotFound(backupID)
         }
 
-        guard let target = document.targets.first(where: { $0.id == backup.targetID }) else {
+        guard let targetTemplate = document.targets.first(where: { $0.id == backup.targetID }) else {
             throw CompanionTargetRegistryError.targetNotFound(backup.targetID)
         }
+
+        guard let storedTargetPath = backup.targetPath else {
+            throw CompanionTargetRegistryError.backupTargetUnavailable(backupID)
+        }
+        let targetPath = Self.canonicalPath(storedTargetPath)
+        if targetTemplate.id == "hermes-config" {
+            guard isValidHermesConfigPath(targetPath) else {
+                throw CompanionTargetRegistryError.backupTargetUnavailable(backupID)
+            }
+        } else {
+            // Static legacy records are safe only when the decoded target had one
+            // unambiguous path and that path is still the active allowlist entry.
+            guard targetPath == Self.canonicalPath(targetTemplate.path) else {
+                throw CompanionTargetRegistryError.backupTargetUnavailable(backupID)
+            }
+        }
+        let target = CompanionTargetRecord(
+            id: targetTemplate.id,
+            displayName: targetTemplate.displayName,
+            path: targetPath,
+            format: targetTemplate.format,
+            validators: targetTemplate.validators,
+            serviceID: targetTemplate.serviceID,
+            restartPolicy: targetTemplate.restartPolicy
+        )
 
         let backupURL = URL(fileURLWithPath: backup.path)
         guard let data = try? Data(contentsOf: backupURL), let content = String(data: data, encoding: .utf8) else {
             throw CompanionTargetRegistryError.fileReadFailed(backup.path)
         }
 
-        let validation = try validateTarget(id: target.id, proposedContent: content)
-        guard validation.valid else {
-            throw CompanionTargetRegistryError.validationFailed(validation.diagnostics)
+        var diagnostics: [CompanionValidationDiagnostic] = []
+        for validator in target.validators {
+            diagnostics.append(contentsOf: try await validate(
+                validator: validator,
+                format: target.format,
+                content: content,
+                targetPath: target.path
+            ))
+        }
+        guard diagnostics.contains(where: { $0.severity == .error }) == false else {
+            throw CompanionTargetRegistryError.validationFailed(diagnostics)
         }
 
         let targetURL = URL(fileURLWithPath: target.path)
         let targetDirectory = targetURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true, attributes: nil)
 
-        let temporaryURL = targetDirectory.appendingPathComponent(".\(targetURL.lastPathComponent).restore.tmp")
+        let temporaryURL = uniqueTemporaryURL(for: targetURL, operation: "restore")
         do {
             try data.write(to: temporaryURL, options: [.atomic])
             _ = try FileManager.default.replaceItemAt(targetURL, withItemAt: temporaryURL)
@@ -371,6 +455,27 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 
+    private static func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private static func unambiguousLegacyTargetPath(
+        for targetID: String,
+        targets: [CompanionTargetRecord]
+    ) -> String? {
+        // `hermes-config` used to be a mutable global selection. Its persisted
+        // path cannot prove which profile produced an older backup, so keep such
+        // records unbound and fail closed on restore.
+        guard targetID != "hermes-config" else { return nil }
+        let paths = Set(
+            targets
+                .filter { $0.id == targetID }
+                .map { canonicalPath($0.path) }
+        )
+        guard paths.count == 1 else { return nil }
+        return paths.first
+    }
+
     private static func seededDocument() -> CompanionTargetRegistryDocument {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return CompanionTargetRegistryDocument(
@@ -407,7 +512,7 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
                 return CompanionTargetRecord(
                     id: target.id,
                     displayName: "Hermes Config",
-                    path: target.path.hasSuffix("config.toml") ? "\(home)/.hermes/config.yaml" : target.path,
+                    path: "\(home)/.hermes/config.yaml",
                     format: .yaml,
                     validators: [.yamlParse],
                     serviceID: target.serviceID,
@@ -447,40 +552,53 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
         return CompanionTargetRegistryDocument(targets: migratedTargets)
     }
 
-    private func updateHermesConfigTargetIfNeeded(workspacePath: String?, profileName: String? = nil) throws {
-        guard let workspacePath, workspacePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-            return
-        }
-
-        let workspaceURL = try resolvedHermesWorkspaceURL(from: workspacePath)
-        let profileURL = profileURL(workspaceURL: workspaceURL, profileName: profileName)
-        let configURL = profileURL.appendingPathComponent("config.yaml")
-        guard document.targets.contains(where: { $0.id == "hermes-config" }) else { return }
-
-        var didChange = false
-        let updatedTargets = document.targets.map { target -> CompanionTargetRecord in
-            guard target.id == "hermes-config" else { return target }
-            if target.path == configURL.path, target.format == .yaml, target.validators == [.yamlParse] {
+    private func targetRecords(workspacePath: String?, profileName: String?) throws -> [CompanionTargetRecord] {
+        try document.targets.map { target in
+            guard target.id == "hermes-config",
+                  let workspacePath,
+                  workspacePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
                 return target
             }
-            didChange = true
+            let workspaceURL = try resolvedHermesWorkspaceURL(from: workspacePath)
+            guard let profileURL = CompanionWorkspaceSecurity.resolvedProfileURL(workspaceURL: workspaceURL, profileName: profileName) else {
+                throw CompanionTargetRegistryError.invalidProfileName(profileName ?? "")
+            }
             return CompanionTargetRecord(
                 id: target.id,
-                displayName: "Hermes Config",
-                path: configURL.path,
+                displayName: target.displayName,
+                path: profileURL.appendingPathComponent("config.yaml").path,
                 format: .yaml,
                 validators: [.yamlParse],
                 serviceID: target.serviceID,
                 restartPolicy: target.restartPolicy
             )
         }
+    }
 
-        if didChange {
-            document = CompanionTargetRegistryDocument(targets: updatedTargets)
-            if let data = try? JSONEncoder().encode(document) {
-                try? data.write(to: fileURL, options: [.atomic])
-            }
+    private func targetRecord(id: String, workspacePath: String?, profileName: String?) throws -> CompanionTargetRecord {
+        guard let target = try targetRecords(workspacePath: workspacePath, profileName: profileName).first(where: { $0.id == id }) else {
+            throw CompanionTargetRegistryError.targetNotFound(id)
         }
+        return target
+    }
+
+    private func isValidHermesConfigPath(_ rawPath: String) -> Bool {
+        let configURL = URL(fileURLWithPath: rawPath).resolvingSymlinksInPath().standardizedFileURL
+        guard configURL.lastPathComponent == "config.yaml" else { return false }
+        let containerURL = configURL.deletingLastPathComponent()
+        if CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: containerURL.path, requireSkillsDirectory: true) == containerURL {
+            return true
+        }
+        let profilesURL = containerURL.deletingLastPathComponent()
+        guard profilesURL.lastPathComponent == "profiles" else { return false }
+        let workspaceURL = profilesURL.deletingLastPathComponent()
+        guard CompanionWorkspaceSecurity.resolvedHermesWorkspaceURL(from: workspaceURL.path, requireSkillsDirectory: true) == workspaceURL else {
+            return false
+        }
+        return CompanionWorkspaceSecurity.resolvedProfileURL(
+            workspaceURL: workspaceURL,
+            profileName: containerURL.lastPathComponent
+        ) == containerURL
     }
 
     private func ensureSeededTargetFilesExist() {
@@ -510,18 +628,13 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
         return workspaceURL
     }
 
-    private func profileURL(workspaceURL: URL, profileName: String?) -> URL {
-        let trimmed = (profileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.isEmpty == false, trimmed != "default" else { return workspaceURL }
-        return workspaceURL.appendingPathComponent("profiles", isDirectory: true).appendingPathComponent(trimmed, isDirectory: true)
-    }
 
     private func validate(
         validator: CompanionValidatorSpec,
         format: CompanionTargetFormat,
         content: String,
         targetPath: String
-    ) -> [CompanionValidationDiagnostic] {
+    ) async throws -> [CompanionValidationDiagnostic] {
         switch validator {
         case .tomlParse:
             if format != .toml {
@@ -537,7 +650,7 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
             if format != .yaml {
                 return []
             }
-            return validateYAML(content, targetPath: targetPath)
+            return try await validateYAML(content, targetPath: targetPath)
         case .command(let command):
             return [
                 CompanionValidationDiagnostic(
@@ -550,8 +663,8 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
         }
     }
 
-    private func validateYAML(_ content: String, targetPath: String) -> [CompanionValidationDiagnostic] {
-        let pythonDiagnostics = validateYAMLWithPython(content, targetPath: targetPath)
+    private func validateYAML(_ content: String, targetPath: String) async throws -> [CompanionValidationDiagnostic] {
+        let pythonDiagnostics = try await validateYAMLWithPython(content, targetPath: targetPath)
         if pythonDiagnostics.count == 1,
            let diagnostic = pythonDiagnostics.first,
            diagnostic.severity == .warning,
@@ -561,7 +674,7 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
         return pythonDiagnostics
     }
 
-    private func validateYAMLWithPython(_ content: String, targetPath: String) -> [CompanionValidationDiagnostic] {
+    private func validateYAMLWithPython(_ content: String, targetPath: String) async throws -> [CompanionValidationDiagnostic] {
         let script = """
         import json
         import sys
@@ -589,50 +702,47 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
         var parserUnavailableMessages: [String] = []
 
         for executable in yamlPythonExecutableCandidates(targetPath: targetPath) {
-            let process = Process()
+            let executableURL: URL
+            let arguments: [String]
             if executable == "python3" {
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = ["python3", "-c", script]
+                executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                arguments = ["python3", "-c", script]
             } else {
-                process.executableURL = URL(fileURLWithPath: executable)
-                process.arguments = ["-c", script]
+                executableURL = URL(fileURLWithPath: executable)
+                arguments = ["-c", script]
             }
 
-            let inputPipe = Pipe()
-            let outputPipe = Pipe()
-            let errorPipe = Pipe()
-            process.standardInput = inputPipe
-            process.standardOutput = outputPipe
-            process.standardError = errorPipe
-            process.environment = sanitizedSubprocessEnvironment()
-
+            let output: CompanionSubprocess.Output
             do {
-                try process.run()
-                inputPipe.fileHandleForWriting.write(Data(content.utf8))
-                try? inputPipe.fileHandleForWriting.close()
-                process.waitUntilExit()
+                output = try await CompanionSubprocess.run(
+                    executableURL: executableURL,
+                    arguments: arguments,
+                    environment: sanitizedSubprocessEnvironment(),
+                    input: Data(content.utf8),
+                    timeout: 10,
+                    maxOutputBytes: 65_536
+                )
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 parserUnavailableMessages.append("\(executable): \(error.localizedDescription)")
                 continue
             }
 
-            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-
-            guard process.terminationStatus == 0 else {
-                let stderr = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard output.status == 0 else {
+                let stderr = String(data: output.stderr, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 return [
                     CompanionValidationDiagnostic(
                         id: UUID(),
                         severity: .error,
-                        message: stderr?.isEmpty == false ? stderr! : "YAML parser failed with exit code \(process.terminationStatus).",
+                        message: stderr?.isEmpty == false ? stderr! : "YAML parser failed with exit code \(output.status).",
                         validator: "yamlParse"
                     )
                 ]
             }
 
             guard
-                let object = try? JSONSerialization.jsonObject(with: outputData) as? [String: Any],
+                let object = try? JSONSerialization.jsonObject(with: output.stdout) as? [String: Any],
                 let ok = object["ok"] as? Bool
             else {
                 return [
@@ -917,9 +1027,17 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
     }
 
     private func makeBackup(for target: CompanionTargetRecord, existingContent: String, targetPath: String) throws -> String {
-        let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let backupID = "\(target.id)-\(timestamp)"
-        let backupURL = backupsDirectoryURL.appendingPathComponent("\(backupID).bak")
+        let createdAt = Date()
+        let timestamp = ISO8601DateFormatter().string(from: createdAt).replacingOccurrences(of: ":", with: "-")
+        let canonicalTargetPath = Self.canonicalPath(targetPath)
+        let targetBinding = Self.revision(for: Data(canonicalTargetPath.utf8)).prefix(16)
+        var backupID: String
+        var backupURL: URL
+        repeat {
+            backupID = "\(target.id)-\(targetBinding)-\(timestamp)-\(UUID().uuidString.lowercased())"
+            backupURL = backupsDirectoryURL.appendingPathComponent("\(backupID).bak")
+        } while backups.contains(where: { $0.id == backupID })
+            || FileManager.default.fileExists(atPath: backupURL.path)
 
         do {
             try existingContent.write(to: backupURL, atomically: true, encoding: .utf8)
@@ -927,8 +1045,9 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
                 CompanionBackupRecord(
                     id: backupID,
                     targetID: target.id,
-                    createdAt: Date(),
-                    path: backupURL.path
+                    createdAt: createdAt,
+                    path: backupURL.path,
+                    targetPath: canonicalTargetPath
                 )
             )
             persistBackups()
@@ -941,5 +1060,11 @@ print(json.dumps({"workspacePath": os.environ["HERMES_HOME"], "skills": [summary
     private func persistBackups() {
         guard let data = try? JSONEncoder().encode(backups) else { return }
         try? data.write(to: backupsIndexURL, options: [.atomic])
+    }
+
+    private func uniqueTemporaryURL(for targetURL: URL, operation: String) -> URL {
+        targetURL.deletingLastPathComponent().appendingPathComponent(
+            ".\(targetURL.lastPathComponent).\(operation).\(UUID().uuidString).tmp"
+        )
     }
 }

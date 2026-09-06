@@ -42,7 +42,7 @@ final class CompanionMemoryRegistry {
         "byterover": .init(description: "ByteRover — hosted memory backend.", envVars: ["BRV_API_KEY"])
     ]
 
-    func load(workspacePath: String) throws -> MemoryConfigResult {
+    func load(workspacePath: String) async throws -> MemoryConfigResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let memory = readMemoryFile(workspaceURL: workspaceURL)
         let user = readUserFile(workspaceURL: workspaceURL)
@@ -60,58 +60,58 @@ final class CompanionMemoryRegistry {
             envSizeOnDiskBytes: sizeOnDisk(for: envURL(for: workspaceURL)),
             memory: memory,
             user: user,
-            stats: readStats(workspaceURL: workspaceURL),
+            stats: await readStats(workspaceURL: workspaceURL),
             provider: provider,
             providers: providers,
             env: env
         )
     }
 
-    func addEntry(workspacePath: String, content: String) throws -> MemoryOperationResult {
+    func addEntry(workspacePath: String, content: String) async throws -> MemoryOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         let entries = parseMemoryEntries(readFile(memoryURL(for: workspaceURL)).content)
         let newEntries = entries + [MemoryEntry(index: entries.count, content: content.trimmingCharacters(in: .whitespacesAndNewlines))]
         let serialized = serialize(entries: newEntries)
         guard serialized.count <= memoryCharLimit else {
-            return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Would exceed memory limit (\(serialized.count)/\(memoryCharLimit) chars)")
+            return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Would exceed memory limit (\(serialized.count)/\(memoryCharLimit) chars)")
         }
         try write(serialized, to: memoryURL(for: workspaceURL))
-        return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, error: nil)
+        return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, error: nil)
     }
 
-    func updateEntry(workspacePath: String, index: Int, content: String) throws -> MemoryOperationResult {
+    func updateEntry(workspacePath: String, index: Int, content: String) async throws -> MemoryOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         var entries = parseMemoryEntries(readFile(memoryURL(for: workspaceURL)).content)
         guard index >= 0 && index < entries.count else {
-            return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Entry not found")
+            return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Entry not found")
         }
         entries[index] = MemoryEntry(index: index, content: content.trimmingCharacters(in: .whitespacesAndNewlines))
         let serialized = serialize(entries: entries)
         guard serialized.count <= memoryCharLimit else {
-            return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Would exceed memory limit (\(serialized.count)/\(memoryCharLimit) chars)")
+            return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Would exceed memory limit (\(serialized.count)/\(memoryCharLimit) chars)")
         }
         try write(serialized, to: memoryURL(for: workspaceURL))
-        return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, error: nil)
+        return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, error: nil)
     }
 
-    func removeEntry(workspacePath: String, index: Int) throws -> MemoryOperationResult {
+    func removeEntry(workspacePath: String, index: Int) async throws -> MemoryOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         var entries = parseMemoryEntries(readFile(memoryURL(for: workspaceURL)).content)
         guard index >= 0 && index < entries.count else {
-            return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Entry not found")
+            return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Entry not found")
         }
         entries.remove(at: index)
         try write(serialize(entries: entries), to: memoryURL(for: workspaceURL))
-        return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, error: nil)
+        return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, error: nil)
     }
 
-    func writeUserProfile(workspacePath: String, content: String) throws -> MemoryOperationResult {
+    func writeUserProfile(workspacePath: String, content: String) async throws -> MemoryOperationResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         guard content.count <= userCharLimit else {
-            return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Exceeds limit (\(content.count)/\(userCharLimit) chars)")
+            return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: false, error: "Exceeds limit (\(content.count)/\(userCharLimit) chars)")
         }
         try write(content, to: userURL(for: workspaceURL))
-        return operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, error: nil)
+        return await operationResult(workspacePath: workspacePath, workspaceURL: workspaceURL, success: true, error: nil)
     }
 
     func setProvider(workspacePath: String, provider: String) throws -> SetMemoryProviderResult {
@@ -135,16 +135,16 @@ final class CompanionMemoryRegistry {
     }
 
 
-    func exportSupermemoryDelta(workspacePath: String) throws -> SupermemoryManagementResult {
+    func exportSupermemoryDelta(workspacePath: String) async throws -> SupermemoryManagementResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         try ensureSupermemoryActive(workspaceURL: workspaceURL)
-        return try runSupermemoryCommand(mode: "export", workspacePath: workspacePath, workspaceURL: workspaceURL)
+        return try await runSupermemoryCommand(mode: "export", workspacePath: workspacePath, workspaceURL: workspaceURL)
     }
 
-    func importSupermemoryDelta(workspacePath: String) throws -> SupermemoryManagementResult {
+    func importSupermemoryDelta(workspacePath: String) async throws -> SupermemoryManagementResult {
         let workspaceURL = try resolvedWorkspaceURL(from: workspacePath)
         try ensureSupermemoryActive(workspaceURL: workspaceURL)
-        return try runSupermemoryCommand(mode: "import", workspacePath: workspacePath, workspaceURL: workspaceURL)
+        return try await runSupermemoryCommand(mode: "import", workspacePath: workspacePath, workspaceURL: workspaceURL)
     }
 
     private func ensureSupermemoryActive(workspaceURL: URL) throws {
@@ -153,43 +153,37 @@ final class CompanionMemoryRegistry {
         }
     }
 
-    private func runSupermemoryCommand(mode: String, workspacePath: String, workspaceURL: URL) throws -> SupermemoryManagementResult {
+    private func runSupermemoryCommand(mode: String, workspacePath: String, workspaceURL: URL) async throws -> SupermemoryManagementResult {
         let scriptURL = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-supermemory-management-")
             .appendingPathExtension(UUID().uuidString)
             .appendingPathExtension("py")
         try supermemoryPythonScript.write(to: scriptURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: scriptURL) }
 
-        let process = Process()
-        process.executableURL = pythonExecutable(for: workspaceURL)
-        process.arguments = [scriptURL.path, mode, workspaceURL.path]
-        process.currentDirectoryURL = workspaceURL
         var environment = ProcessInfo.processInfo.environment
         environment["HERMES_HOME"] = workspaceURL.path
         environment["PYTHONUNBUFFERED"] = "1"
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        process.environment = environment
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+        let processOutput: CompanionSubprocess.Output
         do {
-            try process.run()
-            process.waitUntilExit()
+            processOutput = try await CompanionSubprocess.run(
+                executableURL: pythonExecutable(for: workspaceURL),
+                arguments: [scriptURL.path, mode, workspaceURL.path],
+                environment: environment,
+                currentDirectoryURL: workspaceURL,
+                timeout: 120
+            )
         } catch {
             throw CompanionMemoryRegistryError.supermemoryCommandFailed("Unable to run Supermemory helper: \(error.localizedDescription)")
         }
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-        let stderr = String(data: errorData, encoding: .utf8) ?? ""
+        let output = String(data: processOutput.stdout, encoding: .utf8) ?? ""
+        let stderr = String(data: processOutput.stderr, encoding: .utf8) ?? ""
         guard let data = output.data(using: .utf8), !data.isEmpty else {
             throw CompanionMemoryRegistryError.supermemoryCommandFailed(stderr.isEmpty ? "Supermemory helper returned no output." : stderr)
         }
         let result = try JSONDecoder().decode(SupermemoryManagementResult.self, from: data)
-        if process.terminationStatus != 0 || result.success == false {
+        if processOutput.status != 0 || result.success == false {
             throw CompanionMemoryRegistryError.supermemoryCommandFailed(result.error ?? stderr)
         }
         return result
@@ -393,8 +387,8 @@ if __name__ == '__main__':
 """#
     }
 
-    private func operationResult(workspacePath: String, workspaceURL: URL, success: Bool, error: String?) -> MemoryOperationResult {
-        MemoryOperationResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, success: success, error: error, memory: try? load(workspacePath: workspaceURL.path))
+    private func operationResult(workspacePath: String, workspaceURL: URL, success: Bool, error: String?) async -> MemoryOperationResult {
+        MemoryOperationResult(workspacePath: workspacePath, resolvedWorkspacePath: workspaceURL.path, success: success, error: error, memory: try? await load(workspacePath: workspaceURL.path))
     }
 
     private func resolvedWorkspaceURL(from workspacePath: String) throws -> URL {
@@ -456,25 +450,25 @@ if __name__ == '__main__':
 
     private func serialize(entries: [MemoryEntry]) -> String { entries.map(\.content).joined(separator: entryDelimiter) }
 
-    private func readStats(workspaceURL: URL) -> MemoryStats {
+    private func readStats(workspaceURL: URL) async -> MemoryStats {
         let dbPath = stateDBURL(for: workspaceURL).path
         guard FileManager.default.fileExists(atPath: dbPath) else { return MemoryStats(totalSessions: 0, totalMessages: 0) }
-        return MemoryStats(totalSessions: sqliteCount(dbPath: dbPath, table: "sessions"), totalMessages: sqliteCount(dbPath: dbPath, table: "messages"))
+        return MemoryStats(
+            totalSessions: await sqliteCount(dbPath: dbPath, table: "sessions"),
+            totalMessages: await sqliteCount(dbPath: dbPath, table: "messages")
+        )
     }
 
-    private func sqliteCount(dbPath: String, table: String) -> Int {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = [dbPath, "SELECT COUNT(*) FROM \(table);"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
+    private func sqliteCount(dbPath: String, table: String) async -> Int {
         do {
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return 0 }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return Int(String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
+            let result = try await CompanionSubprocess.run(
+                executableURL: URL(fileURLWithPath: "/usr/bin/sqlite3"),
+                arguments: [dbPath, "SELECT COUNT(*) FROM \(table);"],
+                timeout: 5,
+                maxOutputBytes: 4_096
+            )
+            guard result.status == 0 else { return 0 }
+            return Int(String(data: result.stdout, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
         } catch {
             return 0
         }

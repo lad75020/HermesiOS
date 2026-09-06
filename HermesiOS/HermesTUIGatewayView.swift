@@ -1014,10 +1014,10 @@ final class HermesTUIGatewayStore {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let attachment else { return (trimmedText, trimmedText, nil) }
         let block: String
-        if attachment.isUTF8Text, attachment.data.count <= 32 * 1024, attachment.textContent != nil {
+        if let inlineTextBlock = attachment.httpTextAttachmentBlock {
             // Bound inline context; larger text and undecodable text retain all bytes
             // through file.attach instead of truncation or the legacy base64 fallback.
-            block = attachment.textAttachmentBlock
+            block = inlineTextBlock
         } else if attachment.isImage {
             let mime = UTType(filenameExtension: attachment.fileExtension)?.preferredMIMEType ?? attachment.mimeType
             let result = try await request("image.attach_bytes", params: [

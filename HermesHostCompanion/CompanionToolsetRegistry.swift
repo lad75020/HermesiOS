@@ -56,9 +56,9 @@ final class CompanionToolsetRegistry {
         .init(key: "todo", label: "Todo", description: "Allow task-list and todo management tools.")
     ]
 
-    func listToolsets(workspacePath: String) throws -> ListToolsetsResult {
+    func listToolsets(workspacePath: String) async throws -> ListToolsetsResult {
         let configURL = try resolvedConfigURL(from: workspacePath)
-        let result = try CompanionRuntimeConfigSafety.apply(configURL: configURL, request: ["action": "listTools"])
+        let result = try await CompanionRuntimeConfigSafety.apply(configURL: configURL, request: ["action": "listTools"])
         guard let enabled = result["enabledToolsets"] as? [String] else { throw CompanionRuntimeConfigSafety.Failure.rejected }
         let configOnlyEnabled = result["configOnlyEnabledToolsets"] as? [String] ?? []
 
@@ -86,16 +86,16 @@ final class CompanionToolsetRegistry {
         workspacePath: String,
         key: String,
         enabled: Bool
-    ) throws -> SetToolsetEnabledResult {
+    ) async throws -> SetToolsetEnabledResult {
         guard Self.definitions.contains(where: { $0.key == key }) else {
             throw CompanionToolsetRegistryError.unsupportedToolset(key)
         }
 
         let configURL = try resolvedConfigURL(from: workspacePath)
-        _ = try CompanionRuntimeConfigSafety.apply(configURL: configURL,
+        _ = try await CompanionRuntimeConfigSafety.apply(configURL: configURL,
             request: ["action": "setTool", "key": key, "enabled": enabled])
 
-        let refreshed = try listToolsets(workspacePath: workspacePath)
+        let refreshed = try await listToolsets(workspacePath: workspacePath)
         guard let updated = refreshed.toolsets.first(where: { $0.key == key }) else {
             throw CompanionToolsetRegistryError.unsupportedToolset(key)
         }

@@ -207,6 +207,7 @@ struct FileDownloadResult: Codable {
 }
 
 struct FileDownloadInfoResult: Codable {
+    let downloadID: String
     let path: String
     let fileName: String
     let byteCount: Int
@@ -215,7 +216,8 @@ struct FileDownloadInfoResult: Codable {
 }
 
 struct FileDownloadChunkPayload: Codable {
-    let path: String
+    let downloadID: String?
+    let path: String?
     let offset: Int
     let length: Int
     let workspacePath: String?
@@ -228,6 +230,46 @@ struct FileDownloadChunkResult: Codable {
     let totalByteCount: Int
     let isComplete: Bool
     let base64Data: String
+}
+
+struct FileUploadStartPayload: Codable {
+    let destinationPath: String
+    let fileName: String
+    let byteCount: Int
+    let workspacePath: String?
+}
+
+struct FileUploadStartResult: Codable {
+    let uploadID: String
+    let destinationPath: String
+    let chunkSize: Int
+    let isComplete: Bool
+}
+
+struct FileUploadChunkPayload: Codable {
+    let uploadID: String
+    let offset: Int
+    let base64Data: String
+}
+
+struct FileUploadChunkResult: Codable {
+    let uploadID: String
+    let destinationPath: String
+    let receivedByteCount: Int
+    let totalByteCount: Int
+    let isComplete: Bool
+}
+
+struct FileDownloadCancelPayload: Codable {
+    let downloadID: String
+}
+
+struct FileUploadCancelPayload: Codable {
+    let uploadID: String
+}
+
+struct FileTransferCancelResult: Codable {
+    let transferID: String
 }
 
 struct ServiceStatusResult: Codable {

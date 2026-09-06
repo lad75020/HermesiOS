@@ -26,6 +26,31 @@ private enum HermesMessagesHistoryMode: String, CaseIterable, Identifiable {
     }
 }
 
+private enum HermesFileTransferDirection: String, CaseIterable, Identifiable {
+    case macToIOS
+    case iosToMac
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .macToIOS: "Mac → iOS"
+        case .iosToMac: "iOS → Mac"
+        }
+    }
+}
+
+private enum HermesMacFileBrowserPurpose {
+    case downloadSource
+    case uploadDestination
+}
+
+private enum HermesFileTransferStatusTone {
+    case neutral
+    case success
+    case error
+}
+
 struct HermesUtilitiesView: View {
     @Bindable var clipboardHistory: HermesClipboardHistoryStore
     @Bindable var promptHistory: HermesPromptHistoryStore
@@ -46,17 +71,25 @@ struct HermesUtilitiesView: View {
     @State private var isUnlockingClipboardHistory = false
     @State private var messagesHistoryMode: HermesMessagesHistoryMode = .prompt
     @State private var promptHistoryStatusMessage = "Capturing prompts sent from Ask Hermes and Chat with Hermes."
+    @State private var fileTransferDirection: HermesFileTransferDirection = .macToIOS
     @State private var isFileDownloaderFolderImporterPresented = false
+    @State private var isUploadFileImporterPresented = false
     @State private var selectedDownloadFolderURL: URL?
+    @State private var selectedUploadFileURL: URL?
+    @State private var selectedUploadFileByteCount: Int?
+    @State private var uploadDestinationPath = ""
     @State private var macFilePath = ""
     @State private var isMacFileBrowserPresented = false
+    @State private var macFileBrowserPurpose: HermesMacFileBrowserPurpose = .downloadSource
     @State private var macFileBrowserPath = ""
     @State private var macFileBrowserEntries: [HermesCompanionFileBrowserEntry] = []
     @State private var macFileBrowserParentPath: String?
     @State private var isLoadingMacFileBrowser = false
     @State private var macFileBrowserError = ""
-    @State private var fileDownloaderStatus = "Pick an iOS Files folder, browse the Mac, then download."
+    @State private var fileDownloaderStatus = "Choose a Hermes file on your Mac and an iOS destination folder."
+    @State private var fileTransferStatusTone: HermesFileTransferStatusTone = .neutral
     @State private var isDownloadingFile = false
+    @State private var isUploadingFile = false
     @State private var commandCenter = HermesCommandCenterStore()
 
     var body: some View {
@@ -113,9 +146,9 @@ struct HermesUtilitiesView: View {
                         fileDownloaderContent
                     } label: {
                         utilityDisclosureLabel(
-                            title: "File Downloader",
+                            title: "File Transfer",
                             subtitle: fileDownloaderSubtitle,
-                            systemImage: "tray.and.arrow.down"
+                            systemImage: "arrow.up.arrow.down.square"
                         )
                     }
                     .tint(.igActionBlue)
@@ -203,6 +236,13 @@ struct HermesUtilitiesView: View {
         ) { result in
             handleFileDownloaderFolderImport(result)
         }
+        .fileImporter(
+            isPresented: $isUploadFileImporterPresented,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            handleUploadFileImport(result)
+        }
         .sheet(isPresented: $isMacFileBrowserPresented) {
             macFileBrowserSheet
         }
@@ -277,10 +317,7 @@ struct HermesUtilitiesView: View {
     }
 
     private var fileDownloaderSubtitle: String {
-        if let folderName = selectedDownloadFolderURL?.lastPathComponent, folderName.isEmpty == false {
-            return "Save macOS files into \(folderName)"
-        }
-        return "Download a Mac file into an iOS Files folder"
+        "Move Hermes files between your Mac and iOS • up to 1 GB"
     }
 
     private func utilityDisclosureLabel(title: String, subtitle: String, systemImage: String) -> some View {
@@ -306,78 +343,170 @@ struct HermesUtilitiesView: View {
     }
 
     private var fileDownloaderContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Button {
-                    isFileDownloaderFolderImporterPresented = true
-                } label: {
-                    Label("Pick iOS Folder", systemImage: "folder")
+        VStack(alignment: .leading, spacing: 16) {
+            Picker("Transfer direction", selection: $fileTransferDirection) {
+                ForEach(HermesFileTransferDirection.allCases) { direction in
+                    Text(direction.title).tag(direction)
                 }
-                .hermesGlassButton()
+            }
+            .pickerStyle(.segmented)
+            .disabled(isFileTransferActive)
+            .onChange(of: fileTransferDirection) { _, direction in
+                fileDownloaderStatus = direction == .macToIOS
+                    ? "Choose a Hermes file on your Mac and an iOS destination folder."
+                    : "Choose an iOS file and a destination in the Mac Hermes folder."
+                fileTransferStatusTone = .neutral
+            }
 
-                if let selectedDownloadFolderURL {
-                    Text(selectedDownloadFolderURL.lastPathComponent)
-                        .font(.igSecondaryMeta)
-                        .foregroundStyle(.hermesSecondaryText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                } else {
-                    Text("No destination folder selected")
-                        .font(.igSecondaryMeta)
-                        .foregroundStyle(.hermesSecondaryText)
-                }
+            Text(fileTransferDirection == .macToIOS
+                 ? "Download a file from the Mac Hermes folder to a folder in the iOS Files app."
+                 : "Upload a file from iOS Files to a selected folder in the Mac Hermes folder.")
+                .font(.subheadline)
+                .foregroundStyle(.hermesSecondaryText)
+
+            if fileTransferDirection == .macToIOS {
+                downloadTransferContent
+            } else {
+                uploadTransferContent
+            }
+
+            fileTransferStatusView
+        }
+        .padding(.top, 14)
+    }
+
+    private var downloadTransferContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            fileTransferSelectionRow(
+                title: "Source on Mac",
+                value: macFilePath.isEmpty ? "Choose a file in \(Self.macHermesFolderPath)" : macFilePath,
+                systemImage: "macwindow",
+                actionTitle: macFilePath.isEmpty ? "Choose File" : "Change"
+            ) {
+                presentMacFileBrowser(for: .downloadSource)
+            }
+
+            fileTransferSelectionRow(
+                title: "Destination on iOS",
+                value: selectedDownloadFolderURL?.lastPathComponent ?? "Choose a folder in Files",
+                systemImage: "folder",
+                actionTitle: selectedDownloadFolderURL == nil ? "Choose Folder" : "Change"
+            ) {
+                isFileDownloaderFolderImporterPresented = true
             }
 
             Button {
-                presentMacFileBrowser()
+                downloadFileFromMac()
             } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "macwindow")
-                        .foregroundStyle(.igActionBlue)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(macFilePath.isEmpty ? "Browse Mac files" : URL(fileURLWithPath: macFilePath).lastPathComponent)
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Text(macFilePath.isEmpty ? "Starts in your approved Hermes workspace" : macFilePath)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.hermesSecondaryText)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.hermesSecondaryText)
-                }
-                .padding(12)
-                .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Label(isDownloadingFile ? "Downloading…" : "Download to iOS", systemImage: "arrow.down.doc")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
-            .disabled(!companionEnrollment.identityState.isEnrolled || companionRuntime.isBusy || isDownloadingFile)
+            .hermesGlassProminentButton()
+            .disabled(!canDownloadFile)
+        }
+    }
 
-            HStack(spacing: 10) {
-                Button {
-                    downloadFileFromMac()
-                } label: {
-                    Label(isDownloadingFile ? "Downloading…" : "Download", systemImage: "arrow.down.doc")
-                }
+    private var uploadTransferContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            fileTransferSelectionRow(
+                title: "Source on iOS",
+                value: uploadSourceDescription,
+                systemImage: "iphone",
+                actionTitle: selectedUploadFileURL == nil ? "Choose File" : "Change"
+            ) {
+                isUploadFileImporterPresented = true
+            }
+
+            fileTransferSelectionRow(
+                title: "Destination on Mac",
+                value: uploadDestinationPath.isEmpty ? "Choose a folder in \(Self.macHermesFolderPath)" : uploadDestinationPath,
+                systemImage: "folder",
+                actionTitle: uploadDestinationPath.isEmpty ? "Choose Folder" : "Change"
+            ) {
+                presentMacFileBrowser(for: .uploadDestination)
+            }
+
+            Button {
+                uploadFileToMac()
+            } label: {
+                Label(isUploadingFile ? "Uploading…" : "Upload to Mac", systemImage: "arrow.up.doc")
+                    .frame(maxWidth: .infinity)
+            }
+            .hermesGlassProminentButton()
+            .disabled(!canUploadFile)
+        }
+    }
+
+    private func fileTransferSelectionRow(
+        title: String,
+        value: String,
+        systemImage: String,
+        actionTitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.igActionBlue)
+                .frame(width: 34, height: 34)
+                .background(Color.igActionBlue.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(value)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.hermesSecondaryText)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(actionTitle, action: action)
                 .hermesGlassButton()
-                .disabled(!canDownloadFile)
+                .disabled(!companionEnrollment.identityState.isEnrolled || companionRuntime.isBusy || isFileTransferActive)
+        }
+        .padding(12)
+        .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
 
-                if isDownloadingFile {
-                    ProgressView()
-                        .controlSize(.small)
-                }
+    private var fileTransferStatusView: some View {
+        HStack(alignment: .top, spacing: 10) {
+            if isFileTransferActive {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: fileTransferStatusTone == .success ? "checkmark.circle.fill" : fileTransferStatusTone == .error ? "exclamationmark.triangle.fill" : "info.circle")
+                    .foregroundStyle(fileTransferStatusColor)
             }
-
             Text(fileDownloaderStatus)
                 .font(.igSecondaryMeta)
-                .foregroundStyle(fileDownloaderStatus.hasPrefix("Saved") ? .igOnlineGreen : .hermesSecondaryText)
+                .foregroundStyle(fileTransferStatusColor)
                 .textSelection(.enabled)
         }
-        .padding(.top, 12)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.hermesSurfaceInput.opacity(0.7), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("File transfer status")
+        .accessibilityValue(fileDownloaderStatus)
+    }
+
+    private var fileTransferStatusColor: Color {
+        switch fileTransferStatusTone {
+        case .neutral: .hermesSecondaryText
+        case .success: .igOnlineGreen
+        case .error: .igGradOrange
+        }
+    }
+
+    private var uploadSourceDescription: String {
+        guard let selectedUploadFileURL else { return "Choose a file in Files" }
+        guard let selectedUploadFileByteCount else { return selectedUploadFileURL.lastPathComponent }
+        return "\(selectedUploadFileURL.lastPathComponent) • \(Self.byteCountFormatter.string(fromByteCount: Int64(selectedUploadFileByteCount)))"
     }
 
     private var macFileBrowserSheet: some View {
@@ -398,6 +527,14 @@ struct HermesUtilitiesView: View {
                         .textSelection(.enabled)
                 }
 
+                if !isLoadingMacFileBrowser,
+                   macFileBrowserError.isEmpty,
+                   macFileBrowserEntries.isEmpty {
+                    Label("This folder is empty.", systemImage: "folder")
+                        .font(.igSecondaryMeta)
+                        .foregroundStyle(.hermesSecondaryText)
+                }
+
                 if let macFileBrowserParentPath {
                     Button {
                         loadMacFileBrowser(path: macFileBrowserParentPath)
@@ -410,9 +547,10 @@ struct HermesUtilitiesView: View {
                     Button {
                         if entry.isDirectory {
                             loadMacFileBrowser(path: entry.path)
-                        } else {
+                        } else if macFileBrowserPurpose == .downloadSource {
                             macFilePath = entry.path
                             fileDownloaderStatus = "Selected Mac file: \(entry.name)."
+                            fileTransferStatusTone = .neutral
                             isMacFileBrowserPresented = false
                         }
                     } label: {
@@ -438,9 +576,10 @@ struct HermesUtilitiesView: View {
                             }
                         }
                     }
+                    .disabled(macFileBrowserPurpose == .uploadDestination && !entry.isDirectory)
                 }
             }
-            .navigationTitle("Mac files")
+            .navigationTitle(macFileBrowserPurpose == .downloadSource ? "Choose Hermes File" : "Choose Hermes Folder")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -464,6 +603,23 @@ struct HermesUtilitiesView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.bar)
             }
+            .safeAreaInset(edge: .bottom) {
+                if macFileBrowserPurpose == .uploadDestination {
+                    Button {
+                        uploadDestinationPath = macFileBrowserPath
+                        fileDownloaderStatus = "Mac destination selected: \(macFileBrowserPath)."
+                        fileTransferStatusTone = .neutral
+                        isMacFileBrowserPresented = false
+                    } label: {
+                        Label("Choose This Folder", systemImage: "folder.badge.checkmark")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .hermesGlassProminentButton()
+                    .padding()
+                    .background(.bar)
+                    .disabled(isLoadingMacFileBrowser || macFileBrowserPath.isEmpty)
+                }
+            }
         }
         .presentationDetents([.medium, .large])
         .task {
@@ -478,12 +634,36 @@ struct HermesUtilitiesView: View {
             && selectedDownloadFolderURL != nil
             && macFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             && !isDownloadingFile
+            && !isUploadingFile
             && !companionRuntime.isBusy
     }
 
-    private func presentMacFileBrowser() {
-        macFileBrowserPath = macFilePath.isEmpty ? companionSettings.hermesWorkspacePath : (URL(fileURLWithPath: macFilePath).deletingLastPathComponent().path)
+    private var canUploadFile: Bool {
+        companionEnrollment.identityState.isEnrolled
+            && selectedUploadFileURL != nil
+            && !uploadDestinationPath.isEmpty
+            && !isFileTransferActive
+            && !companionRuntime.isBusy
+    }
+
+    private var isFileTransferActive: Bool {
+        isDownloadingFile || isUploadingFile
+    }
+
+    private func presentMacFileBrowser(for purpose: HermesMacFileBrowserPurpose) {
+        macFileBrowserPurpose = purpose
+        switch purpose {
+        case .downloadSource:
+            macFileBrowserPath = macFilePath.isEmpty
+                ? Self.macHermesFolderPath
+                : URL(fileURLWithPath: macFilePath).deletingLastPathComponent().path
+        case .uploadDestination:
+            macFileBrowserPath = uploadDestinationPath.isEmpty
+                ? Self.macHermesFolderPath
+                : uploadDestinationPath
+        }
         macFileBrowserError = ""
+        macFileBrowserEntries = []
         isMacFileBrowserPresented = true
         loadMacFileBrowser(path: macFileBrowserPath)
     }
@@ -508,9 +688,6 @@ struct HermesUtilitiesView: View {
                 macFileBrowserPath = result.path
                 macFileBrowserParentPath = result.parentPath
                 macFileBrowserEntries = result.entries
-                if result.entries.isEmpty {
-                    macFileBrowserError = "No visible files in this folder."
-                }
             } catch {
                 macFileBrowserError = error.localizedDescription
             }
@@ -527,30 +704,66 @@ struct HermesUtilitiesView: View {
     private func handleFileDownloaderFolderImport(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+            cleanupAbandonedDownloadFiles(in: url)
             selectedDownloadFolderURL = url
             fileDownloaderStatus = "Destination folder selected: \(url.lastPathComponent)."
+            fileTransferStatusTone = .neutral
         } catch {
             fileDownloaderStatus = error.localizedDescription
+            fileTransferStatusTone = .error
+            announceFileTransferStatus(error.localizedDescription)
+        }
+    }
+
+    private func handleUploadFileImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true else { throw HermesFileDownloaderError.notRegularFile }
+            guard let byteCount = values.fileSize else { throw HermesFileDownloaderError.unavailableFileSize }
+            guard byteCount <= Self.maxTransferBytes else {
+                throw HermesFileDownloaderError.fileTooLarge(byteCount: byteCount, limit: Self.maxTransferBytes)
+            }
+            selectedUploadFileURL = url
+            selectedUploadFileByteCount = byteCount
+            fileDownloaderStatus = "Selected iOS file: \(url.lastPathComponent)."
+            fileTransferStatusTone = .neutral
+        } catch {
+            selectedUploadFileURL = nil
+            selectedUploadFileByteCount = nil
+            fileDownloaderStatus = error.localizedDescription
+            fileTransferStatusTone = .error
+            announceFileTransferStatus(error.localizedDescription)
         }
     }
 
     private func downloadFileFromMac() {
         guard let folderURL = selectedDownloadFolderURL else {
             fileDownloaderStatus = "Pick an iOS destination folder first."
+            fileTransferStatusTone = .error
+            announceFileTransferStatus(fileDownloaderStatus)
             return
         }
         let path = macFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard path.isEmpty == false else {
             fileDownloaderStatus = "Enter a full macOS file path."
+            fileTransferStatusTone = .error
+            announceFileTransferStatus(fileDownloaderStatus)
             return
         }
 
         Task { @MainActor in
             isDownloadingFile = true
             fileDownloaderStatus = "Downloading from Mac…"
+            fileTransferStatusTone = .neutral
             companionRuntime.connectionStatus = "Downloading File"
             companionRuntime.lastErrorMessage = ""
             defer { isDownloadingFile = false }
+            var activeDownloadID: String?
 
             do {
                 let info: HermesCompanionFileDownloadInfoResult = try await HermesCompanionSessionFactory.request(
@@ -559,8 +772,24 @@ struct HermesUtilitiesView: View {
                     type: "download_file_info",
                     payload: HermesCompanionFileDownloadPayload(path: path, workspacePath: companionSettings.hermesWorkspacePath)
                 )
-                var data = Data()
-                data.reserveCapacity(info.byteCount)
+                activeDownloadID = info.downloadID
+                guard info.byteCount <= Self.maxTransferBytes else {
+                    throw HermesFileDownloaderError.fileTooLarge(byteCount: info.byteCount, limit: Self.maxTransferBytes)
+                }
+                let didAccess = folderURL.startAccessingSecurityScopedResource()
+                defer { if didAccess { folderURL.stopAccessingSecurityScopedResource() } }
+                cleanupAbandonedDownloadFiles(in: folderURL)
+                let destinationURL = uniqueFileURL(for: folderURL.appendingPathComponent(info.fileName.isEmpty ? "downloaded-file" : info.fileName))
+                let temporaryURL = folderURL.appendingPathComponent(".hermes-download-\(UUID().uuidString).partial")
+                guard FileManager.default.createFile(atPath: temporaryURL.path, contents: nil) else {
+                    throw HermesFileDownloaderError.writeFailed
+                }
+                var shouldRemoveTemporaryFile = true
+                defer {
+                    if shouldRemoveTemporaryFile { try? FileManager.default.removeItem(at: temporaryURL) }
+                }
+                let handle = try FileHandle(forWritingTo: temporaryURL)
+                defer { try? handle.close() }
                 var offset = 0
                 let chunkSize = max(1, info.chunkSize)
 
@@ -569,41 +798,192 @@ struct HermesUtilitiesView: View {
                         settings: companionSettings,
                         state: companionEnrollment.identityState,
                         type: "download_file_chunk",
-                        payload: HermesCompanionFileDownloadChunkPayload(path: path, offset: offset, length: chunkSize, workspacePath: companionSettings.hermesWorkspacePath)
+                        payload: HermesCompanionFileDownloadChunkPayload(downloadID: info.downloadID, offset: offset, length: chunkSize)
                     )
                     guard let chunkData = Data(base64Encoded: chunk.base64Data) else {
                         throw HermesFileDownloaderError.invalidPayload
                     }
-                    data.append(chunkData)
+                    guard chunk.path == info.path,
+                          chunk.offset == offset, chunk.byteCount == chunkData.count,
+                          chunk.totalByteCount == info.byteCount else {
+                        throw HermesFileDownloaderError.invalidPayload
+                    }
+                    try handle.write(contentsOf: chunkData)
                     offset += chunk.byteCount
-                    fileDownloaderStatus = "Downloading from Mac… \(Self.byteCountFormatter.string(fromByteCount: Int64(data.count))) / \(Self.byteCountFormatter.string(fromByteCount: Int64(info.byteCount)))"
-                    if chunk.isComplete || chunk.byteCount == 0 { break }
+                    fileDownloaderStatus = "Downloading… \(Self.byteCountFormatter.string(fromByteCount: Int64(offset))) of \(Self.byteCountFormatter.string(fromByteCount: Int64(info.byteCount)))"
+                    if chunk.isComplete {
+                        activeDownloadID = nil
+                        break
+                    }
+                    if chunk.byteCount == 0 { break }
                 } while offset < info.byteCount
 
-                guard data.count == info.byteCount else {
-                    throw HermesFileDownloaderError.incompleteDownload(expected: info.byteCount, actual: data.count)
+                try handle.close()
+                guard offset == info.byteCount else {
+                    throw HermesFileDownloaderError.incompleteDownload(expected: info.byteCount, actual: offset)
                 }
-                let savedURL = try saveDownloadedFile(data, fileName: info.fileName, in: folderURL)
-                fileDownloaderStatus = "Saved \(savedURL.lastPathComponent) (\(Self.byteCountFormatter.string(fromByteCount: Int64(data.count)))) to \(folderURL.lastPathComponent)."
+                try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
+                shouldRemoveTemporaryFile = false
+                fileDownloaderStatus = "Saved \(destinationURL.lastPathComponent) (\(Self.byteCountFormatter.string(fromByteCount: Int64(offset)))) to \(folderURL.lastPathComponent)."
+                fileTransferStatusTone = .success
                 companionRuntime.connectionStatus = "File Downloaded"
+                announceFileTransferStatus(fileDownloaderStatus)
             } catch {
                 fileDownloaderStatus = error.localizedDescription
+                fileTransferStatusTone = .error
                 companionRuntime.lastErrorMessage = error.localizedDescription
                 companionRuntime.connectionStatus = "Download Failed"
+                announceFileTransferStatus(error.localizedDescription)
+                if let activeDownloadID {
+                    let _: HermesCompanionFileTransferCancelResult? = try? await HermesCompanionSessionFactory.request(
+                        settings: companionSettings,
+                        state: companionEnrollment.identityState,
+                        type: "download_file_cancel",
+                        payload: HermesCompanionFileDownloadCancelPayload(downloadID: activeDownloadID)
+                    )
+                }
             }
         }
     }
 
-    private func saveDownloadedFile(_ data: Data, fileName: String, in folderURL: URL) throws -> URL {
-        let didAccess = folderURL.startAccessingSecurityScopedResource()
-        defer {
-            if didAccess { folderURL.stopAccessingSecurityScopedResource() }
+    private func uploadFileToMac() {
+        guard let sourceURL = selectedUploadFileURL else {
+            fileDownloaderStatus = "Choose an iOS source file first."
+            fileTransferStatusTone = .error
+            announceFileTransferStatus(fileDownloaderStatus)
+            return
+        }
+        guard !uploadDestinationPath.isEmpty else {
+            fileDownloaderStatus = "Choose a destination in the Mac Hermes folder first."
+            fileTransferStatusTone = .error
+            announceFileTransferStatus(fileDownloaderStatus)
+            return
         }
 
-        var destinationURL = folderURL.appendingPathComponent(fileName.isEmpty ? "downloaded-file" : fileName, isDirectory: false)
-        destinationURL = uniqueFileURL(for: destinationURL)
-        try data.write(to: destinationURL, options: [.atomic])
-        return destinationURL
+        Task { @MainActor in
+            isUploadingFile = true
+            fileDownloaderStatus = "Preparing upload…"
+            fileTransferStatusTone = .neutral
+            companionRuntime.connectionStatus = "Uploading File"
+            companionRuntime.lastErrorMessage = ""
+            defer { isUploadingFile = false }
+            var activeUploadID: String?
+
+            let didAccess = sourceURL.startAccessingSecurityScopedResource()
+            defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
+
+            do {
+                let values = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .nameKey])
+                guard values.isRegularFile == true else { throw HermesFileDownloaderError.notRegularFile }
+                guard let byteCount = values.fileSize else { throw HermesFileDownloaderError.unavailableFileSize }
+                guard byteCount <= Self.maxTransferBytes else {
+                    throw HermesFileDownloaderError.fileTooLarge(byteCount: byteCount, limit: Self.maxTransferBytes)
+                }
+                let start: HermesCompanionFileUploadStartResult = try await HermesCompanionSessionFactory.request(
+                    settings: companionSettings,
+                    state: companionEnrollment.identityState,
+                    type: "upload_file_start",
+                    payload: HermesCompanionFileUploadStartPayload(
+                        destinationPath: uploadDestinationPath,
+                        fileName: values.name ?? sourceURL.lastPathComponent,
+                        byteCount: byteCount,
+                        workspacePath: companionSettings.hermesWorkspacePath
+                    )
+                )
+
+                var uploadedByteCount = 0
+                var uploadCompleted = start.isComplete
+                if !uploadCompleted {
+                    activeUploadID = start.uploadID
+                    let handle = try FileHandle(forReadingFrom: sourceURL)
+                    defer { try? handle.close() }
+                    let chunkSize = min(max(1, start.chunkSize), 384 * 1024)
+                    while uploadedByteCount < byteCount {
+                        let data = try handle.read(upToCount: min(chunkSize, byteCount - uploadedByteCount)) ?? Data()
+                        guard !data.isEmpty else {
+                            throw HermesFileDownloaderError.incompleteUpload(expected: byteCount, actual: uploadedByteCount)
+                        }
+                        let chunk: HermesCompanionFileUploadChunkResult = try await HermesCompanionSessionFactory.request(
+                            settings: companionSettings,
+                            state: companionEnrollment.identityState,
+                            type: "upload_file_chunk",
+                            payload: HermesCompanionFileUploadChunkPayload(
+                                uploadID: start.uploadID,
+                                offset: uploadedByteCount,
+                                base64Data: data.base64EncodedString()
+                            )
+                        )
+                        uploadedByteCount += data.count
+                        guard chunk.receivedByteCount == uploadedByteCount,
+                              chunk.totalByteCount == byteCount,
+                              chunk.destinationPath == start.destinationPath else {
+                            throw HermesFileDownloaderError.invalidPayload
+                        }
+                        fileDownloaderStatus = "Uploading… \(Self.byteCountFormatter.string(fromByteCount: Int64(uploadedByteCount))) of \(Self.byteCountFormatter.string(fromByteCount: Int64(byteCount)))"
+                        if chunk.isComplete {
+                            guard uploadedByteCount == byteCount else {
+                                throw HermesFileDownloaderError.incompleteUpload(expected: byteCount, actual: uploadedByteCount)
+                            }
+                            uploadCompleted = true
+                            activeUploadID = nil
+                            break
+                        }
+                    }
+                }
+
+                guard uploadCompleted, uploadedByteCount == byteCount else {
+                    throw HermesFileDownloaderError.incompleteUpload(expected: byteCount, actual: uploadedByteCount)
+                }
+
+                fileDownloaderStatus = "Uploaded \(sourceURL.lastPathComponent) to \(start.destinationPath)."
+                fileTransferStatusTone = .success
+                companionRuntime.connectionStatus = "File Uploaded"
+                announceFileTransferStatus(fileDownloaderStatus)
+            } catch {
+                fileDownloaderStatus = error.localizedDescription
+                fileTransferStatusTone = .error
+                companionRuntime.lastErrorMessage = error.localizedDescription
+                companionRuntime.connectionStatus = "Upload Failed"
+                announceFileTransferStatus(error.localizedDescription)
+                if let activeUploadID {
+                    let _: HermesCompanionFileTransferCancelResult? = try? await HermesCompanionSessionFactory.request(
+                        settings: companionSettings,
+                        state: companionEnrollment.identityState,
+                        type: "upload_file_cancel",
+                        payload: HermesCompanionFileUploadCancelPayload(uploadID: activeUploadID)
+                    )
+                }
+            }
+        }
+    }
+
+    private func cleanupAbandonedDownloadFiles(in directory: URL) {
+        let expirationDate = Date().addingTimeInterval(-3_600)
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsSubdirectoryDescendants]
+        ) else { return }
+
+        for file in files where isGeneratedDownloadFile(file) {
+            guard let values = try? file.resourceValues(forKeys: keys),
+                  values.isRegularFile == true,
+                  (values.contentModificationDate ?? .distantPast) < expirationDate else { continue }
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
+
+    private func isGeneratedDownloadFile(_ url: URL) -> Bool {
+        let name = url.lastPathComponent
+        guard name.hasPrefix(".hermes-download-"), name.hasSuffix(".partial") else { return false }
+        let start = name.index(name.startIndex, offsetBy: ".hermes-download-".count)
+        let end = name.index(name.endIndex, offsetBy: -".partial".count)
+        return UUID(uuidString: String(name[start..<end])) != nil
+    }
+
+    private func announceFileTransferStatus(_ message: String) {
+        AccessibilityNotification.Announcement(message).post()
     }
 
     private func uniqueFileURL(for url: URL) -> URL {
@@ -628,6 +1008,9 @@ struct HermesUtilitiesView: View {
         formatter.countStyle = .file
         return formatter
     }()
+
+    private static let maxTransferBytes = 1_000_000_000
+    private static let macHermesFolderPath = "/Volumes/WDBlack4TB/.hermes"
 
     private var supermemoryManagementContent: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1013,6 +1396,11 @@ private struct HermesResponseHistoryRow: View {
 private enum HermesFileDownloaderError: LocalizedError {
     case invalidPayload
     case incompleteDownload(expected: Int, actual: Int)
+    case incompleteUpload(expected: Int, actual: Int)
+    case notRegularFile
+    case unavailableFileSize
+    case fileTooLarge(byteCount: Int, limit: Int)
+    case writeFailed
 
     var errorDescription: String? {
         switch self {
@@ -1020,6 +1408,16 @@ private enum HermesFileDownloaderError: LocalizedError {
             return "The Mac companion returned an invalid file payload."
         case .incompleteDownload(let expected, let actual):
             return "The Mac companion returned an incomplete file (\(actual) of \(expected) bytes)."
+        case .incompleteUpload(let expected, let actual):
+            return "The iOS file upload stopped early (\(actual) of \(expected) bytes)."
+        case .notRegularFile:
+            return "Choose a regular file, not a folder or package."
+        case .unavailableFileSize:
+            return "The selected file's size could not be determined. Download it locally in Files and try again."
+        case .fileTooLarge(let byteCount, let limit):
+            return "File is too large for transfer (\(ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(limit), countStyle: .file)) limit)."
+        case .writeFailed:
+            return "The downloaded file could not be created in the selected iOS folder."
         }
     }
 }

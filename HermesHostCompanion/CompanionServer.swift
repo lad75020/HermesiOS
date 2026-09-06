@@ -285,7 +285,7 @@ final class CompanionClientSession {
     private let gatewayRegistry = CompanionGatewayRegistry()
     private let gitRegistry = CompanionGitRegistry()
     private let knowledgeEraserRegistry = CompanionKnowledgeEraserRegistry()
-    private let fileDownloadRegistry = CompanionFileDownloadRegistry()
+    private let fileDownloadRegistry = CompanionFileDownloadRegistry.shared
     private let tailscaleServeRegistry = CompanionTailscaleServeRegistry()
 
     init(connection: NWConnection) {
@@ -413,10 +413,14 @@ final class CompanionClientSession {
                         "write_target",
                         "list_backups",
                         "restore_backup",
-                        "download_file",
                         "browse_files",
+                        "download_file",
                         "download_file_info",
                         "download_file_chunk",
+                        "download_file_cancel",
+                        "upload_file_start",
+                        "upload_file_chunk",
+                        "upload_file_cancel",
                         "service_status",
                         "service_start",
                         "service_stop",
@@ -561,7 +565,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The browse_files request requires a payload.")
                 }
                 let browserPayload = try payload.decode(FileBrowserPayload.self)
-                let result = try fileDownloadRegistry.listDirectory(path: browserPayload.path, workspacePath: browserPayload.workspacePath, requester: id.uuidString)
+                let result = try fileDownloadRegistry.listDirectory(path: browserPayload.path, workspacePath: browserPayload.workspacePath, requester: request.deviceID ?? id.uuidString)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "browse_files_failed", message: error.localizedDescription)
@@ -572,7 +576,11 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The download_file request requires a payload.")
                 }
                 let downloadPayload = try payload.decode(FileDownloadPayload.self)
-                let result = try fileDownloadRegistry.downloadFile(path: downloadPayload.path, workspacePath: downloadPayload.workspacePath, requester: id.uuidString)
+                let result = try fileDownloadRegistry.downloadFile(
+                    path: downloadPayload.path,
+                    workspacePath: downloadPayload.workspacePath,
+                    requester: request.deviceID ?? id.uuidString
+                )
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "download_file_failed", message: error.localizedDescription)
@@ -583,7 +591,7 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The download_file_info request requires a payload.")
                 }
                 let downloadPayload = try payload.decode(FileDownloadPayload.self)
-                let result = try fileDownloadRegistry.downloadFileInfo(path: downloadPayload.path, workspacePath: downloadPayload.workspacePath, requester: id.uuidString)
+                let result = try fileDownloadRegistry.downloadFileInfo(path: downloadPayload.path, workspacePath: downloadPayload.workspacePath, requester: request.deviceID ?? id.uuidString)
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "download_file_info_failed", message: error.localizedDescription)
@@ -594,16 +602,90 @@ final class CompanionClientSession {
                     return .error(id: request.id, code: "missing_payload", message: "The download_file_chunk request requires a payload.")
                 }
                 let chunkPayload = try payload.decode(FileDownloadChunkPayload.self)
-                let result = try fileDownloadRegistry.downloadFileChunk(
-                    path: chunkPayload.path,
-                    offset: chunkPayload.offset,
-                    length: chunkPayload.length,
-                    workspacePath: chunkPayload.workspacePath,
-                    requester: id.uuidString
-                )
+                let requester = request.deviceID ?? id.uuidString
+                let result: FileDownloadChunkResult
+                if let downloadID = chunkPayload.downloadID {
+                    result = try fileDownloadRegistry.downloadFileChunk(
+                        downloadID: downloadID,
+                        offset: chunkPayload.offset,
+                        length: chunkPayload.length,
+                        requester: requester
+                    )
+                } else if let path = chunkPayload.path {
+                    result = try fileDownloadRegistry.downloadFileChunkLegacy(
+                        path: path,
+                        offset: chunkPayload.offset,
+                        length: chunkPayload.length,
+                        workspacePath: chunkPayload.workspacePath,
+                        requester: requester
+                    )
+                } else {
+                    throw FileDownloadError.invalidChunk
+                }
                 return .success(id: request.id, payload: result)
             } catch {
                 return .error(id: request.id, code: "download_file_chunk_failed", message: error.localizedDescription)
+            }
+        case "download_file_cancel":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The download_file_cancel request requires a payload.")
+                }
+                let cancelPayload = try payload.decode(FileDownloadCancelPayload.self)
+                let result = try fileDownloadRegistry.cancelDownload(
+                    downloadID: cancelPayload.downloadID,
+                    requester: request.deviceID ?? id.uuidString
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "download_file_cancel_failed", message: error.localizedDescription)
+            }
+        case "upload_file_start":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The upload_file_start request requires a payload.")
+                }
+                let uploadPayload = try payload.decode(FileUploadStartPayload.self)
+                let result = try fileDownloadRegistry.startUpload(
+                    destinationPath: uploadPayload.destinationPath,
+                    fileName: uploadPayload.fileName,
+                    byteCount: uploadPayload.byteCount,
+                    workspacePath: uploadPayload.workspacePath,
+                    requester: request.deviceID ?? id.uuidString
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "upload_file_start_failed", message: error.localizedDescription)
+            }
+        case "upload_file_chunk":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The upload_file_chunk request requires a payload.")
+                }
+                let chunkPayload = try payload.decode(FileUploadChunkPayload.self)
+                let result = try fileDownloadRegistry.appendUploadChunk(
+                    uploadID: chunkPayload.uploadID,
+                    offset: chunkPayload.offset,
+                    base64Data: chunkPayload.base64Data,
+                    requester: request.deviceID ?? id.uuidString
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "upload_file_chunk_failed", message: error.localizedDescription)
+            }
+        case "upload_file_cancel":
+            do {
+                guard let payload = request.payload else {
+                    return .error(id: request.id, code: "missing_payload", message: "The upload_file_cancel request requires a payload.")
+                }
+                let cancelPayload = try payload.decode(FileUploadCancelPayload.self)
+                let result = try fileDownloadRegistry.cancelUpload(
+                    uploadID: cancelPayload.uploadID,
+                    requester: request.deviceID ?? id.uuidString
+                )
+                return .success(id: request.id, payload: result)
+            } catch {
+                return .error(id: request.id, code: "upload_file_cancel_failed", message: error.localizedDescription)
             }
         case "service_status":
             do {

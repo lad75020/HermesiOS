@@ -336,6 +336,7 @@ struct HermesCompanionFileDownloadResult: Codable {
 }
 
 struct HermesCompanionFileDownloadInfoResult: Codable {
+    let downloadID: String
     let path: String
     let fileName: String
     let byteCount: Int
@@ -344,17 +345,9 @@ struct HermesCompanionFileDownloadInfoResult: Codable {
 }
 
 struct HermesCompanionFileDownloadChunkPayload: Codable {
-    let path: String
+    let downloadID: String
     let offset: Int
     let length: Int
-    let workspacePath: String?
-
-    init(path: String, offset: Int, length: Int, workspacePath: String? = nil) {
-        self.path = path
-        self.offset = offset
-        self.length = length
-        self.workspacePath = workspacePath
-    }
 }
 
 struct HermesCompanionFileDownloadChunkResult: Codable {
@@ -364,6 +357,46 @@ struct HermesCompanionFileDownloadChunkResult: Codable {
     let totalByteCount: Int
     let isComplete: Bool
     let base64Data: String
+}
+
+struct HermesCompanionFileUploadStartPayload: Codable {
+    let destinationPath: String
+    let fileName: String
+    let byteCount: Int
+    let workspacePath: String?
+}
+
+struct HermesCompanionFileUploadStartResult: Codable {
+    let uploadID: String
+    let destinationPath: String
+    let chunkSize: Int
+    let isComplete: Bool
+}
+
+struct HermesCompanionFileUploadChunkPayload: Codable {
+    let uploadID: String
+    let offset: Int
+    let base64Data: String
+}
+
+struct HermesCompanionFileUploadChunkResult: Codable {
+    let uploadID: String
+    let destinationPath: String
+    let receivedByteCount: Int
+    let totalByteCount: Int
+    let isComplete: Bool
+}
+
+struct HermesCompanionFileDownloadCancelPayload: Codable {
+    let downloadID: String
+}
+
+struct HermesCompanionFileUploadCancelPayload: Codable {
+    let uploadID: String
+}
+
+struct HermesCompanionFileTransferCancelResult: Codable {
+    let transferID: String
 }
 
 struct HermesCompanionServiceStatusResult: Codable, Equatable {

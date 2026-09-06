@@ -117,6 +117,7 @@ struct HermesHistoryView: View {
                             searchSession.lastErrorMessage = ""
                             searchSession.matchedMessages = 0
                             searchSession.matchedSessions = 0
+                            searchSession.hasMoreResults = false
                             expandedConversationIDs.removeAll()
                         }
                         .hermesGlassButton()
@@ -176,6 +177,28 @@ struct HermesHistoryView: View {
                         onResumeTUI: onResumeTUI
                     )
                 }
+
+                if searchSession.hasMoreResults {
+                    Button {
+                        searchSession.loadMore(
+                            dashboardBaseURL: dashboardURL,
+                            apiSettings: apiSettings,
+                            profileFilter: selectedProfileFilter,
+                            limit: searchPageSize
+                        )
+                    } label: {
+                        Label("Load more", systemImage: "arrow.down.circle")
+                    }
+                    .hermesGlassButton()
+                    .disabled(
+                        searchSession.isSearching
+                            || !searchSession.canLoadMore(
+                                dashboardBaseURL: dashboardURL,
+                                profileFilter: selectedProfileFilter,
+                                limit: searchPageSize
+                            )
+                    )
+                }
             }
         } header: {
             Label("Search results", systemImage: "bubble.left.and.text.bubble.right")
@@ -185,8 +208,11 @@ struct HermesHistoryView: View {
 
     private func runDashboardSearch() {
         expandedConversationIDs.removeAll()
-        let limit = selectedProfileFilter == "all" ? 25 : 100
-        searchSession.search(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profileFilter: selectedProfileFilter, limit: limit)
+        searchSession.search(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profileFilter: selectedProfileFilter, limit: searchPageSize)
+    }
+
+    private var searchPageSize: Int {
+        selectedProfileFilter == "all" ? 25 : 100
     }
 
     private var dashboardURL: String {

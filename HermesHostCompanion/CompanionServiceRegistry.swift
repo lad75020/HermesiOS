@@ -261,14 +261,32 @@ final class CompanionServiceRegistry {
             launchAgentService(
                 id: "claw3d-adapter",
                 displayName: "Claw3D Hermes Adapter",
-                label: "fr.dubertrand.hermes-office-adapter",
-                plistPath: "~/Library/LaunchAgents/fr.dubertrand.hermes-office-adapter.plist"
+                label: "fr.dubertrand.hermes3d-adapter",
+                plistPath: "~/Library/LaunchAgents/fr.dubertrand.hermes3d-adapter.plist"
             ),
             launchAgentService(
-                id: "openclaw-gateway",
-                displayName: "OpenClaw Gateway",
-                label: "ai.openclaw.gateway",
-                plistPath: "~/Library/LaunchAgents/ai.openclaw.gateway.plist"
+                id: "hermes3d",
+                displayName: "Hermes 3D / Office",
+                label: "fr.dubertrand.hermes3d",
+                plistPath: "~/Library/LaunchAgents/fr.dubertrand.hermes3d.plist"
+            ),
+            launchAgentService(
+                id: "hermes-dashboard-app",
+                displayName: "Hermes Dashboard App",
+                label: "fr.dubertrand.hermes-dashboard",
+                plistPath: "~/Library/LaunchAgents/fr.dubertrand.hermes-dashboard.plist"
+            ),
+            launchAgentService(
+                id: "hermes-claude-bridge",
+                displayName: "Hermes Claude Bridge",
+                label: "com.kyzcreig.hermes-claude-bridge",
+                plistPath: "~/Library/LaunchAgents/com.kyzcreig.hermes-claude-bridge.plist"
+            ),
+            launchAgentService(
+                id: "hindsight-daemon",
+                displayName: "Hindsight Daemon",
+                label: "fr.dubertrand.hindsight-default-daemon",
+                plistPath: "~/Library/LaunchAgents/fr.dubertrand.hindsight-default-daemon.plist"
             )
         ]
     }

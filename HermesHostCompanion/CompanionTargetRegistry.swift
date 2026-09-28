@@ -82,6 +82,7 @@ enum CompanionTargetRegistryError: LocalizedError {
     }
 }
 
+@MainActor
 final class CompanionTargetRegistry {
     static let shared = CompanionTargetRegistry()
 

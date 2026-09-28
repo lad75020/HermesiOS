@@ -1224,7 +1224,7 @@ enum CompanionValidatorSpec: Codable, Equatable {
 }
 
 enum CompanionWorkspaceSecurity {
-    private static let fileManager = FileManager.default
+    private static var fileManager: FileManager { FileManager() }
 
     struct HermesCLIContext {
         let cliRootURL: URL

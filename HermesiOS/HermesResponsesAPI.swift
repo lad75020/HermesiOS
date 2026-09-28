@@ -7,6 +7,7 @@
 
 import CryptoKit
 import Foundation
+import Synchronization
 import Observation
 import Security
 import UniformTypeIdentifiers
@@ -347,18 +348,26 @@ final class HermesNetworkSessionDelegate: NSObject, URLSessionDelegate {
     }
 }
 
-final class HermesCertificatePinStore {
-    private let defaults = UserDefaults.standard
+nonisolated final class HermesCertificatePinStore: Sendable {
+    private static let pinLock = Mutex(())
+    private let suiteName: String?
     private let keyPrefix = "hermes.security.selfSignedFingerprint."
+
+    init(suiteName: String? = nil) {
+        self.suiteName = suiteName
+    }
 
     func trusts(fingerprint: String, forHost host: String) -> Bool {
         let key = keyPrefix + normalizedHost(host)
-        let existing = defaults.string(forKey: key) ?? ""
-        if existing.isEmpty {
-            defaults.set(fingerprint, forKey: key)
-            return true
+        return Self.pinLock.withLock { _ in
+            let defaults = suiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
+            let existing = defaults.string(forKey: key) ?? ""
+            if existing.isEmpty {
+                defaults.set(fingerprint, forKey: key)
+                return true
+            }
+            return existing == fingerprint
         }
-        return existing == fingerprint
     }
 
     private func normalizedHost(_ host: String) -> String {

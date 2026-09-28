@@ -1,4 +1,5 @@
 import XCTest
+import Synchronization
 @testable import HermesiOS
 
 @MainActor
@@ -117,14 +118,14 @@ final class HermesTUICronTests: XCTestCase {
 
     func testThrownRPCErrorPreservesPriorJobsAsStale() async {
         struct FixtureError: LocalizedError { var errorDescription: String? { "cron RPC failed" } }
-        var fail = false
+        let fail = Mutex(false)
         let client = HermesTUICronClient(request: { _ in
-            if fail { throw FixtureError() }
+            if fail.withLock({ $0 }) { throw FixtureError() }
             return self.list(profile: "default", jobs: [self.job(id: "job-1")])
         }, generation: { UUID(uuidString: "00000000-0000-0000-0000-000000000001")! })
 
         await client.load(profile: "default")
-        fail = true
+        fail.withLock { $0 = true }
         await client.load(profile: "default")
 
         XCTAssertEqual(client.jobs.map(\.id), ["job-1"])

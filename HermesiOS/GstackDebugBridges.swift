@@ -230,21 +230,13 @@ enum MutationBridgeImpl {
 
         let resolved = DebugBridgeElementRegistry.shared.resolve(payload: payload)
         let point = DebugBridgePayload.point(payload) ?? resolved?.frame.center
-        if let target = resolved?.target, let result = activate(target: target, point: point, window: resolved?.window ?? window) {
-            return result
-        }
-
         guard let point else { return .failure("missing_target", ["accepted": ["element_id", "id", "identifier", "label", "x/y"]]) }
         guard window.bounds.contains(point), let hit = window.hitTest(point, with: nil) else {
             return .failure("no_hit_target", ["point": point.jsonDictionary])
         }
 
-        var node: UIView? = hit
-        while let current = node {
-            if let result = activate(target: current, point: point, window: window) {
-                return result
-            }
-            node = current.superview
+        if DebugBridgeTouch.sendTap(at: point, in: window) {
+            return .success(["action": "touch_event", "point": point.jsonDictionary])
         }
         return .failure("no_actionable_target", ["point": point.jsonDictionary, "hit_class": String(describing: type(of: hit))])
     }
@@ -336,50 +328,6 @@ enum MutationBridgeImpl {
             "content_offset": targetOffset.jsonDictionary,
             "scroll_class": String(describing: type(of: scroll)),
         ])
-    }
-
-    private static func activate(target: NSObject, point: CGPoint?, window: UIWindow) -> BridgeMutationResult? {
-        if let field = target as? UITextField {
-            _ = field.becomeFirstResponder()
-            return .success(["action": "focus", "target": "UITextField"])
-        }
-        if let textView = target as? UITextView {
-            _ = textView.becomeFirstResponder()
-            return .success(["action": "focus", "target": "UITextView"])
-        }
-        if target.accessibilityActivate() {
-            return .success(["action": "accessibility_activate", "target": String(describing: type(of: target))])
-        }
-        guard let view = target as? UIView else { return nil }
-
-        if let field = nearestAncestor(of: view, matching: UITextField.self) {
-            _ = field.becomeFirstResponder()
-            return .success(["action": "focus", "target": "UITextField"])
-        }
-        if let textView = nearestAncestor(of: view, matching: UITextView.self) {
-            _ = textView.becomeFirstResponder()
-            return .success(["action": "focus", "target": "UITextView"])
-        }
-        if let control = nearestAncestor(of: view, matching: UIControl.self) {
-            if let segmented = control as? UISegmentedControl, let point {
-                let local = segmented.convert(point, from: window)
-                let width = max(segmented.bounds.width / CGFloat(max(segmented.numberOfSegments, 1)), 1)
-                let index = min(max(Int(local.x / width), 0), max(segmented.numberOfSegments - 1, 0))
-                segmented.selectedSegmentIndex = index
-                segmented.sendActions(for: .valueChanged)
-                return .success(["action": "segmented_value_changed", "segment": index])
-            }
-            if let toggle = control as? UISwitch {
-                toggle.setOn(!toggle.isOn, animated: true)
-                toggle.sendActions(for: .valueChanged)
-                return .success(["action": "switch_value_changed", "is_on": toggle.isOn])
-            }
-            control.sendActions(for: .touchDown)
-            control.sendActions(for: .primaryActionTriggered)
-            control.sendActions(for: .touchUpInside)
-            return .success(["action": "control_events", "target": String(describing: type(of: control))])
-        }
-        return nil
     }
 
     private static func replaceText(in input: UITextInput, text: String) {

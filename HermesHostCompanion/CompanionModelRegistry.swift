@@ -40,6 +40,7 @@ enum CompanionModelRegistryError: LocalizedError {
     }
 }
 
+@MainActor
 final class CompanionModelRegistry {
     static let shared = CompanionModelRegistry()
 

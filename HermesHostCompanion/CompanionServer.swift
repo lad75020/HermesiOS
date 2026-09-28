@@ -1320,6 +1320,7 @@ struct CompanionAuthorizedDeviceRecord: Codable, Identifiable, Equatable {
     }
 }
 
+@MainActor
 final class CompanionDeviceAuthorizationStore {
     static let shared = CompanionDeviceAuthorizationStore()
 

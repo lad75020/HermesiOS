@@ -155,7 +155,7 @@ private struct GatewayPlatformCard: View {
                         .foregroundStyle(.hermesSecondaryText)
                 }
                 Spacer()
-                Toggle("", isOn: Binding(get: { isEnabled }, set: onToggleEnabled))
+                Toggle("", isOn: Binding(get: { isEnabled }, set: { onToggleEnabled($0) }))
                     .labelsHidden()
                     .disabled(isBusy)
             }

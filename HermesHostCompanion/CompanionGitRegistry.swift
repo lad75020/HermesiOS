@@ -123,8 +123,8 @@ final class CompanionGitRegistry {
         let remoteURL = (try? await runGit(["remote", "get-url", "origin"], repoURL: repoURL, timeout: 10).trimmedOutput) ?? ""
         let conflictFiles = try await unresolvedConflictFiles(repoURL: repoURL)
         let mergeInProgress = isMergeInProgress(repoURL: repoURL)
-        var pendingBranch = mergeInProgress ? localMainBranch : ""
-        var pendingCommit = mergeInProgress ? upstreamCommit : ""
+        let pendingBranch = mergeInProgress ? localMainBranch : ""
+        let pendingCommit = mergeInProgress ? upstreamCommit : ""
         var lastUpdateOutput = try await gitConfigValue(lastUpdateOutputConfigKey, repoURL: repoURL)
         if mergeInProgress == false {
             try await clearPendingUpdateConfig(repoURL: repoURL)

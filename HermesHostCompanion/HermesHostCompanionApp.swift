@@ -407,7 +407,7 @@ final class CompanionServerController {
     var officePort: String
     var hermesConfigFolderPath: String
     var apiGatewayAPIKey: String
-    nonisolated(unsafe) private var deviceChangeObserver: NSObjectProtocol?
+    private var deviceChangeObserver: NSObjectProtocol?
 
     init() {
         advertisedHost = server.currentConfiguration.host
@@ -441,7 +441,7 @@ final class CompanionServerController {
         server.currentConfiguration.webSocketURLString
     }
 
-    deinit {
+    isolated deinit {
         if let deviceChangeObserver {
             NotificationCenter.default.removeObserver(deviceChangeObserver)
         }

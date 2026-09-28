@@ -26,6 +26,7 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         try body(root)
     }
 
+    @MainActor
     private func transformToolsetFixture(_ content: String, action: String, enabled: Bool? = nil) async throws -> [String: Any] {
         let workspaces = CompanionWorkspaceSecurity.approvedHermesRoots(preferredWorkspacePath: nil)
         guard let workspace = workspaces.first(where: { CompanionWorkspaceSecurity.resolvedHermesCLIContext(from: $0.path) != nil }) else {
@@ -236,6 +237,7 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         _ = await heartbeat.result
     }
 
+    @MainActor
     func testTargetSelectionIsRequestScopedAndBackupRestoresOriginalProfile() async throws {
         let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let workspace = container.appendingPathComponent("hermes", isDirectory: true)
@@ -310,6 +312,7 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         try await assertProfileCommandRejectsSymlink(.activate, symlinkProfilesDirectory: false)
     }
 
+    @MainActor
     func testLegacyHermesBackupWithoutTargetPathCannotRestoreIntoPersistedSelectedProfile() async throws {
         let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let workspace = container.appendingPathComponent("hermes", isDirectory: true)
@@ -370,6 +373,7 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: sibling.appendingPathComponent("config.yaml"), encoding: .utf8), "model: sibling-current\n")
     }
 
+    @MainActor
     func testLegacyStaticTargetBackupStillRestoresWhenAssociationIsUnambiguous() async throws {
         let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let storage = container.appendingPathComponent("registry", isDirectory: true)
@@ -410,6 +414,7 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: targetURL, encoding: .utf8), "legacy\n")
     }
 
+    @MainActor
     func testRapidProfileBackupsHaveUniqueTargetBoundIDsAndFiles() async throws {
         let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let workspace = container.appendingPathComponent("hermes", isDirectory: true)
@@ -463,6 +468,7 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testWriteRechecksRevisionAfterAsyncValidation() async throws {
         let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let storage = container.appendingPathComponent("registry", isDirectory: true)
@@ -529,6 +535,7 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: targetURL, encoding: .utf8), "model: external-change\n")
     }
 
+    @MainActor
     func testWriteDoesNotReuseFixedTemporaryFilename() async throws {
         let container = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let storage = container.appendingPathComponent("registry", isDirectory: true)
@@ -566,6 +573,7 @@ final class CompanionRuntimeSafetyTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: targetURL, encoding: .utf8), "updated\n")
     }
 
+    @MainActor
     func testSpeechToTextUsesConfigOnlyToggleAndPreservesOtherYAML() async throws {
         let fixture = """
         platform_toolsets:

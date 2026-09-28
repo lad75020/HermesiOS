@@ -278,7 +278,7 @@ private struct MCPServerRow: View {
                     .foregroundStyle(.hermesSecondaryText)
                 Toggle("Enabled", isOn: Binding(
                     get: { server.enabled },
-                    set: onEnabledChange
+                    set: { onEnabledChange($0) }
                 ))
                 .disabled(isTesting || isMutating)
                 Button {

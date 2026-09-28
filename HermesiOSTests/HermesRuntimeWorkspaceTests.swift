@@ -2,6 +2,7 @@ import XCTest
 @testable import HermesiOS
 
 final class HermesRuntimeWorkspaceTests: XCTestCase {
+    @MainActor
     func testWorkspaceTabVisibilityDefaultsKeepAskAndChatButHideRuntime() {
         let visibility = HermesWorkspaceTabVisibility()
 
@@ -10,6 +11,7 @@ final class HermesRuntimeWorkspaceTests: XCTestCase {
         XCTAssertFalse(visibility.visibleSections.contains(.runtime))
     }
 
+    @MainActor
     func testWorkspaceTabVisibilityFiltersAllOptionalSections() {
         let visibility = HermesWorkspaceTabVisibility(
             isAskHermesEnabled: false,
@@ -23,6 +25,7 @@ final class HermesRuntimeWorkspaceTests: XCTestCase {
         XCTAssertTrue(visibility.visibleSections.contains(.tuiGateway))
     }
 
+    @MainActor
     func testWorkspaceTabVisibilityFallsBackFromDisabledSelectionsInPreferredOrder() {
         XCTAssertEqual(
             HermesWorkspaceTabVisibility(
@@ -51,6 +54,7 @@ final class HermesRuntimeWorkspaceTests: XCTestCase {
         XCTAssertEqual(HermesWorkspaceTabVisibility().resolvedSelection(nil), .responses)
     }
 
+    @MainActor
     func testWorkspaceTabVisibilityKeepsEnabledSelections() {
         let visibility = HermesWorkspaceTabVisibility(isRuntimeEnabled: true)
 
@@ -59,6 +63,7 @@ final class HermesRuntimeWorkspaceTests: XCTestCase {
         XCTAssertEqual(visibility.resolvedSelection(.runtime), .runtime)
     }
 
+    @MainActor
     func testPrimaryCategoriesMatchTheEightRuntimeConfigurationAreas() {
         XCTAssertEqual(
             HermesRuntimePanelKind.primaryCategories,
@@ -68,6 +73,7 @@ final class HermesRuntimeWorkspaceTests: XCTestCase {
         XCTAssertFalse(HermesRuntimePanelKind.primaryCategories.contains(.companion))
     }
 
+    @MainActor
     func testCompanionAndExistingUtilitiesRemainSecondary() {
         XCTAssertEqual(
             HermesRuntimePanelKind.secondaryCategories,
@@ -76,6 +82,7 @@ final class HermesRuntimeWorkspaceTests: XCTestCase {
         XCTAssertTrue(HermesRuntimePanelKind.secondaryCategories.contains(.companion))
     }
 
+    @MainActor
     func testAdaptiveLayoutUsesCategoryRailOnlyWhenThereIsEnoughWidth() {
         XCTAssertEqual(HermesRuntimeWorkspaceLayout.forWidth(390), .overview)
         XCTAssertEqual(HermesRuntimeWorkspaceLayout.forWidth(719), .overview)
@@ -83,6 +90,7 @@ final class HermesRuntimeWorkspaceTests: XCTestCase {
         XCTAssertEqual(HermesRuntimeWorkspaceLayout.forWidth(1024), .split)
     }
 
+    @MainActor
     func testCategoryTitlesDescribeThePushedDestinations() {
         XCTAssertEqual(HermesRuntimePanelKind.gateway.title, "Messaging")
         XCTAssertEqual(HermesRuntimePanelKind.providers.title, "Provider Keys")

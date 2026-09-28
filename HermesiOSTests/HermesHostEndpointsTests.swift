@@ -1,10 +1,12 @@
 import Foundation
+import Synchronization
 import SwiftUI
 import UIKit
 import XCTest
 @testable import HermesiOS
 
 final class HermesHostEndpointsTests: XCTestCase {
+    @MainActor
     func testNormalizedHostStripsSchemePortAndPath() {
         XCTAssertEqual(
             HermesHostEndpoints.normalizedHost("  https://macbook.example.ts.net:9112/ws  "),
@@ -14,6 +16,7 @@ final class HermesHostEndpointsTests: XCTestCase {
         XCTAssertEqual(HermesHostEndpoints.normalizedHost("   "), defaultHermesMacHost)
     }
 
+    @MainActor
     func testRemoteEndpointsUseTLSAndRemoteDashboardPortMigration() {
         XCTAssertEqual(
             HermesHostEndpoints.webSocketURLString(host: "companion.example.com", port: "9112"),
@@ -29,6 +32,7 @@ final class HermesHostEndpointsTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPlaintextSensitiveEndpointsAreLimitedToLoopbackAndTailnet() throws {
         let remote = try XCTUnwrap(URL(string: "http://example.com/v1"))
         let loopback = try XCTUnwrap(URL(string: "http://127.0.0.1:8642/v1"))
@@ -43,6 +47,41 @@ final class HermesHostEndpointsTests: XCTestCase {
         XCTAssertNoThrow(try HermesEndpointSecurity.validateSensitiveURL(tailnet))
     }
 
+    @MainActor
+    func testSelfSignedPinIsScopedToNormalizedHostAndRejectsCertificateChange() throws {
+        let suiteName = "HermesCertificatePinStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = HermesCertificatePinStore(suiteName: suiteName)
+
+        XCTAssertTrue(HermesEndpointSecurity.isSelfSignedTrustAllowed(forHost: "MAC.example.ts.net"))
+        XCTAssertFalse(HermesEndpointSecurity.isSelfSignedTrustAllowed(forHost: "example.com"))
+        XCTAssertTrue(store.trusts(fingerprint: "AA:BB", forHost: "[MAC.example.ts.net]"))
+        XCTAssertTrue(store.trusts(fingerprint: "AA:BB", forHost: "mac.example.ts.net"))
+        XCTAssertFalse(store.trusts(fingerprint: "CC:DD", forHost: "mac.example.ts.net"))
+        XCTAssertTrue(store.trusts(fingerprint: "CC:DD", forHost: "other.example.ts.net"))
+    }
+
+    @MainActor
+    func testConcurrentFirstPinsAcceptOnlyOneFingerprint() throws {
+        let suiteName = "HermesCertificatePinStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = HermesCertificatePinStore(suiteName: suiteName)
+        let accepted = Mutex<[String]>([])
+
+        DispatchQueue.concurrentPerform(iterations: 100) { index in
+            let fingerprint = index.isMultiple(of: 2) ? "AA:BB" : "CC:DD"
+            if store.trusts(fingerprint: fingerprint, forHost: "mac.example.ts.net") {
+                accepted.withLock { $0.append(fingerprint) }
+            }
+        }
+
+        let acceptedFingerprints = accepted.withLock { Set($0) }
+        XCTAssertEqual(acceptedFingerprints.count, 1)
+    }
+
+    @MainActor
     func testStatusProbeURLRejectsRemotePlaintextBeforeAuthorizationCanBeAdded() {
         XCTAssertNil(HermesStatusMonitor.statusURL(from: "http://example.com/v1"))
         XCTAssertEqual(
@@ -57,11 +96,13 @@ final class HermesHostEndpointsTests: XCTestCase {
 }
 
 final class HermesPhonePrimaryTabTests: XCTestCase {
+    @MainActor
     func testIPhoneUsesSingleLandingPageAtEveryWidth() {
         XCTAssertEqual(HermesRootLayout.resolve(idiom: .phone, isCompact: true), .phone)
         XCTAssertEqual(HermesRootLayout.resolve(idiom: .phone, isCompact: false), .phone)
     }
 
+    @MainActor
     func testIPadKeepsItsExistingCompactTabsAndRegularSplitLayout() {
         XCTAssertEqual(HermesRootLayout.resolve(idiom: .pad, isCompact: true), .compactPad)
         XCTAssertEqual(HermesRootLayout.resolve(idiom: .pad, isCompact: false), .split)
@@ -80,18 +121,21 @@ final class HermesPhonePrimaryTabTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testCompactIPadTabsStillContainOnlyTUIAndMore() {
         XCTAssertEqual(HermesPhonePrimaryTab.allCases.map(\.title), ["TUI", "More"])
         XCTAssertFalse(HermesPhonePrimaryTab.allCases.map(\.systemImage).contains("dot.radiowaves.left.and.right"))
         XCTAssertFalse(HermesPhonePrimaryTab.allCases.map(\.systemImage).contains("text.bubble"))
     }
 
+    @MainActor
     func testRemovedConsoleSectionsResolveToTUIGateway() {
         XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .responses), .tuiGateway)
         XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .chat), .tuiGateway)
         XCTAssertEqual(HermesPhonePrimaryTab.resolve(for: .history), .more)
     }
 
+    @MainActor
     func testWorkspaceInventoryContainsOnlySupportedDestinations() {
         XCTAssertEqual(WorkspaceSection.allCases, [
             .responses, .chat, .tuiGateway, .history, .web,
@@ -107,6 +151,7 @@ final class HermesPhonePrimaryTabTests: XCTestCase {
 
 @MainActor
 final class HermesTUIHistoryResumeCoordinatorTests: XCTestCase {
+    @MainActor
     func testUsesAvailableInactiveWorkspaceWithoutSelectingActiveWorkspace() {
         let selected = HermesTUIWorkspace(number: 1)
         let inactive = HermesTUIWorkspace(number: 2)
@@ -124,6 +169,7 @@ final class HermesTUIHistoryResumeCoordinatorTests: XCTestCase {
         XCTAssertEqual(workspaces.count, 2)
     }
 
+    @MainActor
     func testCreatesInactiveWorkspaceWhenNoAvailableInactiveWorkspaceExists() {
         let selected = HermesTUIWorkspace(number: 1)
         var workspaces = [selected]
@@ -141,6 +187,7 @@ final class HermesTUIHistoryResumeCoordinatorTests: XCTestCase {
 }
 
 final class HermesHistorySearchFocusPolicyTests: XCTestCase {
+    @MainActor
     func testDismissesKeyboardAfterSuccessfulSearchWithResults() {
         XCTAssertTrue(
             HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
@@ -153,6 +200,7 @@ final class HermesHistorySearchFocusPolicyTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testDismissesKeyboardAfterSuccessfulSearchWithoutResults() {
         XCTAssertTrue(
             HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
@@ -165,6 +213,7 @@ final class HermesHistorySearchFocusPolicyTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testKeepsKeyboardStateForCancellationAndFailure() {
         XCTAssertFalse(
             HermesHistorySearchFocusPolicy.shouldDismissKeyboard(
@@ -186,6 +235,7 @@ final class HermesHistorySearchFocusPolicyTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testKeepsKeyboardStateOutsideCompactWidth() {
         XCTAssertFalse(
             HermesHistorySearchFocusPolicy.shouldDismissKeyboard(

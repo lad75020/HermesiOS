@@ -232,7 +232,7 @@ nonisolated private final class AcceptAllHostKeysDelegate: NIOSSHClientServerAut
     }
 }
 
-private final class PrivateKeyAuthenticationDelegate: NIOSSHClientUserAuthenticationDelegate {
+nonisolated private final class PrivateKeyAuthenticationDelegate: NIOSSHClientUserAuthenticationDelegate {
     private var authRequest: NIOSSHUserAuthenticationOffer?
 
     init(username: String, privateKey: NIOSSHPrivateKey) {
@@ -256,11 +256,11 @@ private final class PrivateKeyAuthenticationDelegate: NIOSSHClientUserAuthentica
     }
 }
 
-private final class SSHErrorHandler: ChannelInboundHandler {
+nonisolated private final class SSHErrorHandler: ChannelInboundHandler {
     typealias InboundIn = Any
-    private let onError: (Error) -> Void
+    private let onError: @Sendable (Error) -> Void
 
-    init(onError: @escaping (Error) -> Void) {
+    init(onError: @escaping @Sendable (Error) -> Void) {
         self.onError = onError
     }
 
@@ -270,16 +270,18 @@ private final class SSHErrorHandler: ChannelInboundHandler {
     }
 }
 
-nonisolated private final class SSHShellChannelHandler: ChannelInboundHandler {
+nonisolated private final class SSHShellChannelHandler: ChannelInboundHandler, Sendable {
     typealias InboundIn = SSHChannelData
 
-    private weak var terminalView: HermesSshTerminalView?
+    private let feedBytes: @Sendable ([UInt8]) -> Void
+    private let feedText: @Sendable (String) -> Void
     private let term: String
     private let environment: [String: String]
     private let initialWindowSize: (cols: Int, rows: Int)
 
-    init(terminalView: HermesSshTerminalView?, term: String, environment: [String: String], initialWindowSize: (cols: Int, rows: Int)) {
-        self.terminalView = terminalView
+    init(feedBytes: @escaping @Sendable ([UInt8]) -> Void, feedText: @escaping @Sendable (String) -> Void, term: String, environment: [String: String], initialWindowSize: (cols: Int, rows: Int)) {
+        self.feedBytes = feedBytes
+        self.feedText = feedText
         self.term = term
         self.environment = environment
         self.initialWindowSize = initialWindowSize
@@ -324,22 +326,16 @@ nonisolated private final class SSHShellChannelHandler: ChannelInboundHandler {
         while next < bytes.count {
             let end = min(next + chunkSize, bytes.count)
             let chunk = bytes[next..<end]
-            DispatchQueue.main.async { [weak terminalView] in
-                terminalView?.feed(byteArray: chunk)
-            }
+            feedBytes(Array(chunk))
             next = end
         }
     }
 
     func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
         if let status = event as? SSHChannelRequestEvent.ExitStatus {
-            DispatchQueue.main.async { [weak terminalView] in
-                terminalView?.feed(text: "\n[SSH] Session exited with status \(status.exitStatus)\n")
-            }
+            feedText("\n[SSH] Session exited with status \(status.exitStatus)\n")
         } else if let signal = event as? SSHChannelRequestEvent.ExitSignal {
-            DispatchQueue.main.async { [weak terminalView] in
-                terminalView?.feed(text: "\n[SSH] Session closed: \(signal.signalName)\n")
-            }
+            feedText("\n[SSH] Session closed: \(signal.signalName)\n")
         } else {
             context.fireUserInboundEventTriggered(event)
         }
@@ -353,6 +349,8 @@ private final class HermesSSHConnection {
     private var group: EventLoopGroup?
     private var channel: Channel?
     private var sessionChannel: Channel?
+    private var isDisconnected = false
+    private var connectPending = false
 
     init(terminalView: HermesSshTerminalView, info: HermesTerminalConnectionInfo, initialWindowSize: (cols: Int, rows: Int)) {
         self.terminalView = terminalView
@@ -361,25 +359,21 @@ private final class HermesSSHConnection {
     }
 
     func connect() {
+        connectPending = true
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         self.group = group
 
-        let userAuthDelegate: NIOSSHClientUserAuthenticationDelegate
-        do {
-            userAuthDelegate = PrivateKeyAuthenticationDelegate(
-                username: info.username,
-                privateKey: try OpenSSHEd25519PrivateKeyParser.parse(info.privateKey)
-            )
-        } catch {
-            handleError(error)
-            shutdownGroup()
-            return
-        }
+        let username = info.username
+        let privateKey = info.privateKey
 
         let bootstrap = ClientBootstrap(group: group)
             .channelInitializer { [weak self] channel in
                 channel.eventLoop.makeCompletedFuture {
                     guard let self else { return }
+                    let userAuthDelegate = PrivateKeyAuthenticationDelegate(
+                        username: username,
+                        privateKey: try OpenSSHEd25519PrivateKeyParser.parse(privateKey)
+                    )
                     let sshHandler = NIOSSHHandler(
                         role: .client(.init(userAuthDelegate: userAuthDelegate, serverAuthDelegate: AcceptAllHostKeysDelegate())),
                         allocator: channel.allocator,
@@ -387,22 +381,37 @@ private final class HermesSSHConnection {
                     )
                     try channel.pipeline.syncOperations.addHandler(sshHandler)
                     try channel.pipeline.syncOperations.addHandler(SSHErrorHandler { [weak self] error in
-                        self?.handleError(error)
+                        DispatchQueue.main.async { self?.handleError(error) }
                     })
                 }
             }
             .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
             .channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
 
-        bootstrap.connect(host: info.host, port: info.port).whenComplete { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .failure(let error):
-                self.handleError(error)
-                self.shutdownGroup()
-            case .success(let channel):
-                self.channel = channel
-                self.createSessionChannel(on: channel)
+        // Retain the owner until the pending connect resolves, including after
+        // the terminal view has dropped an already-disconnected connection.
+        bootstrap.connect(host: info.host, port: info.port).whenComplete { result in
+            DispatchQueue.main.async {
+                self.connectPending = false
+                if self.isDisconnected {
+                    if case .success(let channel) = result {
+                        channel.closeFuture.whenComplete { _ in
+                            DispatchQueue.main.async { self.shutdownGroup() }
+                        }
+                        channel.eventLoop.execute { channel.close(promise: nil) }
+                    } else {
+                        self.shutdownGroup()
+                    }
+                    return
+                }
+                switch result {
+                case .failure(let error):
+                    self.handleError(error)
+                    self.shutdownGroup()
+                case .success(let channel):
+                    self.channel = channel
+                    self.createSessionChannel(on: channel)
+                }
             }
         }
     }
@@ -431,54 +440,75 @@ private final class HermesSSHConnection {
     }
 
     func disconnect() {
+        guard !isDisconnected else { return }
+        isDisconnected = true
+        sessionChannel = nil
         if let channel {
-            channel.closeFuture.whenComplete { [weak self] _ in
-                self?.shutdownGroup()
+            channel.closeFuture.whenComplete { _ in
+                DispatchQueue.main.async { self.shutdownGroup() }
             }
-            channel.close(promise: nil)
-        } else {
+            channel.eventLoop.execute { channel.close(promise: nil) }
+        } else if !connectPending {
             shutdownGroup()
         }
     }
 
     private func createSessionChannel(on channel: Channel) {
-        channel.pipeline.handler(type: NIOSSHHandler.self).whenComplete { [weak self] result in
-            guard let self else { return }
+        let terminalView = self.terminalView
+        let feedBytes: @Sendable ([UInt8]) -> Void = { [weak self, weak terminalView] bytes in
+            DispatchQueue.main.async { [weak self, weak terminalView] in
+                guard let self, let terminalView, terminalView.sshConnection === self, !self.isDisconnected else { return }
+                terminalView.feed(byteArray: bytes[...])
+            }
+        }
+        let feedText: @Sendable (String) -> Void = { [weak self, weak terminalView] text in
+            DispatchQueue.main.async { [weak self, weak terminalView] in
+                guard let self, let terminalView, terminalView.sshConnection === self, !self.isDisconnected else { return }
+                terminalView.feed(text: text)
+            }
+        }
+        let term = info.term
+        let environment = info.environment
+        let initialWindowSize = self.initialWindowSize
+        channel.pipeline.handler(type: NIOSSHHandler.self).whenComplete { [self] result in
             switch result {
             case .failure(let error):
-                self.handleError(error)
+                DispatchQueue.main.async { self.handleError(error) }
             case .success(let sshHandler):
                 let promise = channel.eventLoop.makePromise(of: Channel.self)
                 sshHandler.createChannel(promise, channelType: .session) { [weak self] childChannel, channelType in
-                    guard let self else {
-                        return channel.eventLoop.makeFailedFuture(HermesTerminalError.invalidChannelType)
-                    }
                     guard channelType == .session else {
                         return channel.eventLoop.makeFailedFuture(HermesTerminalError.invalidChannelType)
                     }
                     return childChannel.eventLoop.makeCompletedFuture {
                         let sync = childChannel.pipeline.syncOperations
                         try sync.addHandler(SSHShellChannelHandler(
-                            terminalView: self.terminalView,
-                            term: self.info.term,
-                            environment: self.info.environment,
-                            initialWindowSize: self.initialWindowSize
+                            feedBytes: feedBytes,
+                            feedText: feedText,
+                            term: term,
+                            environment: environment,
+                            initialWindowSize: initialWindowSize
                         ))
                         try sync.addHandler(SSHErrorHandler { [weak self] error in
-                            self?.handleError(error)
+                            DispatchQueue.main.async { self?.handleError(error) }
                         })
                     }
                 }
 
-                promise.futureResult.whenComplete { [weak self] result in
-                    guard let self else { return }
-                    switch result {
-                    case .failure(let error):
-                        self.handleError(error)
-                    case .success(let childChannel):
-                        self.sessionChannel = childChannel
-                        DispatchQueue.main.async { [weak self] in
-                            guard let self, let terminal = self.terminalView?.getTerminal() else { return }
+                promise.futureResult.whenComplete { result in
+                    DispatchQueue.main.async {
+                        guard !self.isDisconnected else {
+                            if case .success(let childChannel) = result {
+                                childChannel.eventLoop.execute { childChannel.close(promise: nil) }
+                            }
+                            return
+                        }
+                        switch result {
+                        case .failure(let error):
+                            self.handleError(error)
+                        case .success(let childChannel):
+                            self.sessionChannel = childChannel
+                            guard let terminal = self.terminalView?.getTerminal() else { return }
                             self.terminalView?.markConnected()
                             self.resize(cols: terminal.cols, rows: terminal.rows)
                         }
@@ -489,10 +519,9 @@ private final class HermesSSHConnection {
     }
 
     private func handleError(_ error: Error) {
-        DispatchQueue.main.async { [weak terminalView] in
-            terminalView?.markFailed(error.localizedDescription)
-            terminalView?.feed(text: "[ERROR] \(error.localizedDescription)\n")
-        }
+        guard !isDisconnected, let terminalView, terminalView.sshConnection === self else { return }
+        terminalView.markFailed(error.localizedDescription)
+        terminalView.feed(text: "[ERROR] \(error.localizedDescription)\n")
     }
 
     private func shutdownGroup() {
@@ -507,7 +536,7 @@ private final class HermesSshTerminalView: TerminalView, TerminalViewDelegate {
     var onConnected: (() -> Void)?
     var onFailed: ((String) -> Void)?
 
-    private var sshConnection: HermesSSHConnection?
+    fileprivate var sshConnection: HermesSSHConnection?
     private var configuredInfo: HermesTerminalConnectionInfo?
     private var configuredTerminalID: UUID?
 
@@ -521,7 +550,8 @@ private final class HermesSshTerminalView: TerminalView, TerminalViewDelegate {
     }
 
     deinit {
-        sshConnection?.disconnect()
+        let connection = sshConnection
+        Task { @MainActor in connection?.disconnect() }
     }
 
     func configure(connectionInfo: HermesTerminalConnectionInfo, terminalID: UUID) {
@@ -584,7 +614,7 @@ private final class HermesSshTerminalView: TerminalView, TerminalViewDelegate {
     func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }
 
-private enum OpenSSHEd25519PrivateKeyParser {
+nonisolated private enum OpenSSHEd25519PrivateKeyParser {
     static func parse(_ key: String) throws -> NIOSSHPrivateKey {
         let raw = try extractOpenSSHBase64(key)
         var reader = SSHBufferReader(data: raw)
@@ -633,7 +663,7 @@ private enum OpenSSHEd25519PrivateKeyParser {
     }
 }
 
-private struct SSHBufferReader {
+nonisolated private struct SSHBufferReader {
     private let data: Data
     private var offset: Int = 0
 

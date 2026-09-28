@@ -846,26 +846,15 @@ private struct HermesCompanionQRScannerView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> QRScannerPreviewView {
         let view = QRScannerPreviewView()
-        let session = AVCaptureSession()
-        context.coordinator.session = session
-
-        guard let device = AVCaptureDevice.default(for: .video),
-              let input = try? AVCaptureDeviceInput(device: device),
-              session.canAddInput(input)
-        else {
-            return view
+        let bridge = QRScannerSessionBridge()
+        bridge.attach(to: view.previewLayer)
+        let capture = QRScannerCaptureSession(bridge: bridge) { [weak coordinator = context.coordinator] value in
+            Task { @MainActor in coordinator?.receivedCode(value) }
         }
-        session.addInput(input)
-
-        let output = AVCaptureMetadataOutput()
-        guard session.canAddOutput(output) else { return view }
-        session.addOutput(output)
-        output.setMetadataObjectsDelegate(context.coordinator, queue: .main)
-        output.metadataObjectTypes = [.qr]
-
-        view.previewLayer.session = session
-        DispatchQueue.global(qos: .userInitiated).async {
-            session.startRunning()
+        context.coordinator.capture = capture
+        Task { @concurrent in
+            guard await capture.prepare() else { return }
+            await capture.start()
         }
         return view
     }
@@ -873,27 +862,24 @@ private struct HermesCompanionQRScannerView: UIViewRepresentable {
     func updateUIView(_ uiView: QRScannerPreviewView, context: Context) {}
 
     static func dismantleUIView(_ uiView: QRScannerPreviewView, coordinator: Coordinator) {
-        coordinator.session?.stopRunning()
-        coordinator.session = nil
+        let capture = coordinator.capture
+        coordinator.capture = nil
+        Task { @concurrent in await capture?.stop() }
     }
 
-    final class Coordinator: NSObject, AVCaptureMetadataOutputObjectsDelegate {
+    final class Coordinator {
         let onCode: (String) -> Void
-        var session: AVCaptureSession?
+        var capture: QRScannerCaptureSession?
         private var didScan = false
 
         init(onCode: @escaping (String) -> Void) {
             self.onCode = onCode
         }
 
-        func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
-            guard didScan == false,
-                  let object = metadataObjects.compactMap({ $0 as? AVMetadataMachineReadableCodeObject }).first,
-                  object.type == .qr,
-                  let value = object.stringValue
-            else { return }
+        func receivedCode(_ value: String) {
+            guard didScan == false, let capture else { return }
             didScan = true
-            session?.stopRunning()
+            Task { @concurrent in await capture.stop() }
             onCode(value)
         }
     }
@@ -911,3 +897,122 @@ private final class QRScannerPreviewView: UIView {
         previewLayer.videoGravity = .resizeAspectFill
     }
 }
+
+nonisolated private final class QRScannerExecutor: SerialExecutor {
+    private let queue = DispatchQueue(label: "HermesiOS.QRScannerCapture")
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        let executor = asUnownedSerialExecutor()
+        queue.async { job.runSynchronously(on: executor) }
+    }
+}
+
+// AVCaptureVideoPreviewLayer retains the session internally. This narrow bridge
+// only exposes a one-time MainActor attachment before the actor is scheduled;
+// every session method is then called by QRScannerCaptureSession on its executor.
+// AVFoundation does not yet declare AVCaptureSession Sendable.
+// Remove this unchecked bridge when AVFoundation supplies a checked transfer or
+// preview-binding API; keep session access confined to the capture actor until then.
+nonisolated fileprivate final class QRScannerSessionBridge: @unchecked Sendable {
+    private let session = AVCaptureSession()
+
+    @MainActor func attach(to previewLayer: AVCaptureVideoPreviewLayer) {
+        previewLayer.session = session
+    }
+
+    func withSession<Result>(isolatedTo owner: isolated QRScannerCaptureSession, _ body: (AVCaptureSession) -> Result) -> Result {
+        body(session)
+    }
+}
+
+nonisolated private final class QRScannerMetadataDelegate: NSObject, AVCaptureMetadataOutputObjectsDelegate {
+    private let onCode: @Sendable (String) -> Void
+
+    init(onCode: @escaping @Sendable (String) -> Void) { self.onCode = onCode }
+
+    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {
+        guard let object = objects.compactMap({ $0 as? AVMetadataMachineReadableCodeObject }).first,
+              object.type == .qr, let value = object.stringValue else { return }
+        onCode(value)
+    }
+}
+
+actor QRScannerCaptureSession {
+    private let executor = QRScannerExecutor()
+    nonisolated var unownedExecutor: UnownedSerialExecutor { executor.asUnownedSerialExecutor() }
+
+    private let onCode: @Sendable (String) -> Void
+    private let bridge: QRScannerSessionBridge?
+    private var delegate: QRScannerMetadataDelegate?
+    private var stopped = false
+#if DEBUG
+    private let testOperations: QRScannerTestOperations?
+#endif
+
+    fileprivate init(bridge: QRScannerSessionBridge, onCode: @escaping @Sendable (String) -> Void) {
+        self.bridge = bridge
+        self.onCode = onCode
+#if DEBUG
+        self.testOperations = nil
+#endif
+    }
+
+#if DEBUG
+    init(testOperations: QRScannerTestOperations) {
+        self.onCode = { _ in }
+        self.bridge = nil
+        self.testOperations = testOperations
+    }
+#endif
+
+    func prepare() -> Bool {
+        guard !stopped else { return false }
+#if DEBUG
+        if let testOperations { testOperations.prepare(); return true }
+#endif
+        guard let bridge else { return false }
+        return bridge.withSession(isolatedTo: self) { session in
+            guard let device = AVCaptureDevice.default(for: .video),
+                  let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input)
+            else { return false }
+            session.beginConfiguration()
+            session.addInput(input)
+            let output = AVCaptureMetadataOutput()
+            guard session.canAddOutput(output) else { session.commitConfiguration(); return false }
+            session.addOutput(output)
+            let delegate = QRScannerMetadataDelegate(onCode: onCode)
+            output.setMetadataObjectsDelegate(delegate, queue: .main)
+            output.metadataObjectTypes = [.qr]
+            session.commitConfiguration()
+            self.delegate = delegate
+            return true
+        }
+    }
+
+    func start() {
+        guard !stopped else { return }
+#if DEBUG
+        if let testOperations { testOperations.start(); return }
+#endif
+        bridge?.withSession(isolatedTo: self) { $0.startRunning() }
+    }
+
+    func stop() {
+        guard !stopped else { return }
+        stopped = true
+#if DEBUG
+        if let testOperations { testOperations.stop(); return }
+#endif
+        bridge?.withSession(isolatedTo: self) { $0.stopRunning() }
+        delegate = nil
+    }
+}
+
+#if DEBUG
+nonisolated struct QRScannerTestOperations: Sendable {
+    let prepare: @Sendable () -> Void
+    let start: @Sendable () -> Void
+    let stop: @Sendable () -> Void
+}
+#endif

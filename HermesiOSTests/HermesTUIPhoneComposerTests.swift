@@ -2,6 +2,7 @@ import XCTest
 @testable import HermesiOS
 
 final class HermesTUIPhoneComposerTests: XCTestCase {
+    @MainActor
     func testBothPanelsStartDismissed() {
         let presentation = HermesTUIPhoneComposerPresentation()
         XCTAssertNil(presentation.activePanel)
@@ -9,6 +10,7 @@ final class HermesTUIPhoneComposerTests: XCTestCase {
         XCTAssertFalse(presentation[isPresented: .actions])
     }
 
+    @MainActor
     func testOpeningEitherPanelReplacesTheOther() {
         var presentation = HermesTUIPhoneComposerPresentation()
         presentation[isPresented: .inference] = true
@@ -22,6 +24,7 @@ final class HermesTUIPhoneComposerTests: XCTestCase {
         XCTAssertFalse(presentation[isPresented: .actions])
     }
 
+    @MainActor
     func testBothPanelsDismissAndReopenIdentically() {
         for panel in [HermesTUIPhoneComposerPresentation.Panel.inference, .actions] {
             var presentation = HermesTUIPhoneComposerPresentation()
@@ -33,6 +36,7 @@ final class HermesTUIPhoneComposerTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testDelayedDismissalDoesNotCloseReplacementPanel() {
         var presentation = HermesTUIPhoneComposerPresentation()
         presentation[isPresented: .inference] = true

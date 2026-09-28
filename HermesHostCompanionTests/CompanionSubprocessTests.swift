@@ -36,6 +36,7 @@ final class CompanionSubprocessTests: XCTestCase {
         XCTAssertEqual(result.stderr, Data(repeating: 101, count: 4_096))
     }
 
+    @MainActor
     func testServiceStatusUsesBoundedAsyncSubprocess() async throws {
         let service = CompanionManagedServiceRecord(
             id: "test-service",

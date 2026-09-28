@@ -649,7 +649,7 @@ struct HermesCompanionReadLogResult: Codable, Equatable {
     let updatedAt: Date
 }
 
-struct HermesCompanionGatewayPlatformDefinition: Codable, Identifiable, Equatable {
+nonisolated struct HermesCompanionGatewayPlatformDefinition: Codable, Identifiable, Equatable {
     let key: String
     let label: String
     let description: String
@@ -658,7 +658,7 @@ struct HermesCompanionGatewayPlatformDefinition: Codable, Identifiable, Equatabl
     var id: String { key }
 }
 
-struct HermesCompanionGatewayEnvFieldDefinition: Codable, Identifiable, Equatable {
+nonisolated struct HermesCompanionGatewayEnvFieldDefinition: Codable, Identifiable, Equatable {
     let key: String
     let label: String
     let type: String
@@ -673,7 +673,7 @@ struct HermesCompanionGatewayConfigPayload: Codable {
     let profileName: String?
 }
 
-struct HermesCompanionGatewayConfigResult: Codable, Equatable {
+nonisolated struct HermesCompanionGatewayConfigResult: Codable, Equatable {
     let workspacePath: String
     let resolvedWorkspacePath: String
     let profileName: String
@@ -720,7 +720,7 @@ struct HermesCompanionGatewayOperationResult: Codable, Equatable {
     let config: HermesCompanionGatewayConfigResult?
 }
 
-struct HermesCompanionSetGatewayEnvPayload: Codable {
+nonisolated struct HermesCompanionSetGatewayEnvPayload: Codable {
     let workspacePath: String
     let profileName: String?
     let key: String
@@ -740,7 +740,7 @@ struct HermesCompanionSetGatewayEnvResult: Codable, Equatable {
     let restartOutput: String?
 }
 
-struct HermesCompanionSetGatewayPlatformPayload: Codable {
+nonisolated struct HermesCompanionSetGatewayPlatformPayload: Codable {
     let workspacePath: String
     let profileName: String?
     let platform: String
@@ -2437,7 +2437,7 @@ final class HermesCompanionRuntimeSession {
         resolvedHermesWorkspacePath = result.resolvedWorkspacePath
     }
 
-    private static func withTimeout<T>(seconds: UInt64, operation: @escaping () async throws -> T) async throws -> T {
+    private static func withTimeout<T: Sendable>(seconds: UInt64, operation: @escaping @Sendable () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask {
                 try await operation()
@@ -2507,14 +2507,16 @@ final class HermesCompanionRuntimeSession {
     }
 
     private func refreshHermesLogImmediately(settings: HermesCompanionSettings, identityState: HermesCompanionIdentityState, lineCount: Int? = nil) async throws {
+        let requestedLineCount = lineCount ?? observabilityLineCount
+        let logKind = observabilityLogKind
         let result: HermesCompanionReadLogResult = try await Self.withTimeout(seconds: 20) {
             try await HermesCompanionSessionFactory.request(
                 settings: settings,
                 state: identityState,
                 type: "read_hermes_log",
                 payload: HermesCompanionReadLogPayload(
-                    log: self.observabilityLogKind,
-                    lineCount: lineCount ?? self.observabilityLineCount
+                    log: logKind,
+                    lineCount: requestedLineCount
                 )
             )
         }

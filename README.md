@@ -7,6 +7,16 @@ The repository contains two app targets:
 - `HermesiOS/`: the iOS/iPadOS client.
 - `HermesHostCompanion/`: the macOS helper that performs trusted host operations over an authenticated WebSocket.
 
+## Swift language mode
+
+Both apps and their XCTest targets use Swift 6 language mode (`SWIFT_VERSION = 6.0`)
+in Debug and Release. The installed Xcode 27 toolchain reports Apple Swift 6.4;
+the compiler version and the project's language mode are separate settings.
+The apps retain their default actor isolation (`MainActor` for iOS,
+`nonisolated` for the macOS companion) and approachable concurrency settings.
+Both XCTest targets use a `nonisolated` default; UI-dependent tests explicitly
+declare `@MainActor` so XCTest overrides and non-UI fixtures remain nonisolated.
+
 Host file edits, service controls, git operations, and secret-aware configuration changes should go through HermesHostCompanion. The iOS app should not directly mutate arbitrary macOS files.
 
 ## What changed recently

@@ -37,6 +37,7 @@ enum CompanionServiceRegistryError: LocalizedError {
     }
 }
 
+@MainActor
 final class CompanionServiceRegistry {
     static let shared = CompanionServiceRegistry()
 

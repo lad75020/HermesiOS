@@ -3,12 +3,14 @@ import UIKit
 @testable import HermesiOS
 
 final class HermesTUIKeyboardDismissalTests: XCTestCase {
+    @MainActor
     func testPhoneTranscriptTapClearsPromptFocus() {
         var focused = true
         HermesTUIKeyboardDismissal.transcriptTapped(idiom: .phone, isPromptFocused: &focused)
         XCTAssertFalse(focused)
     }
 
+    @MainActor
     func testRepeatedPhoneTranscriptTapDoesNotAcquireFocus() {
         var focused = false
         for _ in 0..<3 {
@@ -21,6 +23,7 @@ final class HermesTUIKeyboardDismissalTests: XCTestCase {
         XCTAssertFalse(focused)
     }
 
+    @MainActor
     func testPadKeepsFocusRegardlessOfWindowWidth() {
         // The policy intentionally has no size-class input: compact iPad is still iPad.
         XCTAssertFalse(HermesTUIKeyboardDismissal.isEnabled(for: .pad))
@@ -31,6 +34,7 @@ final class HermesTUIKeyboardDismissalTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testOnlyPhoneOptsIntoTheGestureAndFocusBinding() {
         XCTAssertTrue(HermesTUIKeyboardDismissal.isEnabled(for: .phone))
         for idiom: UIUserInterfaceIdiom in [.pad, .mac, .tv, .carPlay, .vision, .unspecified] {

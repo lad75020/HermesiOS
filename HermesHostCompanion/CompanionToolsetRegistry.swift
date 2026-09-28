@@ -33,6 +33,7 @@ enum CompanionToolsetRegistryError: LocalizedError {
     }
 }
 
+@MainActor
 final class CompanionToolsetRegistry {
     static let shared = CompanionToolsetRegistry()
 

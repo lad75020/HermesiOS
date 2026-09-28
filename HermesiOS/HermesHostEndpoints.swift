@@ -7,7 +7,7 @@ import Foundation
 import Network
 
 let hermesMacHostStorageKey = "hermes.mac.host"
-let defaultHermesMacHost = ".ts.net"
+nonisolated let defaultHermesMacHost = ".ts.net"
 
 let hermesDashboardPortStorageKey = "hermes.history.dashboard.port"
 let defaultHermesDashboardPort = "9120"
@@ -132,12 +132,12 @@ enum HermesEndpointSecurity {
         return "Plaintext \(scheme.uppercased()) is blocked for \(endpointName) unless the host is localhost, 127.0.0.1, or a Tailscale tailnet endpoint. Use HTTPS/WSS for other remote endpoints."
     }
 
-    static func isSelfSignedTrustAllowed(forHost host: String) -> Bool {
+    nonisolated static func isSelfSignedTrustAllowed(forHost host: String) -> Bool {
         let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         return isLoopbackHost(normalized) || isTailnetHost(normalized)
     }
 
-    static func isTailnetHost(_ host: String) -> Bool {
+    nonisolated static func isTailnetHost(_ host: String) -> Bool {
         let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         if normalized.hasSuffix(".ts.net") { return true }
         if normalized == defaultHermesMacHost { return true }
@@ -149,7 +149,7 @@ enum HermesEndpointSecurity {
         return false
     }
 
-    static func isLoopbackHost(_ host: String) -> Bool {
+    nonisolated static func isLoopbackHost(_ host: String) -> Bool {
         let normalized = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         return normalized == "localhost" || normalized == "::1" || normalized == "0:0:0:0:0:0:0:1" || normalized.hasPrefix("127.")
     }
